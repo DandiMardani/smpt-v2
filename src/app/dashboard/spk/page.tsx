@@ -1,31 +1,132 @@
-import { Badge, Card, Empty, Field, Flow, Notice, PageShell, ReadOnly, TableWrap, Td, Th, buttonClass, dangerClass, inputClass, secondaryClass } from "@/components/final/final-ui";
+import { Flow, Notice, PageShell, ReadOnly } from "@/components/final/final-ui";
+import { SpkManager, type SpkOrder } from "@/components/spk/spk-manager";
 import { requirePermission } from "@/lib/access/current-user";
-import { money, param, pick, qty, text, type SearchParams } from "@/lib/final/final-utils";
+import { param, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { isProductionSupervisor, isSewingOperator } from "@/lib/workers/options";
-import { cancelSpkAction, createSpkAction, publishSpkAction, removeSpkItemAction } from "@/lib/final/actions";
-import { SpkProjectProductFields } from "./spk-project-product-fields";
-import { SpkItemAssignmentFields } from "./spk-item-assignment-fields";
 
-type Props={searchParams:Promise<SearchParams>};
-export default async function Page({searchParams}:Props){
- const access=await requirePermission("spk.view");const canWrite=access.permissionCodes.includes("spk.write");const q=await searchParams;const selected=Number(param(q,"order","0"));const s=await createClient();
- const [pr,ppr,wr,ir,or,oir,checkerRes]=await Promise.all([
- s.from("projects").select("*").order("name").limit(300),
- s.from("project_products").select("*").eq("status","AKTIF").order("name").limit(500),
- s.from("workers").select("id,worker_code,name,department,position,pay_system,status").eq("status","AKTIF").order("name").limit(500),
- s.from("work_items").select("*").eq("status","AKTIF").order("display_order").limit(1500),
- s.from("production_orders").select("*").order("order_date",{ascending:false}).limit(150),
- s.from("production_order_items").select("*").limit(1200),
- s.rpc("smpt_spk_checker_options")
- ]);
- const err=[pr.error,ppr.error,wr.error,ir.error,or.error,oir.error,checkerRes.error].find(Boolean);if(err)throw new Error(err.message);
- const projects=(pr.data??[]).filter((x:any)=>!["SELESAI","NONAKTIF","BATAL","DIBATALKAN"].includes(String(x.status??"").trim().toUpperCase())),products=ppr.data??[],workers=wr.data??[],workItems=ir.data??[],orders=or.data??[],items=oir.data??[],checkers=checkerRes.data??[];const operators=(workers as any[]).filter(x=>isSewingOperator(x.position)&&String(x.pay_system??"").trim().toUpperCase()==="BORONGAN");const supervisors=(workers as any[]).filter(x=>isProductionSupervisor(x.position));const current=(orders as any[]).find(x=>x.id===selected);const currentItems=(items as any[]).filter(x=>x.order_id===selected);const currentWorkItems=current?(workItems as any[]).filter(x=>x.project_id===current.project_id&&x.product_id===current.product_id&&["OPERATOR_BORONGAN","KEDUANYA"].includes(String(x.executor_scope??"OPERATOR_BORONGAN"))):[];
- const capacityResult=current?await s.rpc("smpt_get_spk_item_capacities",{p_order_id:current.id}):null;
- if(capacityResult?.error)throw new Error(capacityResult.error.message);
- const capacities=(Array.isArray(capacityResult?.data)?capacityResult?.data:[]) as any[];
- return <PageShell eyebrow="Produksi" title="Surat Perintah Kerja" description="SPV menentukan Produk/Tas, Operator Jahit, Checker, Item Pekerjaan dan qty. Routing Item tetap mengikuti flow Stage B; dropdown Operator hanya menampilkan pekerja BORONGAN dengan posisi operator/jahit; Item khusus HARIAN tidak dapat dimasukkan ke SPK."><Notice success={param(q,"success")} error={param(q,"error")}/>{!canWrite?<ReadOnly/>:null}<Flow>SPK DRAFT → pilih Item → sistem tampilkan WIP predecessor, alokasi SPK aktif, dan sisa qty yang boleh ditugaskan → TERBITKAN. HARD diblok sejak SPV; Checker tetap menjadi pagar runtime terakhir.</Flow>
- {canWrite?<Card title="Buat Draft SPK"><form action={createSpkAction} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Field label="Tanggal SPK"><input name="order_date" type="date" required className={inputClass}/></Field><SpkProjectProductFields projects={(projects as any[]).map((x:any)=>({id:x.id,name:x.name}))} products={(products as any[]).map((x:any)=>({id:x.id,project_id:x.project_id,name:x.name}))}/><Field label="Operator"><select name="operator_worker_id" required className={inputClass}><option value="">Pilih</option>{operators.map((x:any)=><option key={x.id} value={x.id}>{x.name} · {x.position||x.worker_code}</option>)}</select></Field><Field label="Checker"><select name="checker_email" required className={inputClass}><option value="">Pilih Checker</option>{(checkers as any[]).map((x:any)=><option key={x.user_id} value={x.email}>{x.display_name||x.email} · {x.email}</option>)}</select>{checkers.length===0?<span className="mt-1 block text-xs text-rose-400">Belum ada akun aktif dengan permission borongan.operate. Atur USER Checker di Manajemen User.</span>:null}</Field><Field label="Supervisor"><select name="supervisor_worker_id" className={inputClass}><option value="">-</option>{supervisors.map((x:any)=><option key={x.id} value={x.id}>{x.name} · {x.position||x.worker_code}</option>)}</select></Field><Field label="Jatuh Tempo"><input name="due_date" type="date" className={inputClass}/></Field><Field label="Catatan"><input name="notes" className={inputClass}/></Field><div><button className={buttonClass}>Buat Draft</button></div></form></Card>:null}
- <Card title="Daftar SPK"><div className="space-y-2">{orders.length===0?<Empty>Belum ada SPK.</Empty>:orders.map((o:any)=><a key={o.id} href={`/dashboard/spk?order=${o.id}`} className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 transition hover:bg-slate-50 hover:border-blue-300 shadow-xs"><span><b className="text-slate-900 font-bold">{o.spk_code}</b><span className="ml-2 text-xs text-slate-500">{o.order_date} · Operator #{o.operator_worker_id} · Checker {o.checker_email}</span></span><Badge>{o.status}</Badge></a>)}</div></Card>
- {current?<Card title={`Detail ${current.spk_code}`}><div className="mb-3 flex flex-wrap gap-2"><Badge>{current.status}</Badge><a className={secondaryClass} href={`/dashboard/masterItem/routing?project=${current.project_id}&product=${current.product_id}`}>Lihat / Atur Routing Item</a>{current.status==="DRAFT"&&canWrite?<><form action={publishSpkAction}><input type="hidden" name="order_id" value={current.id}/><button className={buttonClass}>Terbitkan SPK</button></form><form action={cancelSpkAction}><input type="hidden" name="order_id" value={current.id}/><button className={dangerClass}>Batalkan</button></form></>:null}{current.status==="AKTIF"&&canWrite?<form action={cancelSpkAction}><input type="hidden" name="order_id" value={current.id}/><button className={dangerClass}>Batalkan SPK</button></form>:null}</div>{current.status==="DRAFT"&&canWrite?<SpkItemAssignmentFields orderId={current.id} workItems={currentWorkItems.map((x:any)=>({id:x.id,displayOrder:Number(x.display_order??0),name:text(pick(x,"name","item_name","work_name")),unit:text(pick(x,"unit","satuan"))||"PCS",qtyPerProduct:Number(pick(x,"qty_per_product","quantity_per_product")??1),routingMode:String(x.routing_validation_mode||"WARNING")}))} capacities={capacities}/>:null}<TableWrap><thead><tr><Th>Item</Th><Th>Qty</Th><Th>Harga Operator</Th><Th>Output Final</Th><Th>Status</Th><Th>Aksi</Th></tr></thead><tbody>{currentItems.map((i:any)=><tr key={i.id}><Td>{i.work_item_name_snapshot}</Td><Td>{qty(i.assigned_qty)} {i.unit_snapshot}</Td><Td>{money(i.operator_price_snapshot)}</Td><Td>{i.is_final_output_snapshot?"YA":"TIDAK"}</Td><Td>{i.status}</Td><Td>{current.status==="DRAFT"&&canWrite?<form action={removeSpkItemAction}><input type="hidden" name="order_id" value={current.id}/><input type="hidden" name="order_item_id" value={i.id}/><button className={dangerClass}>Hapus</button></form>:"-"}</Td></tr>)}</tbody></TableWrap></Card>:null}</PageShell>;
+type Props = { searchParams: Promise<SearchParams> };
+
+export default async function Page({ searchParams }: Props) {
+  const access = await requirePermission("spk.view");
+  const canWrite = access.permissionCodes.includes("spk.write");
+  const q = await searchParams;
+  const s = await createClient();
+
+  const [pr, ppr, wr, ir, or, oir, checkerRes] = await Promise.all([
+    s.from("projects").select("id, name, status").order("name").limit(300),
+    s.from("project_products").select("id, project_id, name, target_production, status").eq("status", "AKTIF").order("name").limit(500),
+    s.from("workers").select("id, worker_code, name, department, position, pay_system, status").eq("status", "AKTIF").order("name").limit(500),
+    s.from("work_items").select("id, project_id, product_id, name, unit, operator_price, qty_per_product, display_order, status").eq("status", "AKTIF").order("display_order").limit(1500),
+    s.from("production_orders").select("*").order("order_date", { ascending: false }).limit(200),
+    s.from("production_order_items").select("*").limit(2000),
+    s.rpc("smpt_spk_checker_options"),
+  ]);
+
+  const err = [pr.error, ppr.error, wr.error, ir.error, or.error, oir.error, checkerRes.error].find(Boolean);
+  if (err) throw new Error(err.message);
+
+  const activeProjects = (pr.data ?? [])
+    .filter((x: any) => !["SELESAI", "NONAKTIF", "BATAL", "DIBATALKAN"].includes(String(x.status ?? "").trim().toUpperCase()))
+    .map((x: any) => ({ id: x.id, name: x.name }));
+
+  const products = (ppr.data ?? []).map((x: any) => ({
+    id: x.id,
+    project_id: x.project_id,
+    name: x.name,
+    target_production: x.target_production,
+  }));
+
+  const workers = (wr.data ?? []) as any[];
+  const operators = workers
+    .filter((x) => isSewingOperator(x.position) && String(x.pay_system ?? "").trim().toUpperCase() === "BORONGAN")
+    .map((x) => ({
+      id: x.id,
+      worker_code: x.worker_code,
+      name: x.name,
+      position: x.position,
+    }));
+
+  const supervisors = workers
+    .filter((x) => isProductionSupervisor(x.position))
+    .map((x) => ({
+      id: x.id,
+      worker_code: x.worker_code,
+      name: x.name,
+      position: x.position,
+    }));
+
+  const checkers = ((checkerRes.data ?? []) as any[]).map((x) => ({
+    user_id: x.user_id,
+    email: x.email,
+    display_name: x.display_name,
+  }));
+
+  const workItems = (ir.data ?? []).map((x: any) => ({
+    id: x.id,
+    project_id: x.project_id,
+    product_id: x.product_id,
+    name: x.name,
+    unit: x.unit || "PCS",
+    operator_price: x.operator_price || 0,
+    qty_per_product: x.qty_per_product || 1,
+    display_order: x.display_order || 0,
+    status: x.status || "AKTIF",
+  }));
+
+  const rawOrders = (or.data ?? []) as any[];
+  const rawItems = (oir.data ?? []) as any[];
+
+  const orders: SpkOrder[] = rawOrders.map((o) => ({
+    id: o.id,
+    spk_code: o.spk_code,
+    order_date: o.order_date,
+    due_date: o.due_date,
+    status: o.status,
+    project_id: o.project_id,
+    product_id: o.product_id,
+    operator_worker_id: o.operator_worker_id,
+    checker_email: o.checker_email,
+    supervisor_worker_id: o.supervisor_worker_id,
+    notes: o.notes,
+    items: rawItems
+      .filter((i) => i.order_id === o.id)
+      .map((i) => ({
+        id: i.id,
+        order_id: i.order_id,
+        work_item_id: i.work_item_id,
+        work_item_name_snapshot: i.work_item_name_snapshot,
+        unit_snapshot: i.unit_snapshot,
+        assigned_qty: i.assigned_qty,
+        operator_price_snapshot: i.operator_price_snapshot,
+        is_final_output_snapshot: i.is_final_output_snapshot,
+        status: i.status,
+      })),
+  }));
+
+  return (
+    <PageShell
+      eyebrow="Produksi"
+      title="Surat Perintah Kerja (SPK)"
+      description="Kelola penugasan kerja borongan operator jahit. Alur terpadu satu langkah: pilih proyek, produk/tas, operator, centang item pekerjaan, dan terbitkan langsung atau simpan draft."
+    >
+      <Notice success={param(q, "success")} error={param(q, "error")} />
+      {!canWrite ? <ReadOnly /> : null}
+
+      <Flow>
+        Alur SPK V1: Supervisor membuat SPK untuk 1 Proyek + 1 Produk/Tas + 1 Operator Borongan. Centang item pekerjaan yang diserahkan dan isi Qty Penugasan. Klik <b>Simpan & Terbitkan</b> untuk langsung mengaktifkan SPK agar operator dapat mulai menyetor hasil kerja di Pekerjaan Saya.
+      </Flow>
+
+      <SpkManager
+        canWrite={canWrite}
+        projects={activeProjects}
+        products={products}
+        workItems={workItems}
+        operators={operators}
+        checkers={checkers}
+        supervisors={supervisors}
+        orders={orders}
+      />
+    </PageShell>
+  );
 }
