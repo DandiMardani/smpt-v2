@@ -19,7 +19,7 @@ export function BoronganCredentialCard({ name, workerCode, email, pass, phone }:
   const loginUrl = typeof window !== "undefined" ? `${window.location.origin}/login` : "/login";
 
   const waMessage = [
-    `*AKUN SISTEM KARYA DUTA ERP (SMPT)*`,
+    `*AKUN SISTEM SMPT V2 - PT KREASI DINAMIKA MAJU BERSAMA*`,
     `=============================`,
     `Halo *${name}*,`,
     `Akun aplikasi Anda telah aktif untuk memantau penugasan SPK dan hasil kerja borongan Anda:`,
