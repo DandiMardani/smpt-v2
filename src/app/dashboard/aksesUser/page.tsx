@@ -40,6 +40,7 @@ const roleHelp: Record<string, string> = {
   MANAGER: "Monitoring, laporan & export — read-only",
   SUPERVISOR: "Operasional produksi, SPK, assignment, QC & rework",
   GUDANG: "Gudang, inventory custody, WIP & logistik",
+  CUTTING: "Operator Cutting — input pemakaian bahan & hasil cutting",
   PEKERJA: "Pekerjaan Saya + data milik sendiri",
   USER: "Base role fleksibel; akses tambahan lewat permission override",
   CHECKER: "LEGACY — checker baru gunakan USER + permission checker",
@@ -78,7 +79,7 @@ export default async function Page({ searchParams }: Props) {
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
       <Flow>
-        Role adalah preset akses. ADMIN = full; MANAGER = read-only; SUPERVISOR = produksi; GUDANG = inventory/logistik; PEKERJA = data sendiri; USER = fleksibel. Role PEKERJA wajib dihubungkan ke Master Pekerja.
+        Role adalah preset akses. ADMIN = full; MANAGER = read-only; SUPERVISOR = produksi; GUDANG = inventory/logistik; CUTTING = operator cutting; PEKERJA = data sendiri; USER = fleksibel. Role PEKERJA wajib dihubungkan ke Master Pekerja.
       </Flow>
 
       {canWrite ? (
