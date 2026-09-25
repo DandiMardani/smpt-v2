@@ -152,7 +152,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("produksi", "Siap Produksi"),
       item("borongan", "Setoran Borongan"),
       item("hasilProduksi", "Hasil Produksi"),
-      item("manufaktur", "Produksi Internal & Eksternal"),
+      item("manufaktur", "Barang Titipan & Maklon"),
     ],
   },
   {
@@ -173,7 +173,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
         children: [
           item("stokBarangJadi", "Stok Barang Jadi"),
           item("transferBarangJadi", "Transfer Barang Jadi"),
-          item("barangLuar", "Barang Luar"),
+          item("barangLuar", "Penerimaan Barang Luar"),
           item("masterSet", "Master Set"),
           item("packingSet", "Packing Set"),
           item("stokSet", "Stok Set"),

@@ -149,7 +149,7 @@ for select to authenticated using (
 drop policy if exists payroll_runs_worker_self_select on public.payroll_runs;
 create policy payroll_runs_worker_self_select on public.payroll_runs
 for select to authenticated using (
-  id in (select run_id from public.payroll_run_items where worker_id = public.smpt_current_worker_id())
+  id in (select payroll_run_id from public.payroll_run_items where worker_id = public.smpt_current_worker_id())
 );
 
 -- 7. RPC untuk mendapatkan daftar pekerja aktif (bisa diakses authenticated untuk referensi dropdown warung & payroll)

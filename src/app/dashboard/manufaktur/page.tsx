@@ -57,9 +57,9 @@ export default async function Page({ searchParams }: Props) {
 
   return (
     <PageShell
-      eyebrow="Produksi & Manufaktur"
-      title="Produksi Internal & Eksternal"
-      description="Pencatatan fleksibel bahan baku dan barang jadi titipan (non-aset), penerimaan barang luar, dan mutasi eksternal."
+      eyebrow="Produksi & Rekanan"
+      title="Barang Titipan & Maklon (Non-Aset)"
+      description="Pencatatan bahan baku dan barang jadi titipan pelanggan / maklon luar (non-aset modal perusahaan) serta pengiriman kembali."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!can ? <ReadOnly /> : null}
