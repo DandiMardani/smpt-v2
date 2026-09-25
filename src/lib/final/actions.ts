@@ -132,3 +132,41 @@ export async function addManufacturingAction(f: FormData) {
 }
 export async function resolveEmbarkationIssueAction(f:FormData){await mutate("/dashboard/rejectEmbarkasi","reject_embarkasi.write",async()=>{const s=await createClient();const {error}=await s.from("embarkation_issues").update({status:"SELESAI",resolution:t(f,"resolution")||"Diselesaikan",resolved_at:new Date().toISOString()}).eq("id",id(f,"issue_id")).eq("status","OPEN");if(error)throw error},"Masalah Embarkasi diselesaikan.")}
 
+export async function cancelExternalReceiptAction(f: FormData) {
+  await mutate("/dashboard/barangLuar", "barang_luar.receive", async () => {
+    await rpc("cancel_external_finished_receipt", {
+      p_receipt_id: id(f, "receipt_id"),
+      p_reason: t(f, "reason") || "Dibatalkan manual oleh user",
+    });
+  }, "Penerimaan barang luar dibatalkan & stok dikembalikan.");
+}
+
+export async function editExternalReceiptAction(f: FormData) {
+  await mutate("/dashboard/barangLuar", "barang_luar.receive", async () => {
+    await rpc("edit_external_finished_receipt", {
+      p_receipt_id: id(f, "receipt_id"),
+      p_document_no: t(f, "document_no") || null,
+      p_notes: t(f, "notes") || null,
+    });
+  }, "Data penerimaan barang luar diperbarui.");
+}
+
+export async function cancelManufacturingAction(f: FormData) {
+  await mutate("/dashboard/manufaktur", "manufaktur.view", async () => {
+    await rpc("cancel_manufacturing_transaction", {
+      p_id: id(f, "transaction_id"),
+      p_reason: t(f, "reason") || "Dibatalkan manual oleh user",
+    });
+  }, "Transaksi manufaktur dibatalkan.");
+}
+
+export async function editManufacturingAction(f: FormData) {
+  await mutate("/dashboard/manufaktur", "manufaktur.view", async () => {
+    await rpc("edit_manufacturing_transaction", {
+      p_id: id(f, "transaction_id"),
+      p_document_no: t(f, "document_no") || null,
+      p_description: t(f, "description") || null,
+    });
+  }, "Data transaksi manufaktur diperbarui.");
+}
+

@@ -15,7 +15,7 @@ import {
   inputClass,
 } from "@/components/final/final-ui";
 import { PayrollSlipManager, type WorkerInfo, type PayrollRunRow, type PayrollItemRow } from "@/components/payroll/payroll-slip-manager";
-import { requirePermission } from "@/lib/access/current-user";
+import { requireAnyPermission } from "@/lib/access/current-user";
 import { finalizeOperatorPayrollAction, finalizePayrollAction } from "@/lib/final/actions";
 import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
@@ -45,17 +45,18 @@ type OperatorItem = {
 };
 
 export default async function Page({ searchParams }: Props) {
-  const access = await requirePermission("payroll.view");
+  const access = await requireAnyPermission(["payroll.view", "payroll.operator.view", "pekerjaan_saya.view"]);
   const canWrite = access.permissionCodes.includes("payroll.write");
   const q = await searchParams;
   const supabase = await createClient();
 
-  const [payrollRunResult, payrollItemResult, operatorRunResult, operatorItemResult, workersResult] = await Promise.all([
+  const [payrollRunResult, payrollItemResult, operatorRunResult, operatorItemResult, workersResult, workerIdResult] = await Promise.all([
     supabase.from("payroll_runs").select("*").order("period_end", { ascending: false }).limit(100),
     supabase.from("payroll_run_items").select("*").limit(2000),
     supabase.from("operator_payroll_runs").select("*").order("period_end", { ascending: false }).limit(100),
     supabase.from("operator_payroll_items").select("*").order("id", { ascending: false }).limit(3000),
     supabase.from("workers").select("id, worker_code, name, phone, department, position, identity_no"),
+    supabase.rpc("smpt_current_worker_id"),
   ]);
   const error = [payrollRunResult.error, payrollItemResult.error, operatorRunResult.error, operatorItemResult.error, workersResult.error].find(Boolean);
   if (error) throw new Error(error.message);
@@ -65,6 +66,7 @@ export default async function Page({ searchParams }: Props) {
   const workers = (workersResult.data ?? []) as WorkerInfo[];
   const operatorRuns = (operatorRunResult.data ?? []) as OperatorRun[];
   const operatorItems = (operatorItemResult.data ?? []) as OperatorItem[];
+  const currentWorkerId = (workerIdResult.data as number | null) ?? null;
   const operatorRunMap = new Map(operatorRuns.map((run) => [run.id, run]));
 
   return (
@@ -108,7 +110,7 @@ export default async function Page({ searchParams }: Props) {
       </div>
 
       {/* Slip Gaji & WhatsApp Manager */}
-      <PayrollSlipManager runs={payrollRuns} items={payrollItems} workers={workers} />
+      <PayrollSlipManager runs={payrollRuns} items={payrollItems} workers={workers} currentWorkerId={currentWorkerId} />
 
       <Card title="Riwayat Finalisasi Payroll Umum">
         <TableWrap>

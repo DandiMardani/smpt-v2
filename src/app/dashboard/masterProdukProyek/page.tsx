@@ -23,7 +23,7 @@ import {
   type SearchParams,
   totalPages,
 } from "@/lib/master/page-utils";
-import { createProjectProduct, updateProjectProduct } from "./actions";
+import { createProjectProduct, updateProjectProduct, deleteProjectProduct } from "./actions";
 
 type ProjectRef = {
   id: number;
@@ -84,7 +84,7 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
     <MasterPageShell
       eyebrow="Master Data"
       title="Produk / Tas Proyek"
-      description="Target produksi aktif disimpan per Produk/Tas. Produk/Tas tidak dapat dipindahkan ke proyek lain setelah dibuat."
+      description="Target produksi aktif disimpan per Produk/Tas. Anda dapat mengedit nama, target, satuan, maupun memindahkan proyek jika salah input."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
@@ -144,14 +144,31 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
                     {canWrite ? (
                       <form action={updateProjectProduct} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         <input type="hidden" name="id" value={row.id} />
-                        <input type="hidden" name="project_id" value={row.project_id} />
-                        <Field label="Proyek" hint="Tidak dapat dipindahkan saat edit."><input disabled value={`${project?.project_code ?? "-"} · ${project?.name ?? "-"}`} className={inputClass} /></Field>
+                        <Field label="Proyek" hint="Pilih proyek tujuan jika ingin memindahkan produk ini.">
+                          <select name="project_id" required defaultValue={row.project_id} className={selectClass}>
+                            {projects.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.project_code} · {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
                         <Field label="Nama Produk/Tas"><input name="name" required defaultValue={row.name} className={inputClass} /></Field>
                         <Field label="Target Produksi"><input name="target_production" type="number" min="0.0001" step="0.0001" required defaultValue={String(row.target_production)} className={inputClass} /></Field>
                         <Field label="Satuan"><input name="unit" required defaultValue={row.unit} className={inputClass} /></Field>
                         <Field label="Status"><select name="status" defaultValue={row.status} className={selectClass}><option value="AKTIF">AKTIF</option><option value="NONAKTIF">NONAKTIF</option></select></Field>
                         <Field label="Keterangan"><input name="notes" defaultValue={row.notes ?? ""} className={inputClass} /></Field>
-                        <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Perubahan</button></div>
+                        <div className="md:col-span-2 xl:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-2">
+                          <button type="submit" className={primaryButtonClass}>Simpan Perubahan</button>
+                          <button
+                            type="submit"
+                            formAction={deleteProjectProduct}
+                            formNoValidate
+                            className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
+                          >
+                            🗑️ Hapus Produk/Tas
+                          </button>
+                        </div>
                       </form>
                     ) : <p className="text-sm text-slate-400">{row.notes || "Tidak ada keterangan."}</p>}
                   </div>

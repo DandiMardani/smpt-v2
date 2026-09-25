@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Badge, Empty, Field, buttonClass, inputClass } from "@/components/final/final-ui";
 import { money, n } from "@/lib/final/final-utils";
 import { recordWarungDebtAction } from "@/lib/final/actions";
@@ -37,6 +37,14 @@ export function WarungPortal({
   const [activeTab, setActiveTab] = useState<"REKAP" | "TRANSAKSI">("REKAP");
   const [search, setSearch] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
+  const [warungName, setWarungName] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("smpt_warung_name");
+      if (saved) setWarungName(saved);
+    }
+  }, []);
 
   const workerMap = new Map(workers.map((w) => [w.id, w]));
 
@@ -138,10 +146,20 @@ export function WarungPortal({
                 <input
                   name="warung_name"
                   required
-                  defaultValue="Warung Bu Siti"
-                  placeholder="Contoh: Warung Bu Siti"
+                  value={warungName}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setWarungName(v);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem("smpt_warung_name", v);
+                    }
+                  }}
+                  placeholder="Ketik nama warung Anda"
                   className={`${inputClass} !bg-white`}
                 />
+                <span className="mt-1 block text-[11px] text-amber-800 font-medium">
+                  Cukup isi 1 kali, otomatis tersimpan untuk seterusnya.
+                </span>
               </Field>
 
               <Field label="Nominal Hutang (Rp)">

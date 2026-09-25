@@ -15,7 +15,7 @@ import { requirePermission } from "@/lib/access/current-user";
 import { param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
 import { PAY_SYSTEMS, WORKER_DEPARTMENTS, WORKER_POSITIONS } from "@/lib/workers/options";
-import { createWorker, updateWorker } from "./actions";
+import { createWorker, updateWorker, deleteWorker } from "./actions";
 
 type Props = { searchParams: Promise<SearchParams> };
 type W = {
@@ -241,8 +241,16 @@ export default async function Page({ searchParams }: Props) {
                 <form action={updateWorker} encType="multipart/form-data" className="mt-4 grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-2 xl:grid-cols-3">
                   <input type="hidden" name="id" value={w.id} />
                   <Fields w={w} />
-                  <div className="md:col-span-2 xl:col-span-3">
+                  <div className="md:col-span-2 xl:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-2">
                     <button className={primaryButtonClass}>Simpan Perubahan</button>
+                    <button
+                      type="submit"
+                      formAction={deleteWorker}
+                      formNoValidate
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
+                    >
+                      🗑️ Hapus Pekerja
+                    </button>
                   </div>
                 </form>
               ) : null}

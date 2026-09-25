@@ -160,3 +160,21 @@ export async function updateWorker(f: FormData) {
   revalidatePath(PATH);
   redirectWithMessage(PATH, "success", "Master Pekerja berhasil diperbarui.");
 }
+
+export async function deleteWorker(f: FormData) {
+  await requirePermission("master_pekerja.write");
+  try {
+    const id = getId(f, "id");
+    const s = await createClient();
+    const { data, error } = await s.rpc("delete_master_worker", { p_worker_id: id });
+    if (error) throw error;
+    const msg =
+      data === "TERHAPUS"
+        ? "Pekerja berhasil dihapus permanen dari sistem."
+        : "Pekerja berhasil dinonaktifkan (data historis SPK/Payroll tetap aman tersimpan).";
+    revalidatePath(PATH);
+    redirectWithMessage(PATH, "success", msg);
+  } catch (e) {
+    redirectWithMessage(PATH, "error", errorMessage(e, "Gagal menghapus pekerja."));
+  }
+}

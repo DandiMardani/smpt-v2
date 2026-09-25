@@ -56,6 +56,7 @@ type Props = {
   runs: PayrollRunRow[];
   items: PayrollItemRow[];
   workers: WorkerInfo[];
+  currentWorkerId?: number | null;
 };
 
 function num(val: unknown): number {
@@ -280,13 +281,14 @@ function renderSlipCanvas(run: PayrollRunRow, item: PayrollItemRow, worker?: Wor
   return canvas;
 }
 
-export function PayrollSlipManager({ runs, items, workers }: Props) {
+export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Props) {
   const [selectedRunId, setSelectedRunId] = useState<number>(runs[0]?.id ?? 0);
   const [activeItem, setActiveItem] = useState<PayrollItemRow | null>(null);
   const [waPhone, setWaPhone] = useState("");
   const [waModalOpen, setWaModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [filterMySlipOnly, setFilterMySlipOnly] = useState<boolean>(Boolean(currentWorkerId));
   const printFrameRef = useRef<HTMLIFrameElement>(null);
 
   const workerMap = useMemo(() => {
@@ -301,8 +303,13 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
 
   const runItems = useMemo(() => {
     if (!selectedRun) return [];
-    return items.filter((it) => it.payroll_run_id === selectedRun.id);
-  }, [items, selectedRun]);
+    let list = items.filter((it) => it.payroll_run_id === selectedRun.id);
+    if (filterMySlipOnly && currentWorkerId) {
+      const filtered = list.filter((it) => it.worker_id === currentWorkerId);
+      if (filtered.length > 0) return filtered;
+    }
+    return list;
+  }, [items, selectedRun, filterMySlipOnly, currentWorkerId]);
 
   const openSlip = (item: PayrollItemRow) => {
     setActiveItem(item);
@@ -575,6 +582,20 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
               ))}
             </select>
 
+            {currentWorkerId ? (
+              <button
+                type="button"
+                onClick={() => setFilterMySlipOnly(!filterMySlipOnly)}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition shadow-xs ${
+                  filterMySlipOnly
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {filterMySlipOnly ? "✓ Hanya Slip Saya" : "Lihat Slip Saya Saja"}
+              </button>
+            ) : null}
+
             {runItems.length > 0 ? (
               <button
                 type="button"
@@ -636,10 +657,18 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
                 {runItems.map((item) => {
                   const w = workerMap.get(item.worker_id);
                   const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount) + num(item.overtime_amount);
+                  const isMe = item.worker_id === currentWorkerId;
                   return (
-                    <tr key={item.id} className="hover:bg-slate-50/70 transition">
+                    <tr key={item.id} className={`transition ${isMe ? "bg-blue-50/50 hover:bg-blue-50/80" : "hover:bg-slate-50/70"}`}>
                       <td className="px-3.5 py-2.5">
-                        <div className="font-bold text-slate-900">{item.worker_name_snapshot}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-slate-900">{item.worker_name_snapshot}</span>
+                          {isMe ? (
+                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                              Slip Saya
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="text-[11px] text-slate-400">{w?.worker_code || `ID #${item.worker_id}`}{w?.phone ? ` • 📞 ${w.phone}` : " • ⚠️ Tanpa No. HP"}</div>
                       </td>
                       <td className="px-3.5 py-2.5 text-slate-700">

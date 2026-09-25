@@ -5,6 +5,7 @@
 -- ============================================================================
 
 -- 1. Fungsi untuk memperbarui data user profil (termasuk username / display_name)
+drop function if exists public.smpt_admin_update_user_profile;
 create or replace function public.smpt_admin_update_user_profile(
   p_user_id uuid,
   p_display_name text,
@@ -192,6 +193,7 @@ revoke all on function public.smpt_get_my_worker_profile() from public;
 grant execute on function public.smpt_get_my_worker_profile() to authenticated;
 
 -- 9. Perbaikan RPC record_manufacturing_transaction (Mendukung Barang Jadi Bebas Proyek & Bahan Baku)
+drop function if exists public.record_manufacturing_transaction;
 create or replace function public.record_manufacturing_transaction(
   p_flow_type text,
   p_date date,

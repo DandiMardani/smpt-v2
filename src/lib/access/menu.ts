@@ -197,7 +197,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
     text: "SDM & Payroll",
     children: [
       item("absensi", "Absensi"),
-      item("payroll", "Payroll"),
+      item("payroll", "Payroll & Slip Gaji"),
       item("kasbon", "Kasbon"),
       item("warung", "Kasbon Warung Luar"),
     ],
@@ -227,6 +227,14 @@ export function getAllowedMenuIds(permissionCodes: Iterable<string>): string[] {
   // granular supplier.view should reuse the same page instead of a duplicate menu.
   if (permissions.has("supplier.view") && !allowed.includes("masterVendor")) {
     allowed.push("masterVendor");
+  }
+
+  // Allow access to payroll / slip gaji for workers or operators
+  if (
+    (permissions.has("payroll.operator.view") || permissions.has("pekerjaan_saya.view")) &&
+    !allowed.includes("payroll")
+  ) {
+    allowed.push("payroll");
   }
 
   return allowed;

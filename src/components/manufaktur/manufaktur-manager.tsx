@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { addManufacturingAction } from "@/lib/final/actions";
+import {
+  addManufacturingAction,
+  cancelManufacturingAction,
+  editManufacturingAction,
+} from "@/lib/final/actions";
 
 type Project = { id: number; name: string; status?: string };
 type Material = { id: number; material_code: string; name: string; standard_unit: string };
@@ -69,6 +73,7 @@ export function ManufakturManager({
   const [filterFlow, setFilterFlow] = useState<string>("ALL");
   const [filterKind, setFilterKind] = useState<string>("ALL");
   const [filterProject, setFilterProject] = useState<string>("ALL");
+  const [editingTx, setEditingTx] = useState<ManufacturingTransaction | null>(null);
 
   // Material map and Finished Good map
   const materialMap = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
@@ -536,12 +541,13 @@ export function ManufakturManager({
                 <th className="px-3 py-3">Dokumen</th>
                 <th className="px-3 py-3">Keterangan</th>
                 <th className="px-3 py-3 text-center">Status</th>
+                <th className="px-3 py-3 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-800">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-8 text-center text-slate-400">
+                  <td colSpan={12} className="py-8 text-center text-slate-400">
                     Belum ada data transaksi yang cocok dengan kriteria filter.
                   </td>
                 </tr>
@@ -617,6 +623,44 @@ export function ManufakturManager({
                           {tx.status}
                         </span>
                       </td>
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                        {tx.status === "AKTIF" && canWrite ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingTx(tx)}
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition"
+                              title="Edit No Dokumen / Keterangan"
+                            >
+                              ✏️ Edit
+                            </button>
+                            <form
+                              action={cancelManufacturingAction}
+                              onSubmit={(e) => {
+                                const reason = prompt(`Yakin ingin membatalkan transaksi "${tx.manufacturing_code}"?\n\nMasukkan alasan pembatalan:`);
+                                if (reason === null) {
+                                  e.preventDefault();
+                                  return;
+                                }
+                                const input = e.currentTarget.querySelector("input[name='reason']") as HTMLInputElement;
+                                if (input) input.value = reason;
+                              }}
+                            >
+                              <input type="hidden" name="transaction_id" value={tx.id} />
+                              <input type="hidden" name="reason" value="" />
+                              <button
+                                type="submit"
+                                className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 transition"
+                                title="Batalkan transaksi manufaktur"
+                              >
+                                ✕ Batal
+                              </button>
+                            </form>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-mono">-</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })
@@ -625,6 +669,51 @@ export function ManufakturManager({
           </table>
         </div>
       </div>
+
+      {/* Modal Edit Transaksi Manufaktur */}
+      {editingTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h4 className="text-base font-bold text-slate-900">Edit Transaksi {editingTx.manufacturing_code}</h4>
+            <p className="mt-1 text-xs text-slate-500">Ubah No. Dokumen / Surat Jalan atau Keterangan.</p>
+            <form action={editManufacturingAction} onSubmit={() => setEditingTx(null)} className="mt-4 space-y-3">
+              <input type="hidden" name="transaction_id" value={editingTx.id} />
+              <div>
+                <label className="block text-xs font-bold text-slate-700">No. Surat Jalan / Dokumen</label>
+                <input
+                  name="document_no"
+                  defaultValue={editingTx.document_no || ""}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700">Keterangan Transaksi</label>
+                <textarea
+                  name="description"
+                  defaultValue={editingTx.description || ""}
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingTx(null)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                >
+                  Simpan Perubahan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
