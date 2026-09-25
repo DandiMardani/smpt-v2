@@ -109,8 +109,11 @@ export default async function Page({ searchParams }: Props) {
                 <option>DINAS_LUAR</option>
               </select>
             </Field>
-            <Field label="Catatan"><input name="notes" className={inputClass} /></Field>
-            <div><button className={buttonClass}>Simpan DRAFT</button></div>
+            <Field label="Lembur Manual (Menit)">
+              <input name="overtime_minutes" type="number" min="0" defaultValue="0" placeholder="Menit (cth: 120 = 2 jam)" className={inputClass} />
+            </Field>
+            <Field label="Catatan"><input name="notes" className={inputClass} placeholder="Keterangan opsional" /></Field>
+            <div className="flex items-end"><button className={buttonClass}>Simpan DRAFT</button></div>
           </form>
         </Card>
       ) : null}

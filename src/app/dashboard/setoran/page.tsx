@@ -2,10 +2,14 @@ import { Badge, Card, Empty, Flow, Metric, PageShell } from "@/components/final/
 import { requirePermission } from "@/lib/access/current-user";
 import { n, qty } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
+import { WorkerFinancialSummary } from "@/components/worker/worker-financial-summary";
 
 export default async function Page() {
   await requirePermission("pekerjaan_saya.view");
   const s = await createClient();
+
+  const now = new Date();
+  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
 
   const [wr, or, ir, cr] = await Promise.all([
     s.rpc("smpt_current_worker_id"),
@@ -17,27 +21,86 @@ export default async function Page() {
   const e = [wr.error, or.error, ir.error, cr.error].find(Boolean);
   if (e) throw new Error(e.message);
 
+  const workerId = wr.data;
+  let workerData = null;
+  let warungDebts: any[] = [];
+  let companyLoans: any[] = [];
+  let workedDays = 0;
+  let overtimeHours = 0;
+  let estimatedGross = 0;
+
+  if (workerId) {
+    const [wRes, advRes, attRes] = await Promise.all([
+      s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department").eq("id", workerId).maybeSingle(),
+      s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
+      s.from("attendance_records").select("id,day_class,attendance_status,overtime_minutes").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth),
+    ]);
+
+    workerData = wRes.data;
+    const allAdv = advRes.data ?? [];
+    warungDebts = allAdv.filter((a) => a.category === "KASBON_WARUNG");
+    companyLoans = allAdv.filter((a) => a.category !== "KASBON_WARUNG");
+
+    const attList = attRes.data ?? [];
+    let fullDays = 0;
+    let halfDays = 0;
+    let otMins = 0;
+
+    for (const a of attList) {
+      if (a.attendance_status === "HADIR") {
+        if (a.day_class === "FULL_DAY") fullDays += 1;
+        else if (a.day_class === "HALF_DAY") halfDays += 1;
+      }
+      otMins += Number(a.overtime_minutes || 0);
+    }
+
+    workedDays = fullDays + (halfDays * 0.5);
+    overtimeHours = Math.round((otMins / 60) * 10) / 10;
+
+    if (workerData) {
+      if (workerData.pay_system === "BULANAN") {
+        estimatedGross = n(workerData.monthly_salary);
+      } else {
+        const dailyWage = n(workerData.daily_wage);
+        const otWage = (otMins / 60) * (dailyWage / 7);
+        estimatedGross = (fullDays * dailyWage) + (halfDays * dailyWage * 0.5) + otWage;
+      }
+    }
+  }
+
   const orders = or.data ?? [];
   const items = ir.data ?? [];
   const checks = cr.data ?? [];
 
   return (
     <PageShell
-      eyebrow="Produksi"
-      title="Pekerjaan Saya"
-      description="Operator hanya melihat pekerjaan yang ditentukan SPV. Tidak ada tombol setor hasil dari Operator."
+      eyebrow="Pekerja"
+      title="Pekerjaan Saya & Transparansi Gaji"
+      description="Pantau status akumulasi gaji berjalan, rincian potongan hutang di warung luar, sisa cicilan kasbon kantor, dan daftar tugas produksi harian Anda."
     >
       <Flow>
-        Hasil kerja dicatat oleh Checker yang ditentukan SPV. Operator tidak dapat self-submit.
+        Hasil kerja dicatat oleh Checker yang ditentukan SPV. Data gaji dan hutang diperbarui secara real-time setiap hari.
       </Flow>
 
+      {/* Real-time Worker Salary & Debt Transparency */}
+      {workerData ? (
+        <WorkerFinancialSummary
+          worker={workerData}
+          warungDebts={warungDebts}
+          companyLoans={companyLoans}
+          workedDays={workedDays}
+          overtimeHours={overtimeHours}
+          estimatedGross={estimatedGross}
+        />
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Worker ID" value={String(wr.data ?? "-")} />
-        <Metric label="SPK" value={orders.length} />
-        <Metric label="Input Operator" value="Dikunci" />
+        <Metric label="Worker ID" value={String(workerId ?? "-")} />
+        <Metric label="Penugasan SPK" value={orders.length} />
+        <Metric label="Input Operator" value="Tervalidasi" />
       </div>
 
-      <Card title="Penugasan">
+      <Card title="Penugasan & Hasil Kerja">
         <div className="space-y-3">
           {orders.length === 0 ? (
             <Empty>

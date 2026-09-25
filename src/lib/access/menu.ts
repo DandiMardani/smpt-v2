@@ -67,6 +67,7 @@ export const MENU_PERMISSION_BY_ID: Readonly<Record<string, string>> = {
   absensi: "absensi.view",
   payroll: "payroll.view",
   kasbon: "kasbon.view",
+  warung: "warung.view",
 
   kasKecil: "kas_kecil.view",
   keuangan: "keuangan.view",
@@ -198,6 +199,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("absensi", "Absensi"),
       item("payroll", "Payroll"),
       item("kasbon", "Kasbon"),
+      item("warung", "Kasbon Warung Luar"),
     ],
   },
   {

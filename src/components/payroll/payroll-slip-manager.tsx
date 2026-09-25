@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { money } from "@/lib/final/final-utils";
+import { updatePayrollItemAction } from "@/lib/final/actions";
 
 export type PayrollRunRow = {
   id: number;
@@ -33,6 +34,10 @@ export type PayrollItemRow = {
   overtime_bonus: number | string;
   holiday_bonus?: number | string;
   holiday_manual_amount?: number | string;
+  kasbon_perusahaan_amount?: number | string;
+  kasbon_warung_amount?: number | string;
+  manual_overtime_hours?: number | string;
+  manual_overtime_amount?: number | string;
   deduction_amount: number | string;
   net_amount: number | string;
 };
@@ -81,7 +86,13 @@ function getSlipTitle(run: PayrollRunRow, item: PayrollItemRow): string {
 function generateWhatsAppText(run: PayrollRunRow, item: PayrollItemRow, worker?: WorkerInfo): string {
   const title = getSlipTitle(run, item);
   const otHours = (num(item.overtime_minutes) / 60).toFixed(1);
+  const manualOt = num(item.manual_overtime_amount);
+  const totalOt = num(item.overtime_amount) + manualOt;
   const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount);
+
+  const kasbonPerusahaan = num(item.kasbon_perusahaan_amount);
+  const kasbonWarung = num(item.kasbon_warung_amount);
+  const totalDeduction = num(item.deduction_amount) || (kasbonPerusahaan + kasbonWarung);
 
   return [
     `*${title}*`,
@@ -98,13 +109,16 @@ function generateWhatsAppText(run: PayrollRunRow, item: PayrollItemRow, worker?:
     `• Kehadiran: ${num(item.full_days)} Full Day, ${num(item.half_days)} Half Day`,
     `• Gaji / Upah Pokok: ${money(item.base_amount)}`,
     num(item.meal_amount) > 0 ? `• Uang Makan: ${money(item.meal_amount)}` : null,
-    num(item.overtime_amount) > 0 ? `• Lembur (${otHours} jam): ${money(item.overtime_amount)}` : null,
-    bonus > 0 ? `• Bonus: ${money(bonus)}` : null,
+    totalOt > 0 ? `• Lembur (${otHours} jam${manualOt > 0 ? ` + Manual ${money(manualOt)}` : ""}): ${money(totalOt)}` : null,
+    bonus > 0 ? `• Bonus / Libur: ${money(bonus)}` : null,
     `-----------------------------`,
-    `*Total Bruto:* ${money(num(item.base_amount) + num(item.meal_amount) + num(item.overtime_amount) + bonus)}`,
+    `*Total Bruto:* ${money(num(item.base_amount) + num(item.meal_amount) + totalOt + bonus)}`,
     ``,
-    `*POTONGAN:*`,
-    `• Kasbon / Lainnya: -${money(item.deduction_amount)}`,
+    `*POTONGAN KASBON & LAINNYA:*`,
+    kasbonPerusahaan > 0 ? `• Kasbon Perusahaan (Cicilan): -${money(kasbonPerusahaan)}` : null,
+    kasbonWarung > 0 ? `• Kasbon Warung Luar: -${money(kasbonWarung)}` : null,
+    (kasbonPerusahaan === 0 && kasbonWarung === 0 && totalDeduction > 0) ? `• Potongan Kasbon: -${money(totalDeduction)}` : null,
+    totalDeduction > 0 && (kasbonPerusahaan > 0 || kasbonWarung > 0) ? `• Total Seluruh Potongan: -${money(totalDeduction)}` : null,
     `=============================`,
     `*TOTAL DITERIMA (NET): ${money(item.net_amount)}*`,
     `=============================`,
@@ -218,12 +232,27 @@ function renderSlipCanvas(run: PayrollRunRow, item: PayrollItemRow, worker?: Wor
   }
 
   drawRow("Total Pendapatan Bruto", money(gross), curY, true);
-  curY += 80;
+  curY += 75;
 
-  if (deduction > 0) {
-    drawRow("Potongan Kasbon / Lainnya", `-${money(deduction)}`, curY);
-    curY += 75;
+  const kasbonPerusahaan = num(item.kasbon_perusahaan_amount);
+  const kasbonWarung = num(item.kasbon_warung_amount);
+
+  if (kasbonPerusahaan > 0) {
+    drawRow("Kasbon Perusahaan (Cicilan)", `-${money(kasbonPerusahaan)}`, curY);
+    curY += 60;
   }
+
+  if (kasbonWarung > 0) {
+    drawRow("Kasbon Warung Luar", `-${money(kasbonWarung)}`, curY);
+    curY += 60;
+  }
+
+  if (kasbonPerusahaan === 0 && kasbonWarung === 0 && deduction > 0) {
+    drawRow("Potongan Kasbon / Lainnya", `-${money(deduction)}`, curY);
+    curY += 60;
+  }
+
+  curY += 15;
 
   // Net Box
   c.fillStyle = "#ecfdf5";
@@ -407,10 +436,12 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
             <tbody>
               <tr><td>Upah / Gaji Pokok</td><td style="text-align: right; font-weight: 600;">${money(item.base_amount)}</td></tr>
               ${num(item.meal_amount) > 0 ? `<tr><td>Uang Makan</td><td style="text-align: right; font-weight: 600;">${money(item.meal_amount)}</td></tr>` : ""}
-              ${num(item.overtime_amount) > 0 ? `<tr><td>Upah Lembur (${otHours} jam)</td><td style="text-align: right; font-weight: 600;">${money(item.overtime_amount)}</td></tr>` : ""}
+              ${(num(item.overtime_amount) + num(item.manual_overtime_amount)) > 0 ? `<tr><td>Upah Lembur (${otHours} jam${num(item.manual_overtime_amount) > 0 ? ` + Manual ${money(item.manual_overtime_amount)}` : ""})</td><td style="text-align: right; font-weight: 600;">${money(num(item.overtime_amount) + num(item.manual_overtime_amount))}</td></tr>` : ""}
               ${bonus > 0 ? `<tr><td>Bonus / Hari Libur</td><td style="text-align: right; font-weight: 600;">${money(bonus)}</td></tr>` : ""}
-              <tr class="total"><td>Total Pendapatan Bruto</td><td style="text-align: right; font-weight: 700;">${money(num(item.base_amount) + num(item.meal_amount) + num(item.overtime_amount) + bonus)}</td></tr>
-              ${num(item.deduction_amount) > 0 ? `<tr><td style="color: #dc2626;">Potongan Kasbon / Lainnya</td><td style="text-align: right; font-weight: 600; color: #dc2626;">-${money(item.deduction_amount)}</td></tr>` : ""}
+              <tr class="total"><td>Total Pendapatan Bruto</td><td style="text-align: right; font-weight: 700;">${money(num(item.base_amount) + num(item.meal_amount) + num(item.overtime_amount) + num(item.manual_overtime_amount) + bonus)}</td></tr>
+              ${num(item.kasbon_perusahaan_amount) > 0 ? `<tr><td style="color: #dc2626;">Potongan Kasbon Perusahaan (Cicilan)</td><td style="text-align: right; font-weight: 600; color: #dc2626;">-${money(item.kasbon_perusahaan_amount)}</td></tr>` : ""}
+              ${num(item.kasbon_warung_amount) > 0 ? `<tr><td style="color: #d97706;">Potongan Kasbon Warung Luar</td><td style="text-align: right; font-weight: 600; color: #d97706;">-${money(item.kasbon_warung_amount)}</td></tr>` : ""}
+              ${num(item.kasbon_perusahaan_amount) === 0 && num(item.kasbon_warung_amount) === 0 && num(item.deduction_amount) > 0 ? `<tr><td style="color: #dc2626;">Potongan Kasbon / Lainnya</td><td style="text-align: right; font-weight: 600; color: #dc2626;">-${money(item.deduction_amount)}</td></tr>` : ""}
             </tbody>
           </table>
 
@@ -475,10 +506,12 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
             <tbody>
               <tr><td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">Upah / Gaji Pokok</td><td style="text-align: right; font-weight: 600;">${money(item.base_amount)}</td></tr>
               ${num(item.meal_amount) > 0 ? `<tr><td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">Uang Makan</td><td style="text-align: right; font-weight: 600;">${money(item.meal_amount)}</td></tr>` : ""}
-              ${num(item.overtime_amount) > 0 ? `<tr><td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">Upah Lembur (${otHours} jam)</td><td style="text-align: right; font-weight: 600;">${money(item.overtime_amount)}</td></tr>` : ""}
-              ${bonus > 0 ? `<tr><td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">Bonus</td><td style="text-align: right; font-weight: 600;">${money(bonus)}</td></tr>` : ""}
-              <tr style="font-weight: 700; border-top: 1.5px solid #94a3b8; border-bottom: 1.5px solid #94a3b8;"><td style="padding: 6px 0;">Total Bruto</td><td style="text-align: right;">${money(num(item.base_amount) + num(item.meal_amount) + num(item.overtime_amount) + bonus)}</td></tr>
-              ${num(item.deduction_amount) > 0 ? `<tr><td style="padding: 6px 0; color: #dc2626;">Potongan Kasbon</td><td style="text-align: right; font-weight: 600; color: #dc2626;">-${money(item.deduction_amount)}</td></tr>` : ""}
+              ${(num(item.overtime_amount) + num(item.manual_overtime_amount)) > 0 ? `<tr><td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">Upah Lembur (${otHours} jam${num(item.manual_overtime_amount) > 0 ? ` + Manual ${money(item.manual_overtime_amount)}` : ""})</td><td style="text-align: right; font-weight: 600;">${money(num(item.overtime_amount) + num(item.manual_overtime_amount))}</td></tr>` : ""}
+              ${bonus > 0 ? `<tr><td style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">Bonus / Libur</td><td style="text-align: right; font-weight: 600;">${money(bonus)}</td></tr>` : ""}
+              <tr style="font-weight: 700; border-top: 1.5px solid #94a3b8; border-bottom: 1.5px solid #94a3b8;"><td style="padding: 6px 0;">Total Bruto</td><td style="text-align: right;">${money(num(item.base_amount) + num(item.meal_amount) + num(item.overtime_amount) + num(item.manual_overtime_amount) + bonus)}</td></tr>
+              ${num(item.kasbon_perusahaan_amount) > 0 ? `<tr><td style="padding: 6px 0; color: #dc2626;">Potongan Kasbon Perusahaan</td><td style="text-align: right; font-weight: 600; color: #dc2626;">-${money(item.kasbon_perusahaan_amount)}</td></tr>` : ""}
+              ${num(item.kasbon_warung_amount) > 0 ? `<tr><td style="padding: 6px 0; color: #d97706;">Potongan Kasbon Warung Luar</td><td style="text-align: right; font-weight: 600; color: #d97706;">-${money(item.kasbon_warung_amount)}</td></tr>` : ""}
+              ${num(item.kasbon_perusahaan_amount) === 0 && num(item.kasbon_warung_amount) === 0 && num(item.deduction_amount) > 0 ? `<tr><td style="padding: 6px 0; color: #dc2626;">Potongan Kasbon</td><td style="text-align: right; font-weight: 600; color: #dc2626;">-${money(item.deduction_amount)}</td></tr>` : ""}
             </tbody>
           </table>
 
@@ -622,10 +655,25 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
                         {money(item.base_amount)}
                       </td>
                       <td className="px-3.5 py-2.5 text-right text-slate-600">
-                        {bonus > 0 ? money(bonus) : "-"}
+                        {bonus + num(item.manual_overtime_amount) > 0 ? (
+                          <div>
+                            <div>{money(bonus + num(item.manual_overtime_amount))}</div>
+                            {num(item.manual_overtime_amount) > 0 ? (
+                              <div className="text-[10px] text-blue-600 font-semibold">+Manual {money(item.manual_overtime_amount)}</div>
+                            ) : null}
+                          </div>
+                        ) : "-"}
                       </td>
                       <td className="px-3.5 py-2.5 text-right font-medium text-rose-600">
-                        {num(item.deduction_amount) > 0 ? `-${money(item.deduction_amount)}` : "-"}
+                        {num(item.deduction_amount) > 0 ? (
+                          <div>
+                            <div>-{money(item.deduction_amount)}</div>
+                            <div className="text-[10px] text-slate-500 font-normal">
+                              {num(item.kasbon_perusahaan_amount) > 0 ? `🏢 ${money(item.kasbon_perusahaan_amount)} ` : ""}
+                              {num(item.kasbon_warung_amount) > 0 ? `🍜 ${money(item.kasbon_warung_amount)}` : ""}
+                            </div>
+                          </div>
+                        ) : "-"}
                       </td>
                       <td className="px-3.5 py-2.5 text-right font-bold text-emerald-600 text-sm">
                         {money(item.net_amount)}
@@ -708,10 +756,10 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
                     <span className="font-semibold text-slate-900">{money(activeItem.meal_amount)}</span>
                   </div>
                 ) : null}
-                {num(activeItem.overtime_amount) > 0 ? (
+                {(num(activeItem.overtime_amount) + num(activeItem.manual_overtime_amount)) > 0 ? (
                   <div className="flex justify-between py-1 border-b border-slate-200/70">
-                    <span className="text-slate-600">Lembur ({(num(activeItem.overtime_minutes) / 60).toFixed(1)} jam)</span>
-                    <span className="font-semibold text-slate-900">{money(activeItem.overtime_amount)}</span>
+                    <span className="text-slate-600">Lembur ({(num(activeItem.overtime_minutes) / 60).toFixed(1)} jam{num(activeItem.manual_overtime_amount) > 0 ? ` + Manual ${money(activeItem.manual_overtime_amount)}` : ""})</span>
+                    <span className="font-semibold text-slate-900">{money(num(activeItem.overtime_amount) + num(activeItem.manual_overtime_amount))}</span>
                   </div>
                 ) : null}
                 {num(activeItem.overtime_bonus) + num(activeItem.holiday_bonus) + num(activeItem.holiday_manual_amount) > 0 ? (
@@ -722,15 +770,53 @@ export function PayrollSlipManager({ runs, items, workers }: Props) {
                 ) : null}
                 <div className="flex justify-between py-1.5 font-bold text-slate-900 border-t border-b border-slate-300">
                   <span>Total Bruto</span>
-                  <span>{money(num(activeItem.base_amount) + num(activeItem.meal_amount) + num(activeItem.overtime_amount) + num(activeItem.overtime_bonus) + num(activeItem.holiday_bonus) + num(activeItem.holiday_manual_amount))}</span>
+                  <span>{money(num(activeItem.base_amount) + num(activeItem.meal_amount) + num(activeItem.overtime_amount) + num(activeItem.manual_overtime_amount) + num(activeItem.overtime_bonus) + num(activeItem.holiday_bonus) + num(activeItem.holiday_manual_amount))}</span>
                 </div>
-                {num(activeItem.deduction_amount) > 0 ? (
+                {num(activeItem.kasbon_perusahaan_amount) > 0 ? (
+                  <div className="flex justify-between py-1 text-rose-600 font-semibold">
+                    <span>Potongan Kasbon Perusahaan (Cicilan)</span>
+                    <span>-{money(activeItem.kasbon_perusahaan_amount)}</span>
+                  </div>
+                ) : null}
+                {num(activeItem.kasbon_warung_amount) > 0 ? (
+                  <div className="flex justify-between py-1 text-amber-700 font-semibold">
+                    <span>Potongan Kasbon Warung Luar</span>
+                    <span>-{money(activeItem.kasbon_warung_amount)}</span>
+                  </div>
+                ) : null}
+                {num(activeItem.kasbon_perusahaan_amount) === 0 && num(activeItem.kasbon_warung_amount) === 0 && num(activeItem.deduction_amount) > 0 ? (
                   <div className="flex justify-between py-1 text-rose-600 font-semibold">
                     <span>Potongan Kasbon / Lainnya</span>
                     <span>-{money(activeItem.deduction_amount)}</span>
                   </div>
                 ) : null}
               </div>
+
+              {/* Form Input Lembur Manual untuk Admin */}
+              <form action={updatePayrollItemAction} className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs">
+                <input type="hidden" name="item_id" value={activeItem.id} />
+                <div className="font-bold text-blue-900 mb-1.5 flex items-center justify-between">
+                  <span>⚡ Input / Koreksi Lemburan Manual</span>
+                  <span className="text-[10px] font-normal text-blue-700">Otomatis tambah upah bruto & hitung net</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    name="manual_overtime_amount"
+                    type="number"
+                    min="0"
+                    step="5000"
+                    defaultValue={Number(activeItem.manual_overtime_amount) || ""}
+                    placeholder="Nominal uang lembur manual (Rp)"
+                    className="flex-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 font-bold text-white shadow-2xs hover:bg-blue-700 transition whitespace-nowrap"
+                  >
+                    Simpan Lembur
+                  </button>
+                </div>
+              </form>
 
               <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3.5 flex justify-between items-center">
                 <div>
