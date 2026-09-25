@@ -1,6 +1,19 @@
 export type SearchParams=Record<string,string|string[]|undefined>;
 export function param(p:SearchParams,key:string,fallback=""){const v=p[key];return Array.isArray(v)?String(v[0]??fallback):String(v??fallback)}
-export function n(v:unknown){const x=Number(v??0);return Number.isFinite(x)?x:0}
+export function n(v: unknown): number {
+  let val: unknown = v;
+  if (typeof val === "string") {
+    let s = val.replace(/^rp\.?\s*/i, "").replace(/\s+/g, "");
+    if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else if (s.includes(".") && (s.match(/\./g) || []).length > 1) {
+      s = s.replace(/\./g, "");
+    }
+    val = s;
+  }
+  const x = Number(val ?? 0);
+  return Number.isFinite(x) ? x : 0;
+}
 export function money(v:unknown){return new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(n(v))}
 export function qty(v:unknown){return new Intl.NumberFormat("id-ID",{maximumFractionDigits:4}).format(n(v))}
 export function text(v:unknown,fallback="-"){const s=String(v??"").trim();return s||fallback}

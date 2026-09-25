@@ -12,6 +12,7 @@ import {
   StatusBadge,
   secondaryButtonClass,
 } from "@/components/master/master-ui";
+import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -417,11 +418,9 @@ export default async function MasterItemPage({ searchParams }: Props) {
                               </Field>
 
                               <Field label="Qty / Produk" hint="Berapa kali pengerjaan per 1 pcs produk">
-                                <input
+                                <CurrencyNumberInput
                                   name="qty_per_product"
-                                  type="number"
-                                  min="1"
-                                  step="1"
+                                  min={1}
                                   required
                                   defaultValue={row.qty_per_product}
                                   className={inputClass}
@@ -429,26 +428,22 @@ export default async function MasterItemPage({ searchParams }: Props) {
                               </Field>
 
                               <Field label="Harga Operator (Rp)" hint="Upah tukang / biaya modal">
-                                <input
+                                <CurrencyNumberInput
                                   name="operator_price"
-                                  type="number"
-                                  min="0"
-                                  step="1"
+                                  min={0}
                                   required
                                   defaultValue={row.operator_price}
-                                  className={inputClass}
+                                  className={`${inputClass} font-bold text-slate-900`}
                                 />
                               </Field>
 
                               <Field label="Harga Pengajuan (Rp)" hint="Harga borongan diajukan">
-                                <input
+                                <CurrencyNumberInput
                                   name="proposed_price"
-                                  type="number"
-                                  min="0"
-                                  step="1"
+                                  min={0}
                                   required
                                   defaultValue={row.proposed_price}
-                                  className={inputClass}
+                                  className={`${inputClass} font-bold text-blue-900`}
                                 />
                               </Field>
 

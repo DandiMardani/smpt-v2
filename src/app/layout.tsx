@@ -2,6 +2,7 @@ import { Suspense, type CSSProperties, type ReactNode } from "react";
 import type { Metadata } from "next";
 import ProjectProductAuto from "@/components/master/project-product-auto";
 import { InlineFormValidation } from "@/components/inline-form-validation";
+import { GlobalNumberAutoFormat } from "@/components/forms/global-number-auto-format";
 import { GlobalActionFeedback } from "@/components/global-action-feedback";
 import "./globals.css";
 
@@ -28,6 +29,7 @@ export default function RootLayout({
         </Suspense>
         <ProjectProductAuto />
         <InlineFormValidation />
+        <GlobalNumberAutoFormat />
         {children}
       </body>
     </html>

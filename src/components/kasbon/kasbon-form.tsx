@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Field, buttonClass, inputClass } from "@/components/final/final-ui";
+import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { money } from "@/lib/final/final-utils";
 import { addCashAdvanceAction } from "@/lib/final/actions";
 
@@ -75,14 +76,12 @@ export function KasbonForm({ workers }: { workers: WorkerItem[] }) {
         </Field>
 
         <Field label="Nominal Total (Rp)">
-          <input
+          <CurrencyNumberInput
             name="amount"
-            type="number"
-            min="1000"
-            step="1000"
+            value={amount}
+            onChange={(val) => setAmount(val)}
+            min={1000}
             required
-            value={amount || ""}
-            onChange={(e) => setAmount(Number(e.target.value) || 0)}
             placeholder="Contoh: 3000000"
             className={inputClass}
           />

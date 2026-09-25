@@ -12,6 +12,7 @@ import {
   StatusBadge,
   secondaryButtonClass,
 } from "@/components/master/master-ui";
+import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -469,14 +470,12 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                               </Field>
 
                               <Field label="Harga Satuan (Rp)">
-                                <input
+                                <CurrencyNumberInput
                                   name="unit_price"
-                                  type="number"
-                                  min="0"
-                                  step="any"
+                                  min={0}
                                   required
                                   defaultValue={Number(row.unit_price || 0)}
-                                  className={inputClass}
+                                  className={`${inputClass} font-bold text-slate-900`}
                                 />
                               </Field>
 

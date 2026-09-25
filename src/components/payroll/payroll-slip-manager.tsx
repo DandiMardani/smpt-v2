@@ -833,7 +833,7 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Pr
                     name="manual_overtime_amount"
                     type="number"
                     min="0"
-                    step="5000"
+                    step="any"
                     defaultValue={Number(activeItem.manual_overtime_amount) || ""}
                     placeholder="Nominal uang lembur manual (Rp)"
                     className="flex-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"

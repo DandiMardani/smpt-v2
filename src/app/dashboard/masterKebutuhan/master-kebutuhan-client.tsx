@@ -12,6 +12,7 @@ import {
   selectClass,
 } from "@/components/master/master-ui";
 import { BomCalculator } from "@/components/master/bom-calculator";
+import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { formatNumber, formatRupiah } from "@/lib/master/page-utils";
 import { saveBomRequirement } from "./actions";
 
@@ -449,9 +450,9 @@ export function MasterKebutuhanCreateForm({
               name="qty_per_unit"
               type="number"
               min="0.0001"
-              step="0.0001"
-              value={qtyPerUnit}
-              onChange={(e) => setQtyPerUnit(Number(e.target.value) || 0)}
+              step="any"
+              value={qtyPerUnit || ""}
+              onChange={(e) => setQtyPerUnit(e.target.value === "" ? 0 : Number(e.target.value))}
               required
               className={inputClass}
             />
@@ -465,14 +466,13 @@ export function MasterKebutuhanCreateForm({
                 : "Estimasi harga beli bahan per satuan"
             }
           >
-            <input
+            <CurrencyNumberInput
               name="unit_price"
-              type="number"
-              min="0"
-              step="100"
               value={unitPrice}
-              onChange={(e) => setUnitPrice(Number(e.target.value) || 0)}
+              onChange={(val) => setUnitPrice(val)}
+              min={0}
               required
+              placeholder="0"
               className={`${inputClass} font-bold text-slate-900`}
             />
           </Field>

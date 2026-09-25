@@ -22,12 +22,26 @@ export function getOptionalId(formData: FormData, key: string): number | null {
   return value;
 }
 
+function sanitizeNumericString(raw: string): string {
+  let s = raw.trim().replace(/^rp\.?\s*/i, "").replace(/\s+/g, "");
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d+(,\d+)$/.test(s) && !s.includes(".")) {
+    s = s.replace(",", ".");
+  } else if (s.includes(".")) {
+    if ((s.match(/\./g) || []).length > 1) {
+      s = s.replace(/\./g, "");
+    }
+  }
+  return s;
+}
+
 export function getInteger(
   formData: FormData,
   key: string,
   options: { min?: number } = {},
 ): number {
-  const raw = getText(formData, key);
+  const raw = sanitizeNumericString(getText(formData, key));
   const value = Number(raw);
   if (!Number.isSafeInteger(value)) {
     throw new Error(`${key} harus berupa bilangan bulat.`);
@@ -43,7 +57,7 @@ export function getNumber(
   key: string,
   options: { min?: number } = {},
 ): number {
-  const raw = getText(formData, key);
+  const raw = sanitizeNumericString(getText(formData, key));
   const value = Number(raw);
   if (!Number.isFinite(value)) {
     throw new Error(`${key} harus berupa angka.`);

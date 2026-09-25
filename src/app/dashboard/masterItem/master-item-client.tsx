@@ -12,6 +12,7 @@ import {
   selectClass,
 } from "@/components/master/master-ui";
 import { formatNumber, formatRupiah } from "@/lib/master/page-utils";
+import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { saveWorkItem } from "./actions";
 
 type ProjectRef = { id: number; project_code: string; name: string; status: string };
@@ -376,14 +377,13 @@ export function MasterItemCreateForm({
           </Field>
 
           <Field label="Qty Pekerjaan / Produk" hint="Berapa kali dilakukan untuk 1 produk">
-            <input
+            <CurrencyNumberInput
               name="qty_per_product"
-              type="number"
-              min="1"
-              step="1"
               value={qtyPerProduct}
-              onChange={(e) => setQtyPerProduct(Number(e.target.value) || 1)}
+              onChange={(val) => setQtyPerProduct(val || 1)}
+              min={1}
               required
+              placeholder="1"
               className={inputClass}
             />
           </Field>
@@ -396,14 +396,13 @@ export function MasterItemCreateForm({
                 : "Upah borongan per unit pekerjaan yang diterima pekerja"
             }
           >
-            <input
+            <CurrencyNumberInput
               name="operator_price"
-              type="number"
-              min="0"
-              step="50"
               value={operatorPrice}
-              onChange={(e) => setOperatorPrice(Number(e.target.value) || 0)}
+              onChange={(val) => setOperatorPrice(val)}
+              min={0}
               required
+              placeholder="0"
               className={`${inputClass} font-bold text-slate-900`}
             />
           </Field>
@@ -416,14 +415,13 @@ export function MasterItemCreateForm({
                 : "Tarif borongan yang diajukan ke klien/pemberi kerja"
             }
           >
-            <input
+            <CurrencyNumberInput
               name="proposed_price"
-              type="number"
-              min="0"
-              step="50"
               value={proposedPrice}
-              onChange={(e) => setProposedPrice(Number(e.target.value) || 0)}
+              onChange={(val) => setProposedPrice(val)}
+              min={0}
               required
+              placeholder="0"
               className={`${inputClass} font-bold text-blue-900`}
             />
           </Field>

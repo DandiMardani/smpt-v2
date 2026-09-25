@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Badge, Empty, Field, buttonClass, inputClass } from "@/components/final/final-ui";
+import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { money, n } from "@/lib/final/final-utils";
 import { recordWarungDebtAction } from "@/lib/final/actions";
 
@@ -163,15 +164,12 @@ export function WarungPortal({
               </Field>
 
               <Field label="Nominal Hutang (Rp)">
-                <input
+                <CurrencyNumberInput
                   name="amount"
-                  type="number"
-                  min="1000"
-                  step="500"
-                  required
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(val) => setAmount(val ? String(val) : "")}
                   placeholder="Contoh: 25000"
+                  required
                   className={`${inputClass} !bg-white font-bold text-gray-900`}
                 />
               </Field>

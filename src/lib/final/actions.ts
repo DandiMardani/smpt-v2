@@ -6,7 +6,7 @@ import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 
 function t(f:FormData,k:string){return String(f.get(k)??"").trim()}
-function num(f:FormData,k:string,nullable=false){const raw=t(f,k);if(!raw&&nullable)return null;const v=Number(raw);if(!Number.isFinite(v))throw new Error(`${k} tidak valid.`);return v}
+function num(f:FormData,k:string,nullable=false){let raw=t(f,k).replace(/^rp\.?\s*/i,"").replace(/\s+/g,"");if(!raw&&nullable)return null;if(/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw)){raw=raw.replace(/\./g,"").replace(",",".");}else if(/^\d+(,\d+)$/.test(raw)&&!raw.includes(".")){raw=raw.replace(",",".");}else if(raw.includes(".")&&(raw.match(/\./g)||[]).length>1){raw=raw.replace(/\./g,"");}const v=Number(raw);if(!Number.isFinite(v))throw new Error(`${k} tidak valid.`);return v}
 function id(f:FormData,k:string,nullable=false){const v=num(f,k,nullable);if(v===null)return null;if(!Number.isSafeInteger(v)||v<=0)throw new Error(`${k} tidak valid.`);return v}
 function date(f:FormData,k:string,nullable=false){const v=t(f,k);if(!v&&nullable)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(v))throw new Error(`${k} tidak valid.`);return v}
 function msg(e: unknown): string {
