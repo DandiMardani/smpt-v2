@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ManagerDashboard, type ManagerSummary } from "@/components/manager/manager-dashboard";
 import { getCurrentAccessContext } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
@@ -52,7 +53,7 @@ export default async function DashboardPage() {
               Dashboard Operasional
             </h1>
             <p className="mt-1.5 max-w-3xl text-sm leading-6 text-gray-600">
-              Selamat datang di SMPT V2. Pilih modul kerja dari sidebar untuk memulai aktivitas.
+              Selamat datang, <b>{access.displayName || access.email}</b>. Pilih modul kerja dari sidebar atau gunakan tombol pintas di bawah untuk memulai.
             </p>
           </div>
           <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-right">
@@ -61,6 +62,56 @@ export default async function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {/* Shortcut Khusus Role PEKERJA (Bulanan / Harian / Borongan) */}
+      {access.role === "PEKERJA" && (
+        <section className="rounded-2xl border-2 border-blue-200 bg-gradient-to-r from-blue-500 to-indigo-600 p-6 text-white shadow-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <span className="inline-block rounded-full bg-white/20 px-3 py-0.5 text-xs font-bold tracking-wide uppercase">
+                Portal Finansial & Kerja Anda
+              </span>
+              <h2 className="mt-2 text-xl font-black">
+                Pantau Gaji Berjalan & Rincian Hutang/Kasbon
+              </h2>
+              <p className="mt-1 text-sm text-blue-100 max-w-2xl leading-relaxed">
+                Ketahui estimasi upah bulan ini, sisa cicilan pinjaman perusahaan, dan catatan hutang makan di warung mitra secara real-time.
+              </p>
+            </div>
+            <Link
+              href="/dashboard/setoran"
+              className="inline-flex shrink-0 items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-blue-700 shadow-sm transition hover:bg-blue-50 active:scale-98"
+            >
+              💰 Buka Gaji & Pekerjaan Saya →
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {/* Shortcut Khusus Role WARUNG */}
+      {access.role === "WARUNG" && (
+        <section className="rounded-2xl border-2 border-amber-300 bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white shadow-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <span className="inline-block rounded-full bg-white/20 px-3 py-0.5 text-xs font-bold tracking-wide uppercase">
+                Mitra Warung Luar
+              </span>
+              <h2 className="mt-2 text-xl font-black">
+                Pencatatan Kasbon Warung Makan Pekerja
+              </h2>
+              <p className="mt-1 text-sm text-amber-100 max-w-2xl leading-relaxed">
+                Catat konsumsi makan harian pekerja pabrik. Tagihan otomatis dipotong langsung saat slip gaji payroll diproses kantor.
+              </p>
+            </div>
+            <Link
+              href="/dashboard/warung"
+              className="inline-flex shrink-0 items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-amber-800 shadow-sm transition hover:bg-amber-50 active:scale-98"
+            >
+              🍜 Buka Portal Warung →
+            </Link>
+          </div>
+        </section>
+      )}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-gray-200/90 bg-white p-5 shadow-xs transition hover:shadow-sm">

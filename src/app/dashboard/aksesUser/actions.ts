@@ -81,6 +81,7 @@ export async function createUserAccessAction(f: FormData) {
 
   try {
     const email = text(f, "email").toLowerCase();
+    const displayName = text(f, "display_name");
     const password = passwordText(f, "password");
     const confirmation = passwordText(f, "confirm_password");
     const roleCode = text(f, "role_code").toUpperCase() || "USER";
@@ -99,12 +100,17 @@ export async function createUserAccessAction(f: FormData) {
       email,
       password,
       email_confirm: true,
+      user_metadata: displayName ? { display_name: displayName } : undefined,
     });
     if (error) throw error;
     if (!data.user?.id) throw new Error("Akun Auth gagal dibuat.");
 
     try {
       await saveAccess(data.user.id, roleCode, workerId, true);
+      if (displayName) {
+        const s = await createClient();
+        await s.from("profiles").update({ display_name: displayName }).eq("id", data.user.id);
+      }
     } catch (accessError) {
       // Hindari akun Auth yatim bila penyimpanan role/link pekerja gagal.
       await admin.auth.admin.deleteUser(data.user.id).catch(() => undefined);
@@ -120,9 +126,10 @@ export async function createUserAccessAction(f: FormData) {
 
 export async function saveUserAccessAction(f: FormData) {
   await requireAdminWrite();
+  const userId = text(f, "user_id");
   try {
-    const userId = text(f, "user_id");
     const roleCode = text(f, "role_code").toUpperCase();
+    const displayName = text(f, "display_name");
     const workerId = workerIdFromForm(f);
     const isActive = text(f, "is_active") !== "false";
 
@@ -130,14 +137,71 @@ export async function saveUserAccessAction(f: FormData) {
     if (!roleCode) throw new Error("Role wajib dipilih.");
     if (roleCode === "PEKERJA" && workerId == null) throw new Error("Role PEKERJA wajib dihubungkan ke Master Pekerja.");
 
+    const s = await createClient();
+
+    // 1. Update display_name on profiles
+    await s.from("profiles").update({
+      display_name: displayName || null,
+      is_active: isActive,
+      updated_at: new Date().toISOString(),
+    }).eq("id", userId);
+
+    // 2. Save role and worker link
     await saveAccess(userId, roleCode, workerId, isActive);
+
+    // 3. Optional update user metadata in auth
+    try {
+      const admin = createAdminAuthClient();
+      await admin.auth.admin.updateUserById(userId, {
+        user_metadata: { display_name: displayName || null },
+      });
+    } catch {
+      // Ignore if service role key not configured
+    }
   } catch (e) {
     redirectWithMessage(PATH, "error", errorMessage(e, "Gagal menyimpan akses user."));
   }
 
   revalidatePath(PATH);
   revalidatePath("/dashboard");
-  redirectWithMessage(PATH, "success", "Role dan link pekerja berhasil disimpan.");
+  redirectWithMessage(PATH, "success", "Username, role, dan link pekerja berhasil disimpan.");
+}
+
+export async function deleteUserAccessAction(f: FormData) {
+  const access = await requireAdminWrite();
+  try {
+    const userId = text(f, "user_id");
+    if (!userId) throw new Error("Akun wajib dipilih.");
+
+    if (userId === access.userId) {
+      throw new Error("Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif.");
+    }
+
+    const s = await createClient();
+
+    // 1. Try deleting via RPC first (runs with Postgres security definer)
+    const { error: rpcErr } = await s.rpc("smpt_admin_delete_user", { p_user_id: userId });
+
+    // 2. Also try delete from admin auth API
+    try {
+      const admin = createAdminAuthClient();
+      await admin.auth.admin.deleteUser(userId);
+    } catch {
+      // Ignore if service role key is absent or user was deleted by RPC
+    }
+
+    if (rpcErr) {
+      // Fallback direct delete
+      await s.from("user_worker_links").delete().eq("user_id", userId);
+      await s.from("profiles").delete().eq("id", userId);
+    }
+  } catch (e) {
+    redirectWithMessage(PATH, "error", errorMessage(e, "Gagal menghapus akun user."));
+  }
+
+  revalidatePath(PATH);
+  revalidatePath("/dashboard");
+  redirectWithMessage(PATH, "success", "Akun user berhasil dihapus secara permanen.");
 }
 
 export async function adminSetUserPasswordAction(f: FormData) {

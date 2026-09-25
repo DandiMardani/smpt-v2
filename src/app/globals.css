@@ -69,3 +69,17 @@ textarea[data-smpt-invalid="true"]:focus {
   line-height: 1.15rem;
   font-weight: 600;
 }
+
+/* Button & interactive feedback */
+button:active:not(:disabled),
+a[role="button"]:active {
+  transform: scale(0.98);
+}
+
+button[data-smpt-loading="true"] {
+  cursor: wait !important;
+  opacity: 0.78 !important;
+  pointer-events: none !important;
+  transform: scale(0.99);
+}
+
