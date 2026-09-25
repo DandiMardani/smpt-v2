@@ -1,4 +1,8 @@
 import SecureAttendanceImport from "@/components/attendance/secure-attendance-import";
+import AttendanceManager, {
+  type AttendanceRecordItem,
+  type WorkerItem,
+} from "@/components/attendance/attendance-manager";
 import {
   Badge,
   Card,
@@ -14,29 +18,9 @@ import {
 import { requirePermission } from "@/lib/access/current-user";
 import { param, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
-import { addAttendanceAction, verifyAttendanceAction } from "@/lib/final/actions";
+import { addAttendanceAction } from "@/lib/final/actions";
 
 type Props = { searchParams: Promise<SearchParams> };
-
-type WorkerRow = {
-  id: number;
-  worker_code: string;
-  finger_id: string | null;
-  name: string;
-  pay_system: string | null;
-  status: string;
-};
-
-type AttendanceRow = {
-  id: number;
-  attendance_code: string;
-  worker_id: number;
-  attendance_date: string;
-  attendance_status: string;
-  actual_in: string | null;
-  actual_out: string | null;
-  verification_status: string;
-};
 
 export default async function Page({ searchParams }: Props) {
   const access = await requirePermission("absensi.view");
@@ -47,22 +31,24 @@ export default async function Page({ searchParams }: Props) {
   const [workerResult, attendanceResult] = await Promise.all([
     supabase
       .from("workers")
-      .select("id,worker_code,finger_id,name,pay_system,status")
+      .select("id,worker_code,finger_id,name,pay_system,status,department,position,daily_wage,monthly_salary")
       .eq("status", "AKTIF")
       .order("name")
       .limit(1000),
     supabase
       .from("attendance_records")
-      .select("id,attendance_code,worker_id,attendance_date,attendance_status,actual_in,actual_out,verification_status")
+      .select(
+        "id,attendance_code,worker_id,attendance_date,attendance_status,day_class,schedule_in,schedule_out,actual_in,actual_out,overtime_minutes,verification_status,notes"
+      )
       .order("attendance_date", { ascending: false })
-      .limit(500),
+      .limit(1000),
   ]);
 
   const error = [workerResult.error, attendanceResult.error].find(Boolean);
   if (error) throw new Error(error.message);
 
-  const workers = (workerResult.data ?? []) as WorkerRow[];
-  const attendance = (attendanceResult.data ?? []) as AttendanceRow[];
+  const workers = (workerResult.data ?? []) as WorkerItem[];
+  const attendance = (attendanceResult.data ?? []) as AttendanceRecordItem[];
   const workerMap = new Map(workers.map((worker) => [worker.id, worker]));
 
   return (
@@ -118,44 +104,8 @@ export default async function Page({ searchParams }: Props) {
         </Card>
       ) : null}
 
-      <Card title="Data Absensi">
-        <div className="space-y-2">
-          {attendance.map((row) => (
-            <div key={row.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-              <div className="flex flex-wrap justify-between items-center gap-3">
-                <div>
-                  <b className="font-bold text-slate-900 text-sm">
-                    {row.attendance_code} · {workerMap.get(row.worker_id)?.name || `#${row.worker_id}`}
-                  </b>
-                  <span className="ml-2 text-xs text-slate-500">
-                    {row.attendance_date} · {row.attendance_status} · {row.actual_in || "-"}—{row.actual_out || "-"}
-                  </span>
-                </div>
-                <Badge>{row.verification_status}</Badge>
-              </div>
-
-              {canWrite && row.verification_status !== "TERVERIFIKASI" ? (
-                <form action={verifyAttendanceAction} className="mt-3 grid gap-2 md:grid-cols-4 border-t border-slate-100 pt-3">
-                  <input type="hidden" name="attendance_id" value={row.id} />
-                  <select name="day_class" required className={inputClass}>
-                    <option value="FULL_DAY">FULL DAY</option>
-                    <option value="HALF_DAY">HALF DAY</option>
-                  </select>
-                  <input
-                    name="overtime_minutes"
-                    type="number"
-                    min="0"
-                    defaultValue="0"
-                    className={inputClass}
-                    placeholder="Menit lembur"
-                  />
-                  <input name="notes" className={inputClass} placeholder="Catatan verifikasi" />
-                  <button className={secondaryClass}>Verifikasi</button>
-                </form>
-              ) : null}
-            </div>
-          ))}
-        </div>
+      <Card title="Data & Verifikasi Absensi">
+        <AttendanceManager records={attendance} workers={workers} canWrite={canWrite} />
       </Card>
     </PageShell>
   );

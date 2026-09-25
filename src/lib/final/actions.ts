@@ -88,6 +88,87 @@ export async function createEmbarkationIssueAction(f:FormData){await mutate("/da
 
 export async function addAttendanceAction(f:FormData){await mutate("/dashboard/absensi","absensi.write",async()=>{const s=await createClient();const otMin=num(f,"overtime_minutes",true)??0;const payload={worker_id:id(f,"worker_id"),attendance_date:date(f,"attendance_date"),schedule_in:t(f,"schedule_in")||null,schedule_out:t(f,"schedule_out")||null,actual_in:t(f,"actual_in")||null,actual_out:t(f,"actual_out")||null,attendance_status:t(f,"attendance_status")||"HADIR",overtime_minutes:otMin,source:"MANUAL",notes:t(f,"notes")||null};const {error}=await s.from("attendance_records").upsert(payload,{onConflict:"worker_id,attendance_date"});if(error)throw error},"Absensi disimpan.")}
 export async function verifyAttendanceAction(f:FormData){await mutate("/dashboard/absensi","absensi.write",async()=>{await rpc("verify_attendance",{p_attendance_id:id(f,"attendance_id"),p_day_class:t(f,"day_class"),p_overtime_minutes:num(f,"overtime_minutes"),p_notes:t(f,"notes")||null})},"Absensi diverifikasi.")}
+export async function verifyBulkAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(path, "absensi.write", async () => {
+    const s = await createClient();
+    const {
+      data: { user },
+    } = await s.auth.getUser();
+    const rawItems = t(f, "items");
+    let itemsToVerify: Array<{
+      id: number;
+      day_class?: string;
+      overtime_minutes?: number;
+      notes?: string;
+    }> = [];
+
+    if (rawItems) {
+      try {
+        itemsToVerify = JSON.parse(rawItems);
+      } catch {
+        throw new Error("Format data verifikasi massal tidak valid.");
+      }
+    } else {
+      const rawIds = t(f, "attendance_ids");
+      const ids = rawIds
+        .split(",")
+        .map((x) => Number(x.trim()))
+        .filter((x) => x > 0);
+      const defaultDayClass = t(f, "default_day_class") || "FULL_DAY";
+      const defaultOt = num(f, "default_overtime_minutes", true) ?? 0;
+      itemsToVerify = ids.map((attId) => ({
+        id: attId,
+        day_class: defaultDayClass,
+        overtime_minutes: defaultOt,
+      }));
+    }
+
+    if (!itemsToVerify.length) {
+      throw new Error("Pilih minimal satu data absensi untuk diverifikasi.");
+    }
+
+    const now = new Date().toISOString();
+    for (const it of itemsToVerify) {
+      const dayClass = (it.day_class || "FULL_DAY").toUpperCase();
+      const otMin = Math.max(0, Math.round(Number(it.overtime_minutes || 0)));
+      const updatePayload: Record<string, unknown> = {
+        day_class: dayClass,
+        overtime_minutes: otMin,
+        verification_status: "TERVERIFIKASI",
+        verified_by: user?.id,
+        verified_at: now,
+        updated_at: now,
+      };
+      if (it.notes && it.notes.trim()) {
+        updatePayload.notes = it.notes.trim();
+      }
+
+      const { error } = await s.from("attendance_records").update(updatePayload).eq("id", it.id);
+      if (error) {
+        throw new Error(`Gagal verifikasi absensi #${it.id}: ${error.message}`);
+      }
+    }
+  }, "Berhasil memverifikasi data absensi sekaligus.");
+}
+export async function unverifyAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(path, "absensi.write", async () => {
+    const s = await createClient();
+    const attId = id(f, "attendance_id");
+    const { error } = await s
+      .from("attendance_records")
+      .update({
+        verification_status: "DRAFT",
+        verified_by: null,
+        verified_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", attId);
+
+    if (error) throw error;
+  }, "Status absensi dikembalikan ke DRAFT.");
+}
 export async function finalizePayrollAction(f:FormData){await mutate("/dashboard/payroll","payroll.write",async()=>{await rpc("finalize_general_payroll",{p_type:t(f,"payroll_type"),p_start:date(f,"period_start"),p_end:date(f,"period_end"),p_notes:t(f,"notes")||null})},"Payroll difinalisasi dari absensi terverifikasi.")}
 export async function finalizeOperatorPayrollAction(f:FormData){await mutate("/dashboard/payroll","payroll.write",async()=>{await rpc("finalize_operator_payroll",{p_start:date(f,"period_start"),p_end:date(f,"period_end"),p_notes:t(f,"notes")||null})},"Payroll Operator difinalisasi dari Qty Sah Checker + hasil manual HARIAN; Nilai Operator HARIAN tetap 0 dan Nilai Pengajuan terpisah.")}
 export async function updatePayrollItemAction(f:FormData){const path="/dashboard/payroll";await mutate(path,"payroll.write",async()=>{const s=await createClient();const itemId=id(f,"item_id");const manualOt=num(f,"manual_overtime_amount",true)??0;const {data:item,error:fetchErr}=await s.from("payroll_run_items").select("*").eq("id",itemId).single();if(fetchErr||!item)throw new Error("Item payroll tidak ditemukan.");const baseGross=Number(item.base_amount||0)+Number(item.meal_amount||0)+Number(item.overtime_amount||0)+Number(item.overtime_bonus||0)+Number(item.holiday_bonus||0)+Number(item.holiday_manual_amount||0);const newGross=baseGross+manualOt;const totalDeduction=Number(item.kasbon_perusahaan_amount||0)+Number(item.kasbon_warung_amount||0)+Number(item.deduction_amount||0);const newNet=Math.max(0,newGross-totalDeduction);const {error:updateErr}=await s.from("payroll_run_items").update({manual_overtime_amount:manualOt,net_amount:newNet}).eq("id",itemId);if(updateErr)throw updateErr},"Lemburan manual payroll tersimpan.")}
