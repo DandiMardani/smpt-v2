@@ -65,7 +65,8 @@ export function calculateShiftOvertime(
   actualIn?: string | null,
   actualOut?: string | null,
   paySystem: string = "HARIAN",
-  manualOvertimeMinutes?: number | null
+  manualOvertimeMinutes?: number | null,
+  shiftSettings?: Record<string, any>
 ): ShiftOvertimeResult {
   const isBulanan = String(paySystem).toUpperCase() === "BULANAN";
 
@@ -83,28 +84,38 @@ export function calculateShiftOvertime(
   const isWeekday = dow >= 1 && dow <= 5;
   const dayName = DAY_NAMES[dow] || "Hari";
 
-  // Tentukan jam kerja normal shift
-  let standardIn = "08:00";
-  let standardOut = "17:00";
-  let standardOutMinutes = 17 * 60; // 1020
+  // Tentukan jam kerja normal shift (dapat dikonfigurasi via payroll_settings)
+  let standardIn = (shiftSettings?.SHIFT_WEEKDAY_IN as string) || "08:00";
+  let standardOut = (shiftSettings?.SHIFT_WEEKDAY_OUT as string) || "17:00";
+  let standardOutMinutes = timeToMinutes(standardOut) ?? (17 * 60);
 
   if (isSaturday) {
-    standardOut = "15:00";
-    standardOutMinutes = 15 * 60; // 900
+    standardOut = (shiftSettings?.SHIFT_SATURDAY_OUT as string) || "15:00";
+    standardOutMinutes = timeToMinutes(standardOut) ?? (15 * 60);
   } else if (isSunday) {
-    standardIn = "08:00";
-    standardOut = "17:00";
-    standardOutMinutes = 17 * 60;
+    standardIn = (shiftSettings?.SHIFT_SUNDAY_IN as string) || "08:00";
+    standardOut = (shiftSettings?.SHIFT_SUNDAY_OUT as string) || "17:00";
+    standardOutMinutes = timeToMinutes(standardOut) ?? (17 * 60);
   }
+
+  const bonus4hDefault = isBulanan
+    ? Number(shiftSettings?.OT_BONUS_BULANAN_4H ?? 17500)
+    : Number(shiftSettings?.OT_BONUS_HARIAN_4H ?? 5000);
+  const sundayBonusDefault = isSunday && !isBulanan
+    ? Number(shiftSettings?.HARIAN_HOLIDAY_BONUS_FULL ?? 20000)
+    : 0;
+  const sundayMealDefault = isSunday && isBulanan
+    ? Number(shiftSettings?.BULANAN_SUNDAY_MEAL ?? 50000)
+    : 0;
 
   // Jika admin menginput menit lembur manual secara eksplisit (> 0)
   if (typeof manualOvertimeMinutes === "number" && manualOvertimeMinutes > 0) {
     const otMin = Math.round(manualOvertimeMinutes);
     const otHours = Math.round((otMin / 60) * 10) / 10;
     const qualifies4h = otMin >= 240;
-    const bonus4h = qualifies4h ? (isBulanan ? 17500 : 5000) : 0;
-    const sundayBonus = isSunday && !isBulanan ? 20000 : 0;
-    const sundayMeal = isSunday && isBulanan ? 50000 : 0;
+    const bonus4h = qualifies4h ? bonus4hDefault : 0;
+    const sundayBonus = sundayBonusDefault;
+    const sundayMeal = sundayMealDefault;
 
     return {
       dayOfWeek: dow,
@@ -166,9 +177,9 @@ export function calculateShiftOvertime(
 
   const otHours = Math.round((calculatedOtMinutes / 60) * 10) / 10;
   const qualifies4h = calculatedOtMinutes >= 240;
-  const bonus4h = qualifies4h ? (isBulanan ? 17500 : 5000) : 0;
-  const sundayBonus = isSunday && !isBulanan ? 20000 : 0;
-  const sundayMeal = isSunday && isBulanan ? 50000 : 0;
+  const bonus4h = qualifies4h ? bonus4hDefault : 0;
+  const sundayBonus = sundayBonusDefault;
+  const sundayMeal = sundayMealDefault;
   const fridayOvertimeNextWeek = isFriday && calculatedOtMinutes > 0;
 
   return {

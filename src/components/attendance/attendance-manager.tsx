@@ -44,9 +44,10 @@ type Props = {
   records: AttendanceRecordItem[];
   workers: WorkerItem[];
   canWrite: boolean;
+  shiftSettings?: Record<string, any>;
 };
 
-export default function AttendanceManager({ records, workers, canWrite }: Props) {
+export default function AttendanceManager({ records, workers, canWrite, shiftSettings }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "TERVERIFIKASI">("DRAFT");
   const [dateFilter, setDateFilter] = useState<string>("");
@@ -73,7 +74,8 @@ export default function AttendanceManager({ records, workers, canWrite }: Props)
         paySystem,
         rec.overtime_minutes > 0 && rec.verification_status === "TERVERIFIKASI"
           ? rec.overtime_minutes
-          : null
+          : null,
+        shiftSettings
       );
       return {
         ...rec,
@@ -81,7 +83,7 @@ export default function AttendanceManager({ records, workers, canWrite }: Props)
         calc,
       };
     });
-  }, [records, workerMap]);
+  }, [records, workerMap, shiftSettings]);
 
   // Filter records
   const filteredRecords = useMemo(() => {

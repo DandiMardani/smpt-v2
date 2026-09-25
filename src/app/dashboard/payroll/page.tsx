@@ -15,6 +15,7 @@ import {
   inputClass,
 } from "@/components/final/final-ui";
 import { PayrollSlipManager, type WorkerInfo, type PayrollRunRow, type PayrollItemRow } from "@/components/payroll/payroll-slip-manager";
+import PayrollSettingsModal, { type PayrollSettingsMap } from "@/components/payroll/payroll-settings-modal";
 import { requireAnyPermission } from "@/lib/access/current-user";
 import { finalizeOperatorPayrollAction, finalizePayrollAction } from "@/lib/final/actions";
 import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
@@ -50,13 +51,14 @@ export default async function Page({ searchParams }: Props) {
   const q = await searchParams;
   const supabase = await createClient();
 
-  const [payrollRunResult, payrollItemResult, operatorRunResult, operatorItemResult, workersResult, workerIdResult] = await Promise.all([
+  const [payrollRunResult, payrollItemResult, operatorRunResult, operatorItemResult, workersResult, workerIdResult, settingsResult] = await Promise.all([
     supabase.from("payroll_runs").select("*").order("period_end", { ascending: false }).limit(100),
     supabase.from("payroll_run_items").select("*").limit(2000),
     supabase.from("operator_payroll_runs").select("*").order("period_end", { ascending: false }).limit(100),
     supabase.from("operator_payroll_items").select("*").order("id", { ascending: false }).limit(3000),
     supabase.from("workers").select("id, worker_code, name, phone, department, position, identity_no"),
     supabase.rpc("smpt_current_worker_id"),
+    supabase.from("payroll_settings").select("key, value_numeric, value_text"),
   ]);
   const error = [payrollRunResult.error, payrollItemResult.error, operatorRunResult.error, operatorItemResult.error, workersResult.error].find(Boolean);
   if (error) throw new Error(error.message);
@@ -69,6 +71,12 @@ export default async function Page({ searchParams }: Props) {
   const currentWorkerId = (workerIdResult.data as number | null) ?? null;
   const operatorRunMap = new Map(operatorRuns.map((run) => [run.id, run]));
 
+  const settingsRows = (settingsResult.data ?? []) as Array<{ key: string; value_numeric: number | null; value_text: string | null }>;
+  const settingsMap: PayrollSettingsMap = {};
+  settingsRows.forEach((r) => {
+    (settingsMap as any)[r.key] = r.value_numeric ?? r.value_text;
+  });
+
   return (
     <PageShell
       eyebrow="SDM & Payroll"
@@ -77,9 +85,17 @@ export default async function Page({ searchParams }: Props) {
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
-      <Flow>
-        HARIAN/BULANAN memakai Master Pekerja + absensi terverifikasi. Slip gaji dapat dicetak satuan, dicetak massal per periode, atau dikirimkan langsung ke nomor WhatsApp pekerja lengkap dengan rincian pendapatan, potongan kasbon, dan upah bersih (netto).
-      </Flow>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Flow>
+          HARIAN/BULANAN memakai Master Pekerja + absensi terverifikasi. Slip gaji dapat dicetak satuan, dicetak massal per periode, atau dikirimkan langsung ke nomor WhatsApp pekerja lengkap dengan rincian pendapatan, potongan kasbon, dan upah bersih (netto).
+        </Flow>
+        {canWrite ? (
+          <div className="shrink-0">
+            <PayrollSettingsModal initialSettings={settingsMap} canWrite={canWrite} returnPath="/dashboard/payroll" />
+          </div>
+        ) : null}
+      </div>
 
       {canWrite ? (
         <div className="grid gap-4 lg:grid-cols-2">

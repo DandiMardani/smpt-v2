@@ -3,6 +3,9 @@ import AttendanceManager, {
   type AttendanceRecordItem,
   type WorkerItem,
 } from "@/components/attendance/attendance-manager";
+import PayrollSettingsModal, {
+  type PayrollSettingsMap,
+} from "@/components/payroll/payroll-settings-modal";
 import {
   Badge,
   Card,
@@ -28,7 +31,7 @@ export default async function Page({ searchParams }: Props) {
   const query = await searchParams;
   const supabase = await createClient();
 
-  const [workerResult, attendanceResult] = await Promise.all([
+  const [workerResult, attendanceResult, settingsResult] = await Promise.all([
     supabase
       .from("workers")
       .select("id,worker_code,finger_id,name,pay_system,status,department,position,daily_wage,monthly_salary")
@@ -42,6 +45,7 @@ export default async function Page({ searchParams }: Props) {
       )
       .order("attendance_date", { ascending: false })
       .limit(1000),
+    supabase.from("payroll_settings").select("key, value_numeric, value_text"),
   ]);
 
   const error = [workerResult.error, attendanceResult.error].find(Boolean);
@@ -49,7 +53,11 @@ export default async function Page({ searchParams }: Props) {
 
   const workers = (workerResult.data ?? []) as WorkerItem[];
   const attendance = (attendanceResult.data ?? []) as AttendanceRecordItem[];
-  const workerMap = new Map(workers.map((worker) => [worker.id, worker]));
+  const settingsRows = (settingsResult.data ?? []) as Array<{ key: string; value_numeric: number | null; value_text: string | null }>;
+  const settingsMap: PayrollSettingsMap = {};
+  settingsRows.forEach((r) => {
+    (settingsMap as any)[r.key] = r.value_numeric ?? r.value_text;
+  });
 
   return (
     <PageShell
@@ -59,10 +67,18 @@ export default async function Page({ searchParams }: Props) {
     >
       <Notice success={param(query, "success")} error={param(query, "error")} />
       {!canWrite ? <ReadOnly /> : null}
-      <Flow>
-        Secure fingerprint → preview/match Fingerprint ID → review Admin → TERVERIFIKASI → Payroll.
-        DRAFT/PERLU PERBAIKAN tidak dihitung Payroll.
-      </Flow>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Flow>
+          Secure fingerprint → preview/match Fingerprint ID → review Admin → TERVERIFIKASI → Payroll.
+          DRAFT/PERLU PERBAIKAN tidak dihitung Payroll.
+        </Flow>
+        {canWrite ? (
+          <div className="shrink-0">
+            <PayrollSettingsModal initialSettings={settingsMap} canWrite={canWrite} returnPath="/dashboard/absensi" />
+          </div>
+        ) : null}
+      </div>
 
       <SecureAttendanceImport canWrite={canWrite} />
 
@@ -105,7 +121,7 @@ export default async function Page({ searchParams }: Props) {
       ) : null}
 
       <Card title="Data & Verifikasi Absensi">
-        <AttendanceManager records={attendance} workers={workers} canWrite={canWrite} />
+        <AttendanceManager records={attendance} workers={workers} canWrite={canWrite} shiftSettings={settingsMap} />
       </Card>
     </PageShell>
   );

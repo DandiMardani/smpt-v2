@@ -172,6 +172,46 @@ export async function unverifyAttendanceAction(f: FormData) {
 export async function finalizePayrollAction(f:FormData){await mutate("/dashboard/payroll","payroll.write",async()=>{await rpc("finalize_general_payroll",{p_type:t(f,"payroll_type"),p_start:date(f,"period_start"),p_end:date(f,"period_end"),p_notes:t(f,"notes")||null})},"Payroll difinalisasi dari absensi terverifikasi.")}
 export async function finalizeOperatorPayrollAction(f:FormData){await mutate("/dashboard/payroll","payroll.write",async()=>{await rpc("finalize_operator_payroll",{p_start:date(f,"period_start"),p_end:date(f,"period_end"),p_notes:t(f,"notes")||null})},"Payroll Operator difinalisasi dari Qty Sah Checker + hasil manual HARIAN; Nilai Operator HARIAN tetap 0 dan Nilai Pengajuan terpisah.")}
 export async function updatePayrollItemAction(f:FormData){const path="/dashboard/payroll";await mutate(path,"payroll.write",async()=>{const s=await createClient();const itemId=id(f,"item_id");const manualOt=num(f,"manual_overtime_amount",true)??0;const {data:item,error:fetchErr}=await s.from("payroll_run_items").select("*").eq("id",itemId).single();if(fetchErr||!item)throw new Error("Item payroll tidak ditemukan.");const baseGross=Number(item.base_amount||0)+Number(item.meal_amount||0)+Number(item.overtime_amount||0)+Number(item.overtime_bonus||0)+Number(item.holiday_bonus||0)+Number(item.holiday_manual_amount||0);const newGross=baseGross+manualOt;const totalDeduction=Number(item.kasbon_perusahaan_amount||0)+Number(item.kasbon_warung_amount||0)+Number(item.deduction_amount||0);const newNet=Math.max(0,newGross-totalDeduction);const {error:updateErr}=await s.from("payroll_run_items").update({manual_overtime_amount:manualOt,net_amount:newNet}).eq("id",itemId);if(updateErr)throw updateErr},"Lemburan manual payroll tersimpan.")}
+export async function savePayrollShiftSettingsAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/payroll";
+  await mutate(returnPath, "payroll.write", async () => {
+    const rawSettings = t(f, "settings_json");
+    let settings: Record<string, unknown> = {};
+    if (rawSettings) {
+      try {
+        settings = JSON.parse(rawSettings);
+      } catch {
+        throw new Error("Format pengaturan tidak valid.");
+      }
+    } else {
+      const keys = [
+        "SHIFT_WEEKDAY_IN",
+        "SHIFT_WEEKDAY_OUT",
+        "SHIFT_SATURDAY_OUT",
+        "SHIFT_SUNDAY_IN",
+        "SHIFT_SUNDAY_OUT",
+        "OT_DIVISOR_HARIAN",
+        "OT_BONUS_HARIAN_4H",
+        "HARIAN_HOLIDAY_BONUS_FULL",
+        "HARIAN_HOLIDAY_BONUS_HALF",
+        "OT_DIVISOR_BULANAN",
+        "OT_BONUS_BULANAN_4H",
+        "MEAL_FULL",
+        "MEAL_HALF",
+        "BULANAN_SUNDAY_MEAL",
+        "FRIDAY_OVERTIME_NEXT_WEEK",
+      ];
+      for (const k of keys) {
+        const val = f.get(k);
+        if (val !== null && val !== undefined) {
+          settings[k] = String(val).trim();
+        }
+      }
+    }
+
+    await rpc("save_payroll_shift_settings", { p_settings: settings });
+  }, "Pengaturan jam kerja & tarif lembur berhasil disimpan.");
+}
 export async function addCashAdvanceAction(f:FormData){await mutate("/dashboard/kasbon","kasbon.write",async()=>{const s=await createClient();const cat=t(f,"category")||"KASBON_PERUSAHAAN";const amt=Number(num(f,"amount")??0);const rawInst=num(f,"installment_count",true);const instCount=cat==="KASBON_PERUSAHAAN"&&rawInst&&rawInst>0?Math.round(rawInst):1;const instAmt=cat==="KASBON_PERUSAHAAN"&&instCount>1?Math.round((amt/instCount)*100)/100:amt;const warung=cat==="KASBON_WARUNG"?(t(f,"warung_name")||"Warung Luar"):null;const {error}=await s.from("cash_advances").insert({worker_id:id(f,"worker_id"),advance_date:date(f,"advance_date"),amount:amt,category:cat,warung_name:warung,installment_count:instCount,installment_amount:instAmt,installments_paid:0,notes:t(f,"notes")||null});if(error)throw error},"Kasbon ditambahkan.")}
 export async function recordWarungDebtAction(f:FormData){const path="/dashboard/warung";await requirePermission("warung.write");try{const s=await createClient();const amt=Number(num(f,"amount")??0);const warung=t(f,"warung_name")||"Warung Luar";const wId=id(f,"worker_id");const advDate=date(f,"advance_date")||new Date().toISOString().slice(0,10);const notes=t(f,"notes")||null;const {error}=await s.from("cash_advances").insert({worker_id:wId,advance_date:advDate,amount:amt,paid_amount:0,category:"KASBON_WARUNG",warung_name:warung,installment_count:1,installment_amount:amt,installments_paid:0,status:"AKTIF",notes});if(error)throw error}catch(e){go(path,"error",msg(e))}revalidatePath(path);revalidatePath("/dashboard/kasbon");redirect(`${path}?success=${encodeURIComponent("Hutang warung berhasil dicatat.")}`)}
 export async function payCashAdvanceAction(f:FormData){await mutate("/dashboard/kasbon","kasbon.write",async()=>{await rpc("pay_cash_advance",{p_advance_id:id(f,"advance_id"),p_date:date(f,"payment_date"),p_amount:num(f,"amount"),p_source:t(f,"source")||"MANUAL",p_reference:t(f,"reference")||null,p_notes:t(f,"notes")||null})},"Pembayaran Kasbon tersimpan.")}
