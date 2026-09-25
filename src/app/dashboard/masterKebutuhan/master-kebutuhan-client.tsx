@@ -70,23 +70,22 @@ export function MasterKebutuhanFilter({
   function handleProjectChange(projectId: number) {
     setSelectedProjectId(projectId);
     setSelectedProductId(0);
-    if (!projectId) {
-      router.push("/dashboard/masterKebutuhan");
-    }
+    const params = new URLSearchParams();
+    if (projectId) params.set("project", String(projectId));
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+    router.push(params.toString() ? `/dashboard/masterKebutuhan?${params.toString()}` : "/dashboard/masterKebutuhan");
   }
 
   function handleProductChange(productId: number) {
     setSelectedProductId(productId);
-    if (productId > 0) {
-      const p = products.find((x) => x.id === productId);
-      const projId = p?.project_id || selectedProjectId;
-      if (projId && !selectedProjectId) setSelectedProjectId(projId);
-      const params = new URLSearchParams();
-      if (projId) params.set("project", String(projId));
-      params.set("product", String(productId));
-      if (searchQuery.trim()) params.set("q", searchQuery.trim());
-      router.push(`/dashboard/masterKebutuhan?${params.toString()}`);
-    }
+    const p = products.find((x) => x.id === productId);
+    const projId = p?.project_id || selectedProjectId;
+    if (projId && !selectedProjectId) setSelectedProjectId(projId);
+    const params = new URLSearchParams();
+    if (projId) params.set("project", String(projId));
+    if (productId > 0) params.set("product", String(productId));
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+    router.push(params.toString() ? `/dashboard/masterKebutuhan?${params.toString()}` : "/dashboard/masterKebutuhan");
   }
 
   function handleFilterSubmit(e: React.FormEvent) {
@@ -95,7 +94,7 @@ export function MasterKebutuhanFilter({
     if (selectedProjectId) params.set("project", String(selectedProjectId));
     if (selectedProductId) params.set("product", String(selectedProductId));
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
-    router.push(`/dashboard/masterKebutuhan?${params.toString()}`);
+    router.push(params.toString() ? `/dashboard/masterKebutuhan?${params.toString()}` : "/dashboard/masterKebutuhan");
   }
 
   function handleReset() {
@@ -107,8 +106,8 @@ export function MasterKebutuhanFilter({
 
   return (
     <SectionCard
-      title="Pilih Produk Terlebih Dahulu"
-      description="Pilih Proyek dan Produk untuk menampilkan seluruh daftar kebutuhan bahan (BOM), estimasi ongkos tukang, dan kalkulasi HPP produk."
+      title="Pilih Proyek / Produk"
+      description="Pilih Proyek untuk melihat kalkulasi Modal & HPP Global Proyek (semua item & produk), atau pilih Produk spesifik untuk rincian BOM."
     >
       <form onSubmit={handleFilterSubmit} className="space-y-4">
         <div className="grid gap-3 md:grid-cols-3">
@@ -135,16 +134,18 @@ export function MasterKebutuhanFilter({
                 ? filteredProducts.length > 0
                   ? `${filteredProducts.length} produk tersedia pada proyek ini`
                   : "Belum ada produk di proyek ini"
-                : "Pilih proyek atau pilih langsung produk"
+                : "Pilih proyek untuk modal global atau pilih produk langsung"
             }
           >
             <select
               name="product"
               value={selectedProductId || ""}
               onChange={(e) => handleProductChange(Number(e.target.value) || 0)}
-              className={`${selectClass} ${!selectedProductId ? "border-amber-400 bg-amber-50/30" : "border-emerald-400 bg-emerald-50/20 font-bold text-emerald-950"}`}
+              className={`${selectClass} ${!selectedProductId && selectedProjectId ? "border-blue-400 bg-blue-50/20 font-semibold" : selectedProductId ? "border-emerald-400 bg-emerald-50/20 font-bold text-emerald-950" : ""}`}
             >
-              <option value="">-- Pilih Produk --</option>
+              <option value="">
+                {selectedProjectId ? "Semua Produk (Modal & HPP Global Proyek)" : "-- Pilih Produk --"}
+              </option>
               {filteredProducts.map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.product_code} · {product.name}

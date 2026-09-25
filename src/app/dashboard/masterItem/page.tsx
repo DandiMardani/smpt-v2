@@ -101,25 +101,70 @@ export default async function MasterItemPage({ searchParams }: Props) {
   }
   const currentProject = selectedProject ? projectMap.get(selectedProject) : undefined;
 
-  // Query work items: if product is selected, load all items for that product
-  let rows: WorkItemRow[] = [];
-  if (selectedProduct) {
-    let query = supabase
+  // Products belonging to the selected project
+  const projectProducts = selectedProject
+    ? products.filter((p) => p.project_id === selectedProject && p.status === "AKTIF")
+    : [];
+
+  // Query work items for the project to calculate Global Project Modal
+  let projectWorkItems: WorkItemRow[] = [];
+  if (selectedProject) {
+    let projectItemsQuery = supabase
       .from("work_items")
       .select("id, item_code, project_id, product_id, name, unit, qty_per_product, operator_price, proposed_price, status, output_final, flow_mode, flow_order, routing_validation_mode, executor_scope, submission_category")
-      .eq("product_id", selectedProduct)
-      .order("flow_order", { ascending: true, nullsFirst: false })
-      .order("name", { ascending: true });
+      .eq("project_id", selectedProject);
 
-    if (q) query = query.or(`item_code.ilike.%${q}%,name.ilike.%${q}%`);
-
-    const { data, error } = await query;
-    if (error) throw new Error(`Master Item Pekerjaan gagal dimuat: ${error.message}`);
-    rows = (data ?? []) as WorkItemRow[];
+    const { data: pItems, error: pError } = await projectItemsQuery;
+    if (pError) throw new Error(`Data item proyek gagal dimuat: ${pError.message}`);
+    projectWorkItems = (pItems ?? []) as WorkItemRow[];
   }
 
-  // Wage and margin calculations for the selected product
-  const activeItems = rows.filter((x) => x.status === "AKTIF");
+  // Calculate Product Recap (Modal per produk dalam proyek)
+  const productRecap = projectProducts.map((prod) => {
+    const prodItems = projectWorkItems.filter(
+      (item) => item.product_id === prod.id && item.status === "AKTIF"
+    );
+    const operatorPerPcs = prodItems.reduce(
+      (acc, it) => acc + Number(it.qty_per_product || 1) * Number(it.operator_price || 0),
+      0
+    );
+    const proposedPerPcs = prodItems.reduce(
+      (acc, it) => acc + Number(it.qty_per_product || 1) * Number(it.proposed_price || 0),
+      0
+    );
+    const target = Number(prod.target_production || 0);
+    const totalOperator = target * operatorPerPcs;
+    const totalProposed = target * proposedPerPcs;
+    const marginPerPcs = proposedPerPcs - operatorPerPcs;
+    const totalMargin = totalProposed - totalOperator;
+
+    return {
+      product: prod,
+      itemCount: prodItems.length,
+      operatorPerPcs,
+      proposedPerPcs,
+      marginPerPcs,
+      totalOperator,
+      totalProposed,
+      totalMargin,
+    };
+  });
+
+  // Grand Total Se-Proyek (Modal Global Proyek)
+  const grandProjectOperator = productRecap.reduce((acc, p) => acc + p.totalOperator, 0);
+  const grandProjectProposed = productRecap.reduce((acc, p) => acc + p.totalProposed, 0);
+  const grandProjectMargin = grandProjectProposed - grandProjectOperator;
+  const grandProjectTarget = productRecap.reduce((acc, p) => acc + Number(p.product.target_production || 0), 0);
+
+  // If a single product is selected, filter its items
+  const productItems = selectedProduct
+    ? projectWorkItems
+        .filter((w) => w.product_id === selectedProduct)
+        .filter((w) => (q ? w.name.toLowerCase().includes(q.toLowerCase()) || w.item_code.toLowerCase().includes(q.toLowerCase()) : true))
+        .sort((a, b) => (a.flow_order ?? 9999) - (b.flow_order ?? 9999) || a.name.localeCompare(b.name))
+    : [];
+
+  const activeItems = productItems.filter((x) => x.status === "AKTIF");
   const totalOperatorPrice = activeItems.reduce(
     (sum, item) => sum + Number(item.qty_per_product || 1) * Number(item.operator_price || 0),
     0
@@ -131,8 +176,8 @@ export default async function MasterItemPage({ searchParams }: Props) {
   const totalMargin = totalProposedPrice - totalOperatorPrice;
   const marginPercent = totalProposedPrice > 0 ? ((totalMargin / totalProposedPrice) * 100).toFixed(1) : "0";
   const targetProduction = Number(currentProduct?.target_production || 0);
-  const totalBoronganProject = targetProduction * totalProposedPrice;
-  const totalOperatorProject = targetProduction * totalOperatorPrice;
+  const totalBoronganProduct = targetProduction * totalProposedPrice;
+  const totalOperatorProduct = targetProduction * totalOperatorPrice;
 
   const routingHref =
     selectedProject && selectedProduct
@@ -147,13 +192,13 @@ export default async function MasterItemPage({ searchParams }: Props) {
   return (
     <MasterPageShell
       eyebrow="Master Data"
-      title="Master Item Pekerjaan"
-      description="Kelola tarif dan alur item pekerjaan per Produk. Sistem otomatis menghitung akumulasi Total Harga Pengajuan (Borongan) dan Total Harga Operator (Upah Tukang)."
+      title="Master Item Pekerjaan & Modal Upah"
+      description="Kalkulasi modal upah operator dan harga pengajuan borongan baik secara global per Project maupun rincian per Produk."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
-      {/* Product-First Selector */}
+      {/* Filter Selector Proyek & Produk */}
       <MasterItemFilter
         projects={projects}
         products={products}
@@ -162,9 +207,9 @@ export default async function MasterItemPage({ searchParams }: Props) {
         initialQ={q}
       />
 
-      {/* IF A PRODUCT IS SELECTED: SHOW DETAILED WAGE KPIS, ITEM CREATION FORM, AND ITEM LIST */}
+      {/* SCENARIO 1: SPECIFIC PRODUCT SELECTED -> TAMPILKAN RINCIAN MODAL PRODUK & DAFTAR ITEM */}
       {selectedProduct && currentProduct ? (
-        <>
+        <div className="space-y-6">
           {/* Active Product Banner & Quick Links */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-blue-200 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 p-4 sm:p-5 shadow-xs">
             <div className="flex items-center gap-3">
@@ -186,6 +231,12 @@ export default async function MasterItemPage({ searchParams }: Props) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`/dashboard/masterItem?project=${selectedProject}`}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
+              >
+                📊 Lihat Modal Global Proyek
+              </Link>
               <Link href={routingHref} className={secondaryButtonClass}>
                 🔄 Alur Routing
               </Link>
@@ -195,54 +246,54 @@ export default async function MasterItemPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* 4 SUMMARY KPI CARDS: TOTAL HARGA PENGAJUAN & OPERATOR */}
+          {/* 4 SUMMARY KPI CARDS: MODAL & UPAH PRODUK TERPILIH */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border-2 border-blue-200 bg-white p-4 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Total Harga Pengajuan</p>
-                <span className="text-lg">📋</span>
-              </div>
-              <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(totalProposedPrice)}</div>
-              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Total tarif borongan diajukan per 1 pcs produk ({activeItems.length} item aktif).
-              </p>
-            </div>
-
             <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Total Harga Operator</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Modal Upah Operator / Pcs</p>
                 <span className="text-lg">🪡</span>
               </div>
               <div className="mt-2 text-2xl font-black text-emerald-900">{formatRupiah(totalOperatorPrice)}</div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Total upah yang diterima tukang/penjahit per 1 pcs produk.
+                Total modal upah operator jahit per 1 pcs produk ({activeItems.length} item aktif).
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+            <div className="rounded-2xl border-2 border-blue-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Margin Upah</p>
-                <span className="text-lg">📈</span>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Harga Pengajuan / Pcs</p>
+                <span className="text-lg">📋</span>
               </div>
-              <div className="mt-2 text-2xl font-black text-slate-800">{formatRupiah(totalMargin)}</div>
+              <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(totalProposedPrice)}</div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Margin upah pengajuan vs upah tukang ({marginPercent}%).
+                Total tarif borongan yang diajukan ke pabrik/pemilik proyek per pcs.
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Borongan Proyek</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Modal Operator Produk</p>
+                <span className="text-lg">💵</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{formatRupiah(totalOperatorProduct)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Untuk seluruh target {formatNumber(targetProduction)} pcs (Margin: {formatRupiah(totalProposedPrice - totalOperatorPrice)}/pcs).
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Nilai Borongan Produk</p>
                 <span className="text-lg">💰</span>
               </div>
-              <div className="mt-2 text-2xl font-black text-slate-800">{formatRupiah(totalBoronganProject)}</div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{formatRupiah(totalBoronganProduct)}</div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Target {formatNumber(targetProduction)} pcs (Upah Operator: {formatRupiah(totalOperatorProject)}).
+                Nilai borongan total untuk target {formatNumber(targetProduction)} pcs.
               </p>
             </div>
           </div>
 
-          {/* Form Create Item: Pre-locked to selected product */}
+          {/* Form Tambah Item Pekerjaan: Pre-locked to product */}
           {canWrite ? (
             <MasterItemCreateForm
               projects={projects}
@@ -253,16 +304,16 @@ export default async function MasterItemPage({ searchParams }: Props) {
             />
           ) : null}
 
-          {/* Work Item List For This Product */}
+          {/* Daftar Item Pekerjaan Produk Ini */}
           <SectionCard
-            title={`Rincian Item Pekerjaan (${rows.length} item)`}
-            description={`Daftar pekerjaan untuk produk ${currentProduct.name}. Total pengajuan: ${formatRupiah(totalProposedPrice)} · Total operator: ${formatRupiah(totalOperatorPrice)}.`}
+            title={`Rincian Item Pekerjaan (${productItems.length} item)`}
+            description={`Daftar tarif pekerjaan untuk produk ${currentProduct.name}. Modal operator: ${formatRupiah(totalOperatorPrice)}/pcs · Nilai pengajuan: ${formatRupiah(totalProposedPrice)}/pcs.`}
           >
-            {rows.length === 0 ? (
-              <EmptyState text="Belum ada item pekerjaan untuk produk ini. Silakan input item baru menggunakan formulir di atas." />
+            {productItems.length === 0 ? (
+              <EmptyState text="Belum ada item pekerjaan untuk produk ini. Silakan tambahkan menggunakan form di atas." />
             ) : (
               <div className="space-y-3">
-                {rows.map((row, idx) => {
+                {productItems.map((row, idx) => {
                   const subOp = Number(row.qty_per_product || 1) * Number(row.operator_price || 0);
                   const subProp = Number(row.qty_per_product || 1) * Number(row.proposed_price || 0);
                   const itemRoutingHref = `/dashboard/masterItem/routing?project=${row.project_id}&product=${row.product_id}`;
@@ -440,10 +491,10 @@ export default async function MasterItemPage({ searchParams }: Props) {
                   );
                 })}
 
-                {/* Grand Total Footer Summary */}
+                {/* Grand Total Footer Summary Per Produk */}
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-4 text-sm">
-                    <span className="font-bold text-slate-900">Total Biaya Upah Produk ({activeItems.length} Item Aktif):</span>
+                    <span className="font-bold text-slate-900">Total Upah Produk ({activeItems.length} Item Aktif):</span>
                     <div className="flex flex-wrap items-center gap-6">
                       <div>
                         <span className="text-xs text-slate-500 block">Total Operator:</span>
@@ -463,9 +514,218 @@ export default async function MasterItemPage({ searchParams }: Props) {
               </div>
             )}
           </SectionCard>
-        </>
+
+          {/* Collapsible / Comparison Section for Project-wide Totals */}
+          <SectionCard
+            title={`Ringkasan Modal Global Proyek: ${currentProject?.name} (${projectProducts.length} Produk)`}
+            description="Perbandingan total modal upah operator dan nilai pengajuan antar produk dalam proyek ini."
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500">
+                    <th className="py-2.5 font-bold">Produk</th>
+                    <th className="py-2.5 font-bold">Target</th>
+                    <th className="py-2.5 font-bold">Operator / Pcs</th>
+                    <th className="py-2.5 font-bold">Total Modal Operator</th>
+                    <th className="py-2.5 font-bold">Pengajuan / Pcs</th>
+                    <th className="py-2.5 font-bold">Total Pengajuan</th>
+                    <th className="py-2.5 font-bold">Total Margin</th>
+                    <th className="py-2.5 font-bold">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {productRecap.map((pr) => (
+                    <tr key={pr.product.id} className={pr.product.id === selectedProduct ? "bg-blue-50/50 font-semibold" : ""}>
+                      <td className="py-2.5">
+                        <span className="font-mono text-blue-600 mr-1.5">{pr.product.product_code}</span>
+                        {pr.product.name}
+                        {pr.product.id === selectedProduct ? <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">Aktif</span> : null}
+                      </td>
+                      <td className="py-2.5">{formatNumber(pr.product.target_production)} {pr.product.unit}</td>
+                      <td className="py-2.5 font-bold text-emerald-800">{formatRupiah(pr.operatorPerPcs)}</td>
+                      <td className="py-2.5 font-bold text-emerald-950">{formatRupiah(pr.totalOperator)}</td>
+                      <td className="py-2.5 font-bold text-blue-800">{formatRupiah(pr.proposedPerPcs)}</td>
+                      <td className="py-2.5 font-bold text-blue-950">{formatRupiah(pr.totalProposed)}</td>
+                      <td className="py-2.5 text-slate-700">{formatRupiah(pr.totalMargin)}</td>
+                      <td className="py-2.5">
+                        <Link
+                          href={`/dashboard/masterItem?project=${selectedProject}&product=${pr.product.id}`}
+                          className="text-blue-600 hover:underline font-semibold"
+                        >
+                          Buka Item →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 font-bold text-slate-900 bg-slate-50">
+                    <td className="py-3">TOTAL GLOBAL PROYEK</td>
+                    <td className="py-3">{formatNumber(grandProjectTarget)} pcs</td>
+                    <td className="py-3">-</td>
+                    <td className="py-3 text-emerald-900">{formatRupiah(grandProjectOperator)}</td>
+                    <td className="py-3">-</td>
+                    <td className="py-3 text-blue-900">{formatRupiah(grandProjectProposed)}</td>
+                    <td className="py-3 text-slate-900">{formatRupiah(grandProjectMargin)}</td>
+                    <td className="py-3">-</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </SectionCard>
+        </div>
+      ) : selectedProject && currentProject ? (
+        /* SCENARIO 2: PROJECT SELECTED, BUT ALL PRODUCTS -> TAMPILKAN MODAL GLOBAL PROYEK */
+        <div className="space-y-6">
+          {/* Active Project Banner */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-blue-200 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 p-4 sm:p-5 shadow-xs">
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-xl font-bold text-white shadow-xs">
+                🏢
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-extrabold text-slate-900">{currentProject.name}</h2>
+                  <span className="font-mono text-xs font-bold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200">
+                    {currentProject.project_code}
+                  </span>
+                  <StatusBadge status={currentProject.status} />
+                </div>
+                <p className="mt-0.5 text-xs text-slate-600 font-medium">
+                  Modal Global Se-Proyek · Total <b className="text-slate-800">{projectProducts.length} Produk Aktif</b> · Target Keseluruhan: <b className="text-slate-800">{formatNumber(grandProjectTarget)} Pcs</b>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={`/dashboard/masterKebutuhan?project=${selectedProject}`} className={secondaryButtonClass}>
+                📦 Kebutuhan Bahan Proyek (BOM)
+              </Link>
+            </div>
+          </div>
+
+          {/* 4 GLOBAL PROJECT KPI CARDS */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Total Modal Operator Proyek</p>
+                <span className="text-lg">🪡</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-emerald-900">{formatRupiah(grandProjectOperator)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Total modal upah yang harus disiapkan untuk seluruh operator jahit di proyek ini.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border-2 border-blue-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Total Pengajuan Borongan Proyek</p>
+                <span className="text-lg">📋</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(grandProjectProposed)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Total omzet nilai borongan yang diajukan ke pemilik proyek ({projectProducts.length} produk).
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Estimasi Margin Upah Proyek</p>
+                <span className="text-lg">📈</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{formatRupiah(grandProjectMargin)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Selisih nilai borongan terhadap modal operator se-proyek.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Target Produksi</p>
+                <span className="text-lg">📦</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{formatNumber(grandProjectTarget)} pcs</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Akumulasi target dari {projectProducts.length} produk aktif di proyek ini.
+              </p>
+            </div>
+          </div>
+
+          {/* TABLE REKAPITULASI MODAL SEMUA PRODUK DALAM PROYEK */}
+          <SectionCard
+            title={`Rekapitulasi Modal per Produk · Proyek ${currentProject.name}`}
+            description="Tabel perbandingan modal upah operator dan harga pengajuan borongan per produk. Klik salah satu produk untuk mengelola rincian item."
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b-2 border-slate-200 text-xs font-bold uppercase text-slate-600 bg-slate-50/70">
+                    <th className="py-3 px-3">No</th>
+                    <th className="py-3 px-3">Produk</th>
+                    <th className="py-3 px-3">Target</th>
+                    <th className="py-3 px-3">Item Aktif</th>
+                    <th className="py-3 px-3">Operator / Pcs</th>
+                    <th className="py-3 px-3">Total Modal Operator</th>
+                    <th className="py-3 px-3">Pengajuan / Pcs</th>
+                    <th className="py-3 px-3">Total Nilai Pengajuan</th>
+                    <th className="py-3 px-3">Total Margin</th>
+                    <th className="py-3 px-3 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {productRecap.map((pr, idx) => (
+                    <tr key={pr.product.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3 px-3 text-slate-400 font-semibold">{idx + 1}</td>
+                      <td className="py-3 px-3">
+                        <span className="font-mono text-blue-600 font-bold block">{pr.product.product_code}</span>
+                        <span className="font-bold text-slate-900 text-sm">{pr.product.name}</span>
+                      </td>
+                      <td className="py-3 px-3 font-semibold text-slate-800">
+                        {formatNumber(pr.product.target_production)} {pr.product.unit}
+                      </td>
+                      <td className="py-3 px-3 text-slate-600">
+                        <span className="inline-block bg-slate-100 px-2 py-0.5 rounded text-[11px] font-semibold">
+                          {pr.itemCount} item
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-bold text-emerald-800">{formatRupiah(pr.operatorPerPcs)}</td>
+                      <td className="py-3 px-3 font-black text-emerald-900">{formatRupiah(pr.totalOperator)}</td>
+                      <td className="py-3 px-3 font-bold text-blue-800">{formatRupiah(pr.proposedPerPcs)}</td>
+                      <td className="py-3 px-3 font-black text-blue-900">{formatRupiah(pr.totalProposed)}</td>
+                      <td className="py-3 px-3 font-bold text-slate-700">{formatRupiah(pr.totalMargin)}</td>
+                      <td className="py-3 px-3 text-center">
+                        <Link
+                          href={`/dashboard/masterItem?project=${selectedProject}&product=${pr.product.id}`}
+                          className="inline-flex items-center rounded-xl bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition"
+                        >
+                          Buka Item →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 font-black text-slate-900 bg-slate-100/80 text-xs">
+                    <td colSpan={2} className="py-3.5 px-3 uppercase tracking-wider">
+                      TOTAL GLOBAL PROYEK ({projectProducts.length} Produk)
+                    </td>
+                    <td className="py-3.5 px-3">{formatNumber(grandProjectTarget)} pcs</td>
+                    <td className="py-3.5 px-3">-</td>
+                    <td className="py-3.5 px-3">-</td>
+                    <td className="py-3.5 px-3 text-emerald-900 text-sm">{formatRupiah(grandProjectOperator)}</td>
+                    <td className="py-3.5 px-3">-</td>
+                    <td className="py-3.5 px-3 text-blue-900 text-sm">{formatRupiah(grandProjectProposed)}</td>
+                    <td className="py-3.5 px-3 text-slate-900 text-sm">{formatRupiah(grandProjectMargin)}</td>
+                    <td className="py-3.5 px-3">-</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </SectionCard>
+        </div>
       ) : (
-        /* IF NO PRODUCT SELECTED: RENDER QUICK PRODUCT GRID */
+        /* SCENARIO 3: NO PROJECT SELECTED -> TAMPILKAN GRID PRODUK & PROYEK */
         <MasterItemProductGrid
           projects={projects}
           products={products.filter((p) => p.status === "AKTIF")}
