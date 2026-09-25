@@ -2,7 +2,7 @@ import { Card, Empty, Field, Notice, PageShell, ReadOnly, TableWrap, Td, Th, but
 import { requireAnyPermission } from "@/lib/access/current-user";
 import { param, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
-import { saveMaterialSupplierAction, saveSupplierAction } from "./actions";
+import { deleteMaterialSupplierAction, deleteSupplierAction, saveMaterialSupplierAction, saveSupplierAction } from "./actions";
 
 type Props = { searchParams: Promise<SearchParams> };
 
@@ -36,7 +36,7 @@ export default async function MasterVendorPage({ searchParams }: Props) {
   const materialMap = new Map(materials.map((row) => [row.id, row]));
 
   return (
-    <PageShell eyebrow="Master Data" title="Master Supplier / Vendor" description="Satu master untuk supplier pembelian dan vendor operasional. Material tidak wajib punya supplier dan satu material boleh punya banyak supplier.">
+    <PageShell eyebrow="Master Data" title="Master Supplier / Vendor" description="Satu master untuk supplier pembelian dan vendor operasional. Dilengkapi fitur edit data supplier, rekening, dan relasi material.">
       <Notice success={param(query, "success")} error={param(query, "error")} />
       {!canWrite ? <ReadOnly /> : null}
 
@@ -88,12 +88,79 @@ export default async function MasterVendorPage({ searchParams }: Props) {
         </Card>
       ) : null}
 
-      <Card title="Daftar Supplier / Vendor">
-        {vendors.length === 0 ? <Empty>Belum ada Supplier/Vendor.</Empty> : <TableWrap><thead><tr><Th>Kode</Th><Th>Nama</Th><Th>PIC</Th><Th>Kontak</Th><Th>Terms</Th><Th>Status</Th></tr></thead><tbody>{vendors.map((x) => <tr key={x.id}><Td>{x.vendor_code}</Td><Td>{x.name}</Td><Td>{x.pic_name || "-"}</Td><Td>{x.whatsapp || x.phone || x.email || "-"}</Td><Td>{x.payment_terms || "-"}</Td><Td>{x.status}</Td></tr>)}</tbody></TableWrap>}
+      <Card title={`Daftar Supplier / Vendor (${vendors.length})`}>
+        {vendors.length === 0 ? <Empty>Belum ada Supplier/Vendor.</Empty> : (
+          <div className="space-y-3">
+            {vendors.map((x) => (
+              <details key={x.id} className="group rounded-xl border border-gray-200 bg-white p-4 shadow-2xs hover:border-gray-300 transition">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{x.vendor_code}</span>
+                        <b className="text-gray-900 text-sm">{x.name}</b>
+                        <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-semibold text-gray-700">{x.status}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        PIC: <b className="text-gray-700">{x.pic_name || "-"}</b> · Kontak: {x.whatsapp || x.phone || x.email || "-"} · Terms: {x.payment_terms || "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-bold text-gray-700 group-open:bg-blue-50 group-open:text-blue-700 group-open:border-blue-200 transition">
+                        ✏️ Edit ▾
+                      </span>
+                    </div>
+                  </div>
+                </summary>
+
+                {canWrite ? (
+                  <form action={saveSupplierAction} className="mt-4 grid gap-3 border-t border-gray-100 pt-4 md:grid-cols-3">
+                    <input type="hidden" name="id" value={x.id} />
+                    <Field label="Nama"><input name="name" required defaultValue={x.name} className={inputClass} /></Field>
+                    <Field label="PIC"><input name="pic_name" defaultValue={x.pic_name || ""} className={inputClass} /></Field>
+                    <Field label="Telepon"><input name="phone" defaultValue={x.phone || ""} className={inputClass} /></Field>
+                    <Field label="WhatsApp"><input name="whatsapp" defaultValue={x.whatsapp || ""} className={inputClass} /></Field>
+                    <Field label="Email"><input name="email" type="email" defaultValue={x.email || ""} className={inputClass} /></Field>
+                    <Field label="Kota"><input name="city" defaultValue={x.city || ""} className={inputClass} /></Field>
+                    <Field label="Provinsi"><input name="province" defaultValue={x.province || ""} className={inputClass} /></Field>
+                    <Field label="Alamat"><input name="address" defaultValue={x.address || ""} className={inputClass} /></Field>
+                    <Field label="NPWP / Tax ID"><input name="tax_no" defaultValue={x.tax_no || ""} className={inputClass} /></Field>
+                    <Field label="Payment Terms"><input name="payment_terms" defaultValue={x.payment_terms || ""} className={inputClass} /></Field>
+                    <Field label="Currency Default"><input name="default_currency" defaultValue={x.default_currency || "IDR"} className={inputClass} /></Field>
+                    <Field label="Lead Time (hari)"><input name="lead_time_days" type="number" min="0" defaultValue={x.lead_time_days ?? ""} className={inputClass} /></Field>
+                    <Field label="Rating Internal"><input name="rating" type="number" min="0" step="0.1" defaultValue={x.rating ?? ""} className={inputClass} /></Field>
+                    <Field label="Bank"><input name="bank_name" defaultValue={x.bank_name || ""} className={inputClass} /></Field>
+                    <Field label="No Rekening"><input name="bank_account_no" defaultValue={x.bank_account_no || ""} className={inputClass} /></Field>
+                    <Field label="Nama Rekening"><input name="bank_account_name" defaultValue={x.bank_account_name || ""} className={inputClass} /></Field>
+                    <Field label="Catatan"><input name="notes" defaultValue={x.notes || ""} className={inputClass} /></Field>
+                    <Field label="Catatan Internal"><input name="internal_notes" defaultValue={x.internal_notes || ""} className={inputClass} /></Field>
+                    <Field label="Status">
+                      <select name="status" defaultValue={x.status} className={inputClass}>
+                        <option value="AKTIF">AKTIF</option>
+                        <option value="NONAKTIF">NONAKTIF</option>
+                      </select>
+                    </Field>
+                    <div className="md:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-2">
+                      <button type="submit" className={buttonClass}>Simpan Perubahan</button>
+                      <button
+                        type="submit"
+                        formAction={deleteSupplierAction}
+                        formNoValidate
+                        className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-100 transition"
+                      >
+                        🗑️ Hapus Supplier
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+              </details>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card title={`Material ↔ Supplier · ${links.length} relasi`}>
-        {links.length === 0 ? <Empty>Belum ada relasi material dengan supplier.</Empty> : <TableWrap><thead><tr><Th>Material</Th><Th>Supplier</Th><Th>Unit Supplier</Th><Th>MOQ</Th><Th>Harga Terakhir</Th><Th>Lead Time</Th><Th>Preferred</Th></tr></thead><tbody>{links.map((x) => <tr key={x.id}><Td>{materialMap.get(x.material_id)?.name || `#${x.material_id}`}</Td><Td>{vendorMap.get(x.supplier_id)?.name || `#${x.supplier_id}`}</Td><Td>{x.supplier_unit || "-"}</Td><Td>{x.moq ?? "-"}</Td><Td>{x.last_price ?? "-"}</Td><Td>{x.estimated_lead_time_days == null ? "-" : `${x.estimated_lead_time_days} hari`}</Td><Td>{x.preferred ? "YA" : "-"}</Td></tr>)}</tbody></TableWrap>}
+        {links.length === 0 ? <Empty>Belum ada relasi material dengan supplier.</Empty> : <TableWrap><thead><tr><Th>Material</Th><Th>Supplier</Th><Th>Unit Supplier</Th><Th>MOQ</Th><Th>Harga Terakhir</Th><Th>Lead Time</Th><Th>Preferred</Th><Th>Aksi</Th></tr></thead><tbody>{links.map((x) => <tr key={x.id}><Td>{materialMap.get(x.material_id)?.name || `#${x.material_id}`}</Td><Td>{vendorMap.get(x.supplier_id)?.name || `#${x.supplier_id}`}</Td><Td>{x.supplier_unit || "-"}</Td><Td>{x.moq ?? "-"}</Td><Td>{x.last_price ?? "-"}</Td><Td>{x.estimated_lead_time_days == null ? "-" : `${x.estimated_lead_time_days} hari`}</Td><Td>{x.preferred ? "YA" : "-"}</Td><Td>{canWrite ? <form action={deleteMaterialSupplierAction}><input type="hidden" name="id" value={x.id}/><button type="submit" className="text-xs font-bold text-red-600 hover:underline">Hapus</button></form> : "-"}</Td></tr>)}</tbody></TableWrap>}
       </Card>
     </PageShell>
   );

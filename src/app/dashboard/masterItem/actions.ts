@@ -48,9 +48,9 @@ export async function saveWorkItem(formData: FormData) {
   const back = contextPath(formData);
 
   try {
-    const itemId = getOptionalId(formData, "id");
-    const projectId = getId(formData, "project_id");
-    const productId = getId(formData, "product_id");
+    const itemId = getOptionalId(formData, "id") ?? getOptionalId(formData, "work_item_id");
+    const projectId = getOptionalId(formData, "project_id") ?? getId(formData, "return_project");
+    const productId = getOptionalId(formData, "product_id") ?? getId(formData, "return_product");
     const name = getText(formData, "name");
     const unit = getText(formData, "unit");
     const qtyPerProduct = getInteger(formData, "qty_per_product", { min: 1 });
@@ -167,7 +167,7 @@ export async function setWorkItemStatus(formData: FormData) {
   const back = contextPath(formData);
 
   try {
-    const id = getId(formData, "id");
+    const id = getOptionalId(formData, "id") ?? getId(formData, "work_item_id");
     const status = requireOneOf(getText(formData, "status"), STATUSES, "Status item");
     const supabase = await createClient();
     const { error } = await supabase.rpc("set_work_item_status", {
@@ -189,7 +189,7 @@ export async function deleteWorkItem(formData: FormData) {
   const back = contextPath(formData);
 
   try {
-    const id = getId(formData, "id");
+    const id = getOptionalId(formData, "id") ?? getId(formData, "work_item_id");
     const supabase = await createClient();
 
     // Cek apakah item pekerjaan sudah pernah digunakan dalam SPK produksi

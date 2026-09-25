@@ -1,10 +1,14 @@
 import Link from "next/link";
 import {
   EmptyState,
+  Field,
+  inputClass,
   MasterPageShell,
   Notice,
+  primaryButtonClass,
   ReadOnlyBanner,
   SectionCard,
+  selectClass,
   StatusBadge,
   secondaryButtonClass,
 } from "@/components/master/master-ui";
@@ -17,7 +21,7 @@ import {
   param,
   type SearchParams,
 } from "@/lib/master/page-utils";
-import { deleteBomRequirement } from "./actions";
+import { deleteBomRequirement, saveBomRequirement } from "./actions";
 import {
   MasterKebutuhanCreateForm,
   MasterKebutuhanFilter,
@@ -371,66 +375,146 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                   const subCost = Number(row.qty_per_unit || 0) * Number(row.unit_price || 0);
 
                   return (
-                    <div
+                    <details
                       key={row.id}
-                      className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs hover:border-slate-300 transition"
+                      className="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs hover:border-slate-300 transition"
                     >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">
-                              {idx + 1}
-                            </span>
-                            <b className="text-slate-900 text-sm">
-                              {material ? `${material.material_code} · ${material.name}` : row.component_name}
-                            </b>
-                            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
-                              {row.component_type}
-                            </span>
-                            <StatusBadge status={row.status} />
-                            {row.fulfillment_source ? (
-                              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                                {row.fulfillment_source.replaceAll("_", " ")}
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500 font-medium">
-                            Kode BOM: <span className="font-mono font-semibold text-slate-700">{row.requirement_code}</span> · Metode: {row.calculation_method || "MANUAL"}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-4 text-xs lg:text-right border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
+                      <summary className="cursor-pointer list-none">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                           <div>
-                            <p className="text-[11px] text-slate-400">Kebutuhan / Pcs</p>
-                            <p className="font-semibold text-slate-800">
-                              {formatNumber(row.qty_per_unit)} {row.unit}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">
+                                {idx + 1}
+                              </span>
+                              <b className="text-slate-900 text-sm">
+                                {material ? `${material.material_code} · ${material.name}` : row.component_name}
+                              </b>
+                              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                                {row.component_type}
+                              </span>
+                              <StatusBadge status={row.status} />
+                              {row.fulfillment_source ? (
+                                <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                  {row.fulfillment_source.replaceAll("_", " ")}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500 font-medium">
+                              Kode BOM: <span className="font-mono font-semibold text-slate-700">{row.requirement_code}</span> · Metode: {row.calculation_method || "MANUAL"}
                             </p>
                           </div>
-                          <div>
-                            <p className="text-[11px] text-slate-400">Harga Satuan</p>
-                            <p className="font-semibold text-slate-800">{formatRupiah(row.unit_price)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[11px] text-slate-400">Subtotal Bahan</p>
-                            <p className="font-bold text-emerald-800 text-sm">{formatRupiah(subCost)}</p>
-                          </div>
 
-                          {canWrite ? (
-                            <form action={deleteBomRequirement} className="flex items-center pl-2">
+                          <div className="flex flex-wrap items-center gap-4 text-xs lg:text-right border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
+                            <div>
+                              <p className="text-[11px] text-slate-400">Kebutuhan / Pcs</p>
+                              <p className="font-semibold text-slate-800">
+                                {formatNumber(row.qty_per_unit)} {row.unit}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-400">Harga Satuan</p>
+                              <p className="font-semibold text-slate-800">{formatRupiah(row.unit_price)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-400">Subtotal Bahan</p>
+                              <p className="font-bold text-emerald-800 text-sm">{formatRupiah(subCost)}</p>
+                            </div>
+                            <div>
+                              <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-700 group-open:bg-emerald-50 group-open:text-emerald-700 group-open:border-emerald-200 transition">
+                                ✏️ Edit ▾
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </summary>
+
+                      {canWrite ? (
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                          <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-4">
+                            <h4 className="font-bold text-slate-900 text-sm mb-3">✏️ Edit Komponen Kebutuhan Bahan</h4>
+                            <form action={saveBomRequirement} className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                               <input type="hidden" name="id" value={row.id} />
+                              <input type="hidden" name="project_id" value={selectedProject} />
+                              <input type="hidden" name="product_id" value={selectedProduct} />
                               <input type="hidden" name="return_project" value={selectedProject} />
                               <input type="hidden" name="return_product" value={selectedProduct} />
-                              <button
-                                type="submit"
-                                className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition"
-                              >
-                                🗑️ Hapus
-                              </button>
+                              <input type="hidden" name="component_type" value={row.component_type} />
+                              {row.material_id ? <input type="hidden" name="material_id" value={row.material_id} /> : null}
+
+                              {row.component_type !== "BAHAN" ? (
+                                <Field label="Nama Komponen">
+                                  <input name="component_name" required defaultValue={row.component_name} className={inputClass} />
+                                </Field>
+                              ) : (
+                                <Field label="Material">
+                                  <input readOnly disabled defaultValue={material ? `${material.material_code} · ${material.name}` : row.component_name} className={`${inputClass} bg-slate-100 text-slate-600`} />
+                                  <input type="hidden" name="component_name" value={row.component_name} />
+                                </Field>
+                              )}
+
+                              <Field label="Kebutuhan per Unit (Pcs)">
+                                <input
+                                  name="qty_per_unit"
+                                  type="number"
+                                  min="0.0001"
+                                  step="any"
+                                  required
+                                  defaultValue={Number(row.qty_per_unit || 0)}
+                                  className={inputClass}
+                                />
+                              </Field>
+
+                              <Field label="Satuan">
+                                <input name="unit" required defaultValue={row.unit} className={inputClass} />
+                              </Field>
+
+                              <Field label="Harga Satuan (Rp)">
+                                <input
+                                  name="unit_price"
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  required
+                                  defaultValue={Number(row.unit_price || 0)}
+                                  className={inputClass}
+                                />
+                              </Field>
+
+                              <Field label="Sumber Pemenuhan">
+                                <select name="fulfillment_source" defaultValue={row.fulfillment_source || "COMPANY_PURCHASE"} className={selectClass}>
+                                  <option value="COMPANY_PURCHASE">Pembelian Perusahaan</option>
+                                  <option value="CUSTOMER_SUPPLIED">Disediakan Customer</option>
+                                  <option value="VENDOR_SUPPLIED">Disediakan Vendor</option>
+                                  <option value="INTERNAL_STOCK">Stok Gudang Sendiri</option>
+                                  <option value="OTHER">Lainnya</option>
+                                </select>
+                              </Field>
+
+                              <Field label="Status">
+                                <select name="status" defaultValue={row.status} className={selectClass}>
+                                  <option value="AKTIF">AKTIF</option>
+                                  <option value="NONAKTIF">NONAKTIF</option>
+                                </select>
+                              </Field>
+
+                              <div className="md:col-span-2 xl:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-emerald-100">
+                                <button type="submit" className={primaryButtonClass}>
+                                  💾 Simpan Perubahan BOM
+                                </button>
+                                <button
+                                  type="submit"
+                                  formAction={deleteBomRequirement}
+                                  formNoValidate
+                                  className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
+                                >
+                                  🗑️ Hapus Komponen
+                                </button>
+                              </div>
                             </form>
-                          ) : null}
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      ) : null}
+                    </details>
                   );
                 })}
 

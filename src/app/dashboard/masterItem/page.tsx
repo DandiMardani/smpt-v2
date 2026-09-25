@@ -23,6 +23,7 @@ import {
 } from "@/lib/master/page-utils";
 import {
   deleteWorkItem,
+  saveWorkItem,
   saveWorkItemFlowInline,
   saveWorkItemPayrollProfile,
   setWorkItemStatus,
@@ -352,7 +353,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
                             </p>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-4 text-xs lg:text-right border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
+                          <div className="flex flex-wrap items-center gap-4 text-xs lg:text-right border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
                             <div>
                               <p className="text-[11px] text-slate-400">Qty / Produk</p>
                               <p className="font-semibold text-slate-800">{formatNumber(row.qty_per_product)} {row.unit}</p>
@@ -371,6 +372,11 @@ export default async function MasterItemPage({ searchParams }: Props) {
                                 <p className="text-[10px] text-slate-400">Subtotal: {formatRupiah(subProp)}</p>
                               ) : null}
                             </div>
+                            <div>
+                              <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-700 group-open:bg-blue-50 group-open:text-blue-700 group-open:border-blue-200 transition">
+                                ✏️ Edit ▾
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </summary>
@@ -378,6 +384,100 @@ export default async function MasterItemPage({ searchParams }: Props) {
                       {/* Detail / Inline Edits */}
                       {canWrite && row.product_id ? (
                         <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+                          {/* 1. EDIT INFORMASI & TARIF ITEM PEKERJAAN */}
+                          <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4">
+                            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <h3 className="font-bold text-slate-900 text-sm">✏️ Edit Informasi & Tarif Pekerjaan</h3>
+                                <p className="text-xs text-slate-500">
+                                  Ubah nama pekerjaan, satuan, rasio per produk, tarif tukang, atau harga pengajuan.
+                                </p>
+                              </div>
+                              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200 w-fit">
+                                ID: {row.item_code}
+                              </span>
+                            </div>
+                            <form action={saveWorkItem} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                              <input type="hidden" name="id" value={row.id} />
+                              <input type="hidden" name="work_item_id" value={row.id} />
+                              <input type="hidden" name="project_id" value={selectedProject} />
+                              <input type="hidden" name="product_id" value={selectedProduct} />
+                              <input type="hidden" name="return_project" value={selectedProject} />
+                              <input type="hidden" name="return_product" value={selectedProduct} />
+                              <input type="hidden" name="return_q" value={q} />
+
+                              <div className="xl:col-span-2">
+                                <Field label="Nama Pekerjaan">
+                                  <input name="name" required defaultValue={row.name} className={inputClass} />
+                                </Field>
+                              </div>
+
+                              <Field label="Satuan">
+                                <input name="unit" required defaultValue={row.unit} className={inputClass} placeholder="PCS / LUSIN / LEMBAR" />
+                              </Field>
+
+                              <Field label="Qty / Produk" hint="Berapa kali pengerjaan per 1 pcs produk">
+                                <input
+                                  name="qty_per_product"
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  required
+                                  defaultValue={row.qty_per_product}
+                                  className={inputClass}
+                                />
+                              </Field>
+
+                              <Field label="Harga Operator (Rp)" hint="Upah tukang / biaya modal">
+                                <input
+                                  name="operator_price"
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  required
+                                  defaultValue={row.operator_price}
+                                  className={inputClass}
+                                />
+                              </Field>
+
+                              <Field label="Harga Pengajuan (Rp)" hint="Harga borongan diajukan">
+                                <input
+                                  name="proposed_price"
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  required
+                                  defaultValue={row.proposed_price}
+                                  className={inputClass}
+                                />
+                              </Field>
+
+                              <Field label="Status Item">
+                                <select name="status" defaultValue={row.status} className={selectClass}>
+                                  <option value="AKTIF">AKTIF</option>
+                                  <option value="NONAKTIF">NONAKTIF</option>
+                                </select>
+                              </Field>
+
+                              <div className="xl:col-span-4 flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-blue-100">
+                                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    name="output_final"
+                                    value="1"
+                                    defaultChecked={row.output_final}
+                                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span>Tandai sebagai Output Final Produk (Hasil akhir yang dihitung checker/QC)</span>
+                                </label>
+
+                                <button type="submit" className={primaryButtonClass}>
+                                  💾 Simpan Perubahan Item
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+
                           {row.status === "AKTIF" ? (
                             <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -461,6 +561,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
 
                           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                             <form action={setWorkItemStatus}>
+                              <input type="hidden" name="id" value={row.id} />
                               <input type="hidden" name="work_item_id" value={row.id} />
                               <input type="hidden" name="status" value={row.status === "AKTIF" ? "NONAKTIF" : "AKTIF"} />
                               <input type="hidden" name="return_project" value={selectedProject} />
@@ -474,6 +575,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
                             </form>
 
                             <form action={deleteWorkItem}>
+                              <input type="hidden" name="id" value={row.id} />
                               <input type="hidden" name="work_item_id" value={row.id} />
                               <input type="hidden" name="return_project" value={selectedProject} />
                               <input type="hidden" name="return_product" value={selectedProduct} />

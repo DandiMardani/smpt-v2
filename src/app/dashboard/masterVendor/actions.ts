@@ -109,3 +109,32 @@ export async function saveMaterialSupplierAction(formData: FormData) {
   revalidatePath(PATH);
   go("success", "Relasi Material ↔ Supplier berhasil disimpan.");
 }
+
+export async function deleteSupplierAction(formData: FormData) {
+  await requireAnyPermission(["master_vendor.write", "supplier.manage"]);
+  try {
+    const id = idValue(formData, "id");
+    const supabase = await createClient();
+    const { error } = await supabase.from("vendors").delete().eq("id", id);
+    if (error) throw error;
+  } catch (error) {
+    go("error", message(error));
+  }
+  revalidatePath(PATH);
+  go("success", "Supplier/Vendor berhasil dihapus.");
+}
+
+export async function deleteMaterialSupplierAction(formData: FormData) {
+  await requireAnyPermission(["master_vendor.write", "supplier.manage"]);
+  try {
+    const id = idValue(formData, "id");
+    const supabase = await createClient();
+    const { error } = await supabase.from("material_suppliers").delete().eq("id", id);
+    if (error) throw error;
+  } catch (error) {
+    go("error", message(error));
+  }
+  revalidatePath(PATH);
+  go("success", "Relasi Material ↔ Supplier berhasil dihapus.");
+}
+
