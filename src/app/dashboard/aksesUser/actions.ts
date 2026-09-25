@@ -149,7 +149,27 @@ export async function saveUserAccessAction(f: FormData) {
     // 2. Save role and worker link
     await saveAccess(userId, roleCode, workerId, isActive);
 
-    // 3. Optional update user metadata in auth
+    // 3. Sync custom permission overrides
+    const customPermissions = f
+      .getAll("custom_permissions")
+      .map(String)
+      .map((p) => p.trim().toLowerCase())
+      .filter(Boolean);
+
+    await s.from("user_permission_overrides").delete().eq("user_id", userId);
+
+    if (customPermissions.length > 0) {
+      const overrideRows = customPermissions.map((pattern) => ({
+        user_id: userId,
+        permission_pattern: pattern,
+        effect: "ALLOW",
+        is_active: true,
+        note: "Custom permission via admin dashboard",
+      }));
+      await s.from("user_permission_overrides").insert(overrideRows);
+    }
+
+    // 4. Optional update user metadata in auth
     try {
       const admin = createAdminAuthClient();
       await admin.auth.admin.updateUserById(userId, {

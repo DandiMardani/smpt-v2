@@ -59,6 +59,20 @@ const roleHelp: Record<string, string> = {
   CHECKER: "LEGACY — checker baru gunakan USER + permission checker",
 };
 
+const CUSTOM_MODULES = [
+  { id: "pekerjaan_saya.*", label: "💰 Gaji & Slip Pekerjaan Saya", desc: "Melihat rincian upah, absensi, pinjaman & kasbon warung sendiri" },
+  { id: "cutting.*", label: "✂️ Modul Cutting", desc: "Mencatat pemakaian kain/bahan dan hasil potongan" },
+  { id: "sablon.*", label: "🎨 Modul Sablon", desc: "Mencatat serah terima dan pengerjaan sablon" },
+  { id: "spk.*", label: "📋 Surat Perintah Kerja (SPK)", desc: "Melihat dan mengelola penugasan SPK" },
+  { id: "borongan.*", label: "⚖️ Setoran Borongan / Checker", desc: "Input hasil kerja harian/borongan dan verifikasi" },
+  { id: "qc.*", label: "🔍 Quality Control (QC)", desc: "Pemeriksaan kualitas dan rework barang" },
+  { id: "barang_keluar_gudang.*", label: "📦 Gudang & Logistik", desc: "Pengeluaran bahan, stok gudang & mutasi material" },
+  { id: "absensi.*", label: "👥 Modul Absensi", desc: "Pencatatan dan verifikasi kehadiran harian" },
+  { id: "kasbon.*", label: "💵 Modul Kasbon Kantor", desc: "Pencatatan pinjaman perusahaan dan cicilan" },
+  { id: "warung.*", label: "🍜 Portal Warung Mitra", desc: "Pencatatan hutang makan pekerja" },
+  { id: "laporan.*", label: "📊 Laporan & Monitoring", desc: "Melihat rekap laporan dan monitoring produksi" },
+];
+
 export default async function Page({ searchParams }: Props) {
   const access = await requirePermission("access_control.view");
   const isAdmin = access.role.toUpperCase() === "ADMIN";
@@ -67,7 +81,7 @@ export default async function Page({ searchParams }: Props) {
   const selectedUserId = param(q, "user");
   const s = await createClient();
 
-  const [usersResult, rolesResult, workersResult] = await Promise.all([
+  const [usersResult, rolesResult, workersResult, overridesResult] = await Promise.all([
     s.rpc("smpt_admin_user_directory"),
     s.rpc("smpt_admin_role_options"),
     s.from("workers")
@@ -75,6 +89,14 @@ export default async function Page({ searchParams }: Props) {
       .eq("status", "AKTIF")
       .order("name")
       .limit(1000),
+    selectedUserId
+      ? s
+          .from("user_permission_overrides")
+          .select("permission_pattern")
+          .eq("user_id", selectedUserId)
+          .eq("is_active", true)
+          .eq("effect", "ALLOW")
+      : Promise.resolve({ data: [] }),
   ]);
 
   const err = [usersResult.error, rolesResult.error, workersResult.error].find(Boolean);
@@ -86,17 +108,18 @@ export default async function Page({ searchParams }: Props) {
   const selected = users.find((x) => x.user_id === selectedUserId) ?? null;
   const createRoles = roles.filter((r) => r.role_code !== "CHECKER");
   const editRoles = roles.filter((r) => r.role_code !== "CHECKER" || selected?.role_code === "CHECKER");
+  const selectedOverrides = ((overridesResult.data ?? []) as any[]).map((x) => String(x.permission_pattern).toLowerCase());
 
   return (
     <PageShell
       eyebrow="Admin"
-      title="Manajemen User"
-      description="ADMIN mengelola akun, username/display name, preset role, status, link pekerja, password, dan penghapusan akun permanen dari satu halaman."
+      title="Manajemen User & Hak Akses"
+      description="ADMIN mengelola akun, username/display name, role preset, custom hak akses per modul, status akun, dan penghapusan akun permanen dari satu halaman."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
       <Flow>
-        Role adalah preset akses. ADMIN = full; PEKERJA = akses khusus slip gaji & transparansi hutang/pekerjaan; WARUNG = mitra warung luar pencatat hutang makan; MANAGER = read-only.
+        Role adalah preset dasar. Anda dapat meng-<b>custom hak akses tambahan</b> secara bebas untuk setiap user (misalnya akun Operator Cutting yang juga diizinkan melihat Gaji Saya, atau Supervisor yang diizinkan mengelola Gudang). Semua akun yang dihubungkan ke data pekerja otomatis dapat melihat rincian gaji & kasbon mereka sendiri.
       </Flow>
 
       {canWrite ? (
@@ -106,9 +129,9 @@ export default async function Page({ searchParams }: Props) {
               <input name="email" type="email" required autoComplete="off" className={inputClass} placeholder="nama@perusahaan.com" />
             </Field>
             <Field label="Username / Nama Tampilan">
-              <input name="display_name" className={inputClass} placeholder="Contoh: Dandi Mardani" />
+              <input name="display_name" className={inputClass} placeholder="Contoh: Nedih" />
             </Field>
-            <Field label="Role">
+            <Field label="Role Utama">
               <select name="role_code" required defaultValue="USER" className={inputClass}>
                 {createRoles.map((r) => (
                   <option key={r.role_id} value={r.role_code}>{r.role_code} — {roleHelp[r.role_code] || "Role aplikasi"}</option>
@@ -141,7 +164,7 @@ export default async function Page({ searchParams }: Props) {
       ) : null}
 
       {canWrite && selected ? (
-        <Card title={`Atur Akun: ${selected.email}`}>
+        <Card title={`Atur Akun & Custom Role: ${selected.email}`}>
           <form action={saveUserAccessAction} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <input type="hidden" name="user_id" value={selected.user_id} />
             <Field label="Email Login">
@@ -157,10 +180,10 @@ export default async function Page({ searchParams }: Props) {
                 name="display_name"
                 defaultValue={selected.display_name ?? ""}
                 className={inputClass}
-                placeholder="Contoh: Budi Santoso"
+                placeholder="Contoh: Nedih"
               />
             </Field>
-            <Field label="Role">
+            <Field label="Role Utama">
               <select name="role_code" required defaultValue={selected.role_code} className={inputClass}>
                 {editRoles.map((r) => (
                   <option key={r.role_id} value={r.role_code}>{r.role_code} — {roleHelp[r.role_code] || "Role aplikasi"}</option>
@@ -183,8 +206,45 @@ export default async function Page({ searchParams }: Props) {
                 <option value="false">NONAKTIF</option>
               </select>
             </Field>
-            <div className="xl:col-span-4 flex items-center gap-3">
-              <button className={buttonClass}>Simpan Perubahan User</button>
+
+            {/* Custom Role / Granular Permissions Checklist */}
+            <div className="xl:col-span-4 mt-2 rounded-2xl border-2 border-indigo-200 bg-indigo-50/40 p-5 shadow-xs">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">🛠️</span>
+                <h4 className="text-sm font-extrabold text-indigo-950">
+                  Kustomisasi Hak Akses / Permission Tambahan (Bisa Di-Custom Bebas)
+                </h4>
+              </div>
+              <p className="text-xs text-indigo-800 mb-4 leading-relaxed">
+                Anda dapat menambahkan modul tambahan di luar role utama user. Misalnya akun <b>Nedih (Role CUTTING)</b> bisa dicentang modul <b>💰 Gaji & Slip Pekerjaan Saya</b> agar Nedih dapat sekaligus memantau gaji & hutangnya saat login.
+              </p>
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                {CUSTOM_MODULES.map((m) => {
+                  const isChecked = selectedOverrides.includes(m.id.toLowerCase());
+                  return (
+                    <label
+                      key={m.id}
+                      className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs hover:border-indigo-300 hover:bg-indigo-50/30 cursor-pointer transition"
+                    >
+                      <input
+                        type="checkbox"
+                        name="custom_permissions"
+                        value={m.id}
+                        defaultChecked={isChecked}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div className="text-xs">
+                        <div className="font-bold text-slate-800">{m.label}</div>
+                        <div className="text-slate-500 text-[11px] leading-tight mt-0.5">{m.desc}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="xl:col-span-4 flex items-center gap-3 pt-2">
+              <button className={buttonClass}>Simpan Perubahan User & Custom Role</button>
               <Link href="/dashboard/aksesUser" className="text-sm font-semibold text-slate-500 hover:text-slate-700">
                 Batal
               </Link>
@@ -237,7 +297,7 @@ export default async function Page({ searchParams }: Props) {
         </Card>
       ) : canWrite ? (
         <Card title="Atur User">
-          <Empty>Klik "Atur" pada akun di tabel bawah untuk mengubah username, role, link pekerja, password, atau menghapus akun.</Empty>
+          <Empty>Klik "Atur" pada akun di tabel bawah untuk mengubah username, role utama, custom hak akses modul, link pekerja, password, atau menghapus akun.</Empty>
         </Card>
       ) : null}
 
@@ -285,7 +345,7 @@ export default async function Page({ searchParams }: Props) {
                         href={`/dashboard/aksesUser?user=${encodeURIComponent(x.user_id)}`}
                         className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline"
                       >
-                        Atur
+                        Atur & Custom
                       </Link>
                       {access.userId !== x.user_id ? (
                         <form action={deleteUserAccessAction} className="inline">

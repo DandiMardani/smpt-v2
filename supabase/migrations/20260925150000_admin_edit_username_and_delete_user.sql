@@ -1,6 +1,7 @@
 -- ============================================================================
 -- SMPT V2: MANAGEMENT USER (EDIT USERNAME & HAPUS AKUN)
 --          + RLS PERMISSIONS PEKERJA BULANAN & WARUNG MITRA
+--          + FIX TRANSAKSI MANUFAKTUR & TITIPAN (BARANG JADI / BAHAN BAKU)
 -- ============================================================================
 
 -- 1. Fungsi untuk memperbarui data user profil (termasuk username / display_name)
@@ -189,5 +190,163 @@ language sql security definer set search_path='' as $$
 $$;
 revoke all on function public.smpt_get_my_worker_profile() from public;
 grant execute on function public.smpt_get_my_worker_profile() to authenticated;
+
+-- 9. Perbaikan RPC record_manufacturing_transaction (Mendukung Barang Jadi Bebas Proyek & Bahan Baku)
+create or replace function public.record_manufacturing_transaction(
+  p_flow_type text,
+  p_date date,
+  p_project_id bigint,
+  p_product_id bigint,
+  p_material_id bigint,
+  p_finished_good_id bigint,
+  p_vendor_id bigint,
+  p_quantity numeric,
+  p_unit text,
+  p_document_no text,
+  p_description text
+) returns bigint
+language plpgsql security definer set search_path=''
+as $$
+declare
+  v_flow text := upper(btrim(coalesce(p_flow_type, '')));
+  v_perm text;
+  v_id bigint;
+  v_code text;
+  v_event bigint;
+  v_loc bigint;
+  v_fg_unit text;
+  v_fg_project bigint;
+  v_fg_product bigint;
+  v_project bigint := p_project_id;
+  v_product bigint := p_product_id;
+  v_unit text := nullif(btrim(coalesce(p_unit, '')), '');
+  v_fg_found boolean := false;
+begin
+  if v_flow not in ('TITIPAN', 'BARANG_LUAR', 'PENGIRIMAN') then
+    raise exception 'Flow Manufaktur tidak valid.';
+  end if;
+
+  v_perm := case v_flow
+    when 'TITIPAN' then 'manufaktur.titipan.write'
+    when 'BARANG_LUAR' then 'manufaktur.barang_luar.write'
+    else 'manufaktur.pengiriman.write'
+  end;
+
+  if not public.has_permission(v_perm) and upper(coalesce(public.current_user_role(), '')) <> 'ADMIN' then
+    raise exception 'Tidak memiliki izin Manufaktur.' using errcode='42501';
+  end if;
+
+  if coalesce(p_quantity, 0) <= 0 then
+    raise exception 'Jumlah Qty harus lebih dari 0.';
+  end if;
+
+  if p_material_id is null and p_finished_good_id is null then
+    raise exception 'Pilih Bahan Baku atau Barang Jadi terlebih dahulu.';
+  end if;
+
+  if v_project is not null then
+    perform 1 from public.projects where id = v_project and upper(coalesce(status, '')) not in ('SELESAI', 'NONAKTIF', 'BATAL', 'DIBATALKAN');
+    if not found then raise exception 'Proyek tidak ditemukan atau sudah tidak aktif.'; end if;
+  end if;
+
+  if v_product is not null then
+    if v_project is null then raise exception 'Proyek wajib dipilih bila Produk/Tas dipilih.'; end if;
+    perform 1 from public.project_products where id = v_product and project_id = v_project and status = 'AKTIF';
+    if not found then raise exception 'Produk/Tas tidak sesuai Proyek atau NONAKTIF.'; end if;
+  end if;
+
+  if p_material_id is not null then
+    perform 1 from public.materials where id = p_material_id and status = 'AKTIF';
+    if not found then raise exception 'Bahan Baku tidak ditemukan atau NONAKTIF.'; end if;
+    if v_unit is null then
+      select standard_unit into v_unit from public.materials where id = p_material_id;
+    end if;
+  end if;
+
+  if p_finished_good_id is not null then
+    select true, project_id, product_id, unit
+    into v_fg_found, v_fg_project, v_fg_product, v_fg_unit
+    from public.finished_goods
+    where id = p_finished_good_id and status = 'AKTIF';
+
+    if not coalesce(v_fg_found, false) then
+      raise exception 'Barang Jadi tidak ditemukan atau NONAKTIF.';
+    end if;
+
+    -- Bila barang jadi terikat proyek spesifik
+    if v_fg_project is not null then
+      if v_project is null then
+        v_project := v_fg_project;
+      elsif v_project <> v_fg_project then
+        raise exception 'Barang Jadi tidak sesuai Proyek yang dipilih.';
+      end if;
+    end if;
+
+    if v_fg_product is not null then
+      if v_product is null then
+        v_product := v_fg_product;
+      elsif v_product <> v_fg_product then
+        raise exception 'Barang Jadi tidak sesuai Produk/Tas.';
+      end if;
+    end if;
+
+    if v_unit is null then
+      v_unit := v_fg_unit;
+    end if;
+  end if;
+
+  if p_vendor_id is not null then
+    perform 1 from public.vendors where id = p_vendor_id and status = 'AKTIF';
+    if not found then raise exception 'Vendor tidak ditemukan atau NONAKTIF.'; end if;
+  end if;
+
+  if v_flow = 'BARANG_LUAR' and p_finished_good_id is null then
+    raise exception 'Barang Jadi wajib dipilih untuk alur BARANG LUAR.';
+  end if;
+
+  insert into public.manufacturing_transactions(
+    transaction_date,
+    flow_type,
+    project_id,
+    product_id,
+    material_id,
+    finished_good_id,
+    vendor_id,
+    quantity,
+    unit,
+    document_no,
+    description
+  ) values (
+    coalesce(p_date, current_date),
+    v_flow,
+    v_project,
+    v_product,
+    p_material_id,
+    p_finished_good_id,
+    p_vendor_id,
+    round(p_quantity::numeric, 4),
+    v_unit,
+    p_document_no,
+    p_description
+  )
+  returning id, manufacturing_code into v_id, v_code;
+
+  if v_flow = 'BARANG_LUAR' then
+    select id into v_loc from public.locations where name = 'PUSAT' limit 1;
+    if v_loc is null then
+      select id into v_loc from public.locations order by id asc limit 1;
+    end if;
+    if v_loc is not null then
+      v_event := public.smpt_new_logistics_event('MANUFAKTUR BARANG LUAR', 'MANUFAKTUR', v_id, v_code, coalesce(p_date, current_date), p_description, null);
+      perform public.smpt_apply_logistics_stock(v_event, 'FINISHED_GOOD', p_finished_good_id, null, v_loc, p_quantity, coalesce(v_fg_unit, v_unit, 'PCS'), 'MANUFAKTUR MASUK', p_description);
+      update public.manufacturing_transactions set logistics_event_id = v_event where id = v_id;
+    end if;
+  end if;
+
+  return v_id;
+end;
+$$;
+revoke all on function public.record_manufacturing_transaction(text,date,bigint,bigint,bigint,bigint,bigint,numeric,text,text,text) from public;
+grant execute on function public.record_manufacturing_transaction(text,date,bigint,bigint,bigint,bigint,bigint,numeric,text,text,text) to authenticated;
 
 notify pgrst, 'reload schema';
