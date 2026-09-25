@@ -108,13 +108,13 @@ export default async function Page({ searchParams }: Props) {
     <PageShell
       eyebrow="Produksi"
       title="Surat Perintah Kerja (SPK)"
-      description="Kelola penugasan kerja borongan operator jahit. Alur terpadu satu langkah: pilih proyek, produk/tas, operator, centang item pekerjaan, dan terbitkan langsung atau simpan draft."
+      description="Kelola penugasan kerja borongan operator jahit. Alur terpadu satu langkah: pilih proyek, produk, operator, centang item pekerjaan, dan terbitkan langsung atau simpan draft."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
 
       <Flow>
-        Alur SPK V1: Supervisor membuat SPK untuk 1 Proyek + 1 Produk/Tas + 1 Operator Borongan. Centang item pekerjaan yang diserahkan dan isi Qty Penugasan. Klik <b>Simpan & Terbitkan</b> untuk langsung mengaktifkan SPK agar operator dapat mulai menyetor hasil kerja di Pekerjaan Saya.
+        Alur SPK: Supervisor membuat SPK untuk 1 Proyek + 1 Produk + 1 Operator Borongan. Centang item pekerjaan yang diserahkan dan isi Qty Penugasan. Klik <b>Simpan & Terbitkan</b> untuk langsung mengaktifkan SPK agar operator dapat mulai menyetor hasil kerja di Pekerjaan Saya.
       </Flow>
 
       <SpkManager

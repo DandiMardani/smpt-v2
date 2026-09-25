@@ -157,7 +157,7 @@ export function KasbonList({
                         </span>
                       ) : (
                         <span className="inline-flex items-center rounded-lg bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-800">
-                          🏢 Perusahaan {instCount > 1 ? `· Cicilan ${instPaid}/${instCount}` : "· Sekali Lunas"}
+                          🏢 Perusahaan {instCount > 1 ? `· Angsuran ke-${Math.min(instPaid + 1, instCount)} dari ${instCount} kali` : "· Sekali Lunas"}
                         </span>
                       )}
                       <Badge>{x.status}</Badge>
@@ -195,9 +195,9 @@ export function KasbonList({
 
                   {/* Progress Indicator for Installments */}
                   {!isWarung && instCount > 1 && (
-                    <div className="text-right min-w-32 bg-gray-50 p-2.5 rounded-xl border border-gray-100 text-xs">
-                      <div className="text-[11px] font-semibold text-gray-500 mb-1">
-                        Progress Angsuran: {instPaid} dari {instCount}
+                    <div className="text-right min-w-36 bg-gray-50 p-2.5 rounded-xl border border-gray-100 text-xs">
+                      <div className="text-[11px] font-semibold text-gray-700 mb-1">
+                        Angsuran ke-{Math.min(instPaid + 1, instCount)} dari {instCount}
                       </div>
                       <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
                         <div
@@ -208,7 +208,7 @@ export function KasbonList({
                         />
                       </div>
                       <div className="text-[10px] text-gray-500 mt-1">
-                        {Math.round((n(x.paid_amount) / Math.max(1, n(x.amount))) * 100)}% Lunas
+                        {instPaid} dari {instCount} kali terbayar ({Math.round((n(x.paid_amount) / Math.max(1, n(x.amount))) * 100)}%)
                       </div>
                     </div>
                   )}

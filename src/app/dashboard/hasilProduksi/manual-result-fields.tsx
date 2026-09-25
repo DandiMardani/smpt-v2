@@ -65,7 +65,7 @@ export function ManualResultFields({ projects, products, items, workers }: Props
         </select>
       </Field>
 
-      <Field label="Produk/Tas">
+      <Field label="Produk">
         <select
           name="product_id"
           required
@@ -77,7 +77,7 @@ export function ManualResultFields({ projects, products, items, workers }: Props
           disabled={!projectId}
           className={inputClass}
         >
-          <option value="">{projectId ? "Pilih Produk/Tas" : "Pilih proyek terlebih dahulu"}</option>
+          <option value="">{projectId ? "Pilih Produk" : "Pilih proyek terlebih dahulu"}</option>
           {filteredProducts.map((product) => <option key={product.id} value={product.id}>{product.code} · {product.name}</option>)}
         </select>
       </Field>
@@ -91,14 +91,14 @@ export function ManualResultFields({ projects, products, items, workers }: Props
           disabled={!productId}
           className={inputClass}
         >
-          <option value="">{!productId ? "Pilih Produk/Tas terlebih dahulu" : eligibleItems.length ? "Pilih item pekerjaan" : "Belum ada item eligible HARIAN → BORONGAN"}</option>
+          <option value="">{!productId ? "Pilih Produk terlebih dahulu" : eligibleItems.length ? "Pilih item pekerjaan" : "Belum ada item eligible HARIAN → BORONGAN"}</option>
           {filteredItems.map((item) => (
             <option key={item.id} value={item.id} disabled={!item.eligible || item.productId == null}>
               {item.code} · {item.name}{item.productId == null ? " · BELUM TERIKAT PRODUK" : ""} · {item.executorScope.replaceAll("_", " ")} · Pengajuan {item.submissionCategory.replaceAll("_", " ")}{item.eligible && item.productId != null ? "" : " · BELUM ELIGIBLE"}
             </option>
           ))}
         </select>
-        {productId && filteredItems.length === 0 ? <span className="mt-1 block text-xs text-amber-300">Produk/Tas ini belum mempunyai Item Pekerjaan aktif.</span> : null}
+        {productId && filteredItems.length === 0 ? <span className="mt-1 block text-xs text-amber-300">Produk ini belum mempunyai Item Pekerjaan aktif.</span> : null}
         {productId && filteredItems.length > 0 && eligibleItems.length === 0 ? <span className="mt-1 block text-xs text-amber-300">Item ada, tetapi belum ada yang dikonfigurasi Pelaksana PEKERJA HARIAN/KEDUANYA + Pengajuan BORONGAN di Master Item Pekerjaan.</span> : null}
         {selectedItem ? <span className="mt-1 block text-xs text-slate-500">Harga Pengajuan snapshot Rp {selectedItem.proposedPrice.toLocaleString("id-ID")} / {selectedItem.unit}. Nilai operator HARIAN tetap 0.</span> : null}
       </Field>

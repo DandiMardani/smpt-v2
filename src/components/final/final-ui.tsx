@@ -117,17 +117,17 @@ export function TableWrap({ children }: { children: ReactNode }) {
   );
 }
 
-export function Th({ children }: { children: ReactNode }) {
+export function Th({ children, className, colSpan }: { children?: ReactNode; className?: string; colSpan?: number }) {
   return (
-    <th className="whitespace-nowrap bg-gray-50/90 px-3.5 py-2.5 text-left text-xs font-bold uppercase tracking-wider text-gray-600">
+    <th colSpan={colSpan} className={`whitespace-nowrap bg-gray-50/90 px-3.5 py-2.5 text-left text-xs font-bold uppercase tracking-wider text-gray-600 ${className || ""}`}>
       {children}
     </th>
   );
 }
 
-export function Td({ children }: { children: ReactNode }) {
+export function Td({ children, className, colSpan }: { children?: ReactNode; className?: string; colSpan?: number }) {
   return (
-    <td className="whitespace-nowrap border-t border-gray-100 px-3.5 py-2.5 align-top text-gray-800">
+    <td colSpan={colSpan} className={`whitespace-nowrap border-t border-gray-100 px-3.5 py-2.5 align-top text-gray-800 ${className || ""}`}>
       {children}
     </td>
   );

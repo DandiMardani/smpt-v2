@@ -30,9 +30,9 @@ export function ProjectProductFields({ projects, products, className, projectReq
         {projects.map((x) => <option key={x.id} value={x.id}>{x.code ? `${x.code} · ` : ""}{x.name}</option>)}
       </select>
     </Wrap>
-    <Wrap label="Produk/Tas" help={!projectId ? "Pilih proyek terlebih dahulu." : filteredProducts.length ? `${filteredProducts.length} Produk/Tas tersedia.` : "Proyek ini belum memiliki Produk/Tas aktif."}>
+    <Wrap label="Produk" help={!projectId ? "Pilih proyek terlebih dahulu." : filteredProducts.length ? `${filteredProducts.length} Produk tersedia.` : "Proyek ini belum memiliki Produk aktif."}>
       <select name="product_id" required={productRequired} value={productId} onChange={(e) => setProductId(e.target.value)} disabled={!projectId} className={className}>
-        <option value="">{!projectId ? "Pilih proyek terlebih dahulu" : productRequired ? "Pilih Produk/Tas" : productEmptyLabel}</option>
+        <option value="">{!projectId ? "Pilih proyek terlebih dahulu" : productRequired ? "Pilih Produk" : productEmptyLabel}</option>
         {filteredProducts.map((x) => <option key={x.id} value={x.id}>{x.code ? `${x.code} · ` : ""}{x.name}</option>)}
       </select>
     </Wrap>
@@ -51,9 +51,9 @@ export function ProjectProductBomFields({ projects, products, boms, className, p
         <option value="">Pilih proyek</option>{projects.map((x) => <option key={x.id} value={x.id}>{x.code ? `${x.code} · ` : ""}{x.name}</option>)}
       </select>
     </Wrap>
-    <Wrap label="Produk/Tas" help={!projectId ? "Pilih proyek terlebih dahulu." : undefined}>
+    <Wrap label="Produk" help={!projectId ? "Pilih proyek terlebih dahulu." : undefined}>
       <select name="product_id" required={productRequired} value={productId} onChange={(e) => { setProductId(e.target.value); setBomId(""); }} disabled={!projectId} className={className}>
-        <option value="">{productRequired ? "Pilih Produk/Tas" : "Umum proyek"}</option>{filteredProducts.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        <option value="">{productRequired ? "Pilih Produk" : "Umum proyek"}</option>{filteredProducts.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
       </select>
     </Wrap>
     <Wrap label="Bahan / BOM" help={projectId && filteredBoms.length === 0 ? "Tidak ada BOM aktif yang sesuai pilihan proyek/produk." : undefined}>

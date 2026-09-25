@@ -26,7 +26,7 @@ import {
   totalPages,
 } from "@/lib/master/page-utils";
 import { deleteBomRequirement, saveBomRequirement } from "./actions";
-import { BomCalculator } from "@/components/master/bom-calculator";
+import { MasterKebutuhanCreateForm, MasterKebutuhanFilter } from "./master-kebutuhan-client";
 
 type ProjectRef = { id: number; project_code: string; name: string; status: string };
 type ProductRef = {
@@ -89,7 +89,7 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
   ]);
 
   if (projectResult.error) throw new Error(`Referensi proyek gagal dimuat: ${projectResult.error.message}`);
-  if (productResult.error) throw new Error(`Referensi Produk/Tas gagal dimuat: ${productResult.error.message}`);
+  if (productResult.error) throw new Error(`Referensi Produk gagal dimuat: ${productResult.error.message}`);
   if (materialResult.error) throw new Error(`Referensi bahan gagal dimuat: ${materialResult.error.message}`);
 
   const projects = (projectResult.data ?? []) as ProjectRef[];
@@ -98,9 +98,6 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
   const projectMap = new Map(projects.map((item) => [item.id, item]));
   const productMap = new Map(products.map((item) => [item.id, item]));
   const materialMap = new Map(materials.map((item) => [item.id, item]));
-  const productsForProject = selectedProject
-    ? products.filter((item) => item.project_id === selectedProject)
-    : [];
 
   let query = supabase
     .from("bom_requirements")
@@ -124,53 +121,27 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
     <MasterPageShell
       eyebrow="Master Data"
       title="Master Kebutuhan Bahan / BOM"
-      description="BAHAN masuk flow stok fisik. JASA dan BIAYA hanya masuk costing. Total kebutuhan dihitung dinamis dari Target Produk/Tas × Kebutuhan per Unit."
+      description="BAHAN masuk flow stok fisik. JASA dan BIAYA hanya masuk costing. Total kebutuhan dihitung dinamis dari Target Produk × Kebutuhan per Unit."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
-      <SectionCard title="Pilih Proyek / Produk" description="Kebutuhan V2 baru selalu disimpan per Produk/Tas agar kebutuhan dan modal tidak tercampur.">
-        <form method="get" className="grid gap-3 md:grid-cols-3">
-          <Field label="Proyek">
-            <select name="project" defaultValue={selectedProject ? String(selectedProject) : ""} className={selectClass}>
-              <option value="">Semua proyek</option>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.project_code} · {project.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Produk/Tas">
-            <select name="product" defaultValue={selectedProduct ? String(selectedProduct) : ""} className={selectClass}>
-              <option value="">Semua Produk/Tas</option>
-              {productsForProject.map((product) => <option key={product.id} value={product.id}>{product.product_code} · {product.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Cari"><input name="q" defaultValue={q} placeholder="ID atau nama komponen" className={inputClass} /></Field>
-          <div className="md:col-span-3"><button type="submit" className={secondaryButtonClass}>Terapkan Filter</button></div>
-        </form>
-      </SectionCard>
+      <MasterKebutuhanFilter
+        projects={projects}
+        products={products}
+        initialProjectId={selectedProject}
+        initialProductId={selectedProduct}
+        initialQ={q}
+      />
 
-      {canWrite && selectedProject && selectedProduct ? (
-        <SectionCard title="Tambah Kebutuhan / Komponen" description="Untuk BAHAN, pilih Master Bahan; nama dan satuan akan diambil dari database. Untuk JASA/BIAYA, isi nama dan satuannya sendiri.">
-          <form action={saveBomRequirement} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <input type="hidden" name="project_id" value={selectedProject} />
-            <input type="hidden" name="product_id" value={selectedProduct} />
-            <Field label="Jenis Komponen">
-              <select name="component_type" defaultValue="BAHAN" className={selectClass}><option value="BAHAN">BAHAN — stok fisik</option><option value="JASA">JASA — costing</option><option value="BIAYA">BIAYA — costing</option></select>
-            </Field>
-            <Field label="Master Bahan" hint="Wajib untuk jenis BAHAN; diabaikan untuk JASA/BIAYA.">
-              <select id="bom-material-id" name="material_id" defaultValue="" className={selectClass}><option value="">Pilih bahan bila jenis BAHAN</option>{materials.map((material) => <option key={material.id} value={material.id} data-name={material.name} data-unit={material.standard_unit} data-calculation-type={material.calculation_type}>{material.material_code} · {material.name} · {material.standard_unit} · {material.calculation_type}{material.status !== "AKTIF" ? " (NONAKTIF)" : ""}</option>)}</select>
-            </Field>
-            <Field label="Nama Jasa/Biaya" hint="Diabaikan jika jenis BAHAN."><input name="component_name" className={inputClass} placeholder="Contoh: Sablon" /></Field>
-            <Field label="Satuan Jasa/Biaya" hint="Diabaikan jika jenis BAHAN."><input name="unit" defaultValue="pcs" className={inputClass} /></Field>
-            <Field label="Kebutuhan / Unit" hint="Bisa diisi manual atau memakai kalkulator di bawah."><input id="bom-qty-per-unit" name="qty_per_unit" type="number" min="0" step="0.000001" defaultValue="0" required className={inputClass} /></Field>
-            <Field label="Harga Satuan"><input name="unit_price" type="number" min="0" step="0.01" defaultValue="0" required className={inputClass} /></Field>
-            <Field label="Sumber Pemenuhan"><select name="fulfillment_source" defaultValue="COMPANY_PURCHASE" className={selectClass}><option value="COMPANY_PURCHASE">Perusahaan Beli</option><option value="CUSTOMER_SUPPLIED">Bahan Customer / Titipan</option><option value="VENDOR_SUPPLIED">Disediakan Vendor</option><option value="INTERNAL_STOCK">Stok Internal</option><option value="OTHER">Lainnya</option></select></Field>
-            <Field label="Status"><select name="status" defaultValue="AKTIF" className={selectClass}><option value="AKTIF">AKTIF</option><option value="NONAKTIF">NONAKTIF</option></select></Field>
-            <BomCalculator projectLabel={projectMap.get(selectedProject)?.name ?? "-"} productLabel={productMap.get(selectedProduct)?.name ?? "-"} targetProduct={Number(productMap.get(selectedProduct)?.target_production ?? 0)} materialSelectId="bom-material-id" targetInputId="bom-qty-per-unit" />
-            <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Kebutuhan</button></div>
-          </form>
-        </SectionCard>
-      ) : canWrite ? (
-        <div className="rounded-xl border border-sky-900 bg-sky-950/30 px-4 py-3 text-sm text-sky-200">Pilih satu Proyek dan satu Produk/Tas pada filter untuk menambah kebutuhan baru.</div>
+      {canWrite ? (
+        <MasterKebutuhanCreateForm
+          projects={projects}
+          products={products}
+          materials={materials}
+          defaultProjectId={selectedProject || undefined}
+          defaultProductId={selectedProduct || undefined}
+        />
       ) : null}
 
       <SectionCard title="Daftar Kebutuhan / Costing" description={`${count ?? 0} komponen ditemukan`}>
@@ -230,7 +201,7 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                       <form action={deleteBomRequirement} className="mt-4 border-t border-slate-100 pt-4"><input type="hidden" name="id" value={row.id} /><button type="submit" className={dangerButtonClass}>Hapus Kebutuhan</button></form>
                     </div>
                   ) : row.legacy_project_level ? (
-                    <p className="mt-4 border-t border-slate-100 pt-4 text-xs font-medium text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-200">Row legacy level proyek dipertahankan untuk audit. Migrasi data final akan memetakannya ke Produk/Tas yang benar sebelum go-live.</p>
+                    <p className="mt-4 border-t border-slate-100 pt-4 text-xs font-medium text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-200">Row legacy level proyek dipertahankan untuk audit. Migrasi data final akan memetakannya ke Produk yang benar sebelum go-live.</p>
                   ) : null}
                 </details>
               );

@@ -338,7 +338,7 @@ export default async function Page({ searchParams }: Props) {
               availableCutting.length === 0 &&
               availableSablonDone.length === 0 ? (
                 <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  Belum ada WIP fisik yang siap dikirim dari Gudang Hasil ke Siap Produksi untuk Produk/Tas ini.
+                  Belum ada WIP fisik yang siap dikirim dari Gudang Hasil ke Siap Produksi untuk Produk ini.
                 </p>
               ) : null}
 

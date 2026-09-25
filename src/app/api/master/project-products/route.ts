@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 
   if (error) {
     return NextResponse.json(
-      { products: [], error: "Produk/Tas tidak dapat dibaca." },
+      { products: [], error: "Produk tidak dapat dibaca." },
       { status: 500 },
     );
   }

@@ -22,9 +22,6 @@ const VALIDATION_MODES = ["WARNING", "HARD"] as const;
 
 async function requireAdminItemWrite() {
   const access = await requirePermission("master_item.write");
-  if (access.role !== "ADMIN") {
-    go(PATH, "error", "Perubahan Master Item Pekerjaan hanya boleh dilakukan oleh Admin.");
-  }
   return access;
 }
 
@@ -185,4 +182,40 @@ export async function setWorkItemStatus(formData: FormData) {
   revalidatePath(PATH);
   revalidatePath(ROUTING_PATH);
   go(back, "success", "Status Item Pekerjaan berhasil diperbarui.");
+}
+
+export async function deleteWorkItem(formData: FormData) {
+  await requireAdminItemWrite();
+  const back = contextPath(formData);
+
+  try {
+    const id = getId(formData, "id");
+    const supabase = await createClient();
+
+    // Cek apakah item pekerjaan sudah pernah digunakan dalam SPK produksi
+    const { data: spkItems } = await supabase
+      .from("production_order_items")
+      .select("id")
+      .eq("work_item_id", id)
+      .limit(1);
+
+    if (spkItems && spkItems.length > 0) {
+      const { error } = await supabase.rpc("set_work_item_status", {
+        p_item_id: id,
+        p_status: "NONAKTIF",
+      });
+      if (error) throw error;
+      revalidatePath(PATH);
+      revalidatePath(ROUTING_PATH);
+      go(back, "success", "Item dinonaktifkan (status: NONAKTIF) karena sudah digunakan dalam SPK Produksi.");
+    } else {
+      const { error } = await supabase.from("work_items").delete().eq("id", id);
+      if (error) throw error;
+      revalidatePath(PATH);
+      revalidatePath(ROUTING_PATH);
+      go(back, "success", "Item Pekerjaan berhasil dihapus.");
+    }
+  } catch (error) {
+    go(back, "error", errorMessage(error, "Gagal menghapus Item Pekerjaan."));
+  }
 }

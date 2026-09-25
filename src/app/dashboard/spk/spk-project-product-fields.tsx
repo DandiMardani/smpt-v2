@@ -54,7 +54,7 @@ export function SpkProjectProductFields({ projects, products }: Props) {
         </select>
       </Field>
 
-      <Field label="Produk/Tas">
+      <Field label="Produk">
         <select
           name="product_id"
           required
@@ -68,8 +68,8 @@ export function SpkProjectProductFields({ projects, products }: Props) {
             {!hasSelectedProject
               ? "Pilih proyek terlebih dahulu"
               : hasProducts
-                ? "Pilih Produk/Tas"
-                : "Produk/Tas aktif tidak tersedia"}
+                ? "Pilih Produk"
+                : "Produk aktif tidak tersedia"}
           </option>
           {filteredProducts.map((product) => (
             <option key={product.id} value={product.id}>
@@ -79,10 +79,10 @@ export function SpkProjectProductFields({ projects, products }: Props) {
         </select>
         <span id="spk-product-help" className="mt-1 block text-xs text-slate-500">
           {!hasSelectedProject
-            ? "Produk/Tas akan tersedia setelah proyek dipilih."
+            ? "Produk akan tersedia setelah proyek dipilih."
             : hasProducts
-              ? `${filteredProducts.length} Produk/Tas aktif tersedia untuk proyek ini.`
-              : "Proyek ini belum memiliki Produk/Tas aktif. Tambahkan atau aktifkan Produk/Tas pada Master Produk/Tas Proyek."}
+              ? `${filteredProducts.length} Produk aktif tersedia untuk proyek ini.`
+              : "Proyek ini belum memiliki Produk aktif. Tambahkan atau aktifkan Produk pada Master Produk Proyek."}
         </span>
       </Field>
     </>

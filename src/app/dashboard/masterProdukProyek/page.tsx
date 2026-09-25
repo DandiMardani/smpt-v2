@@ -72,7 +72,7 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
   ]);
 
   if (projectResult.error) throw new Error(`Referensi proyek gagal dimuat: ${projectResult.error.message}`);
-  if (productResult.error) throw new Error(`Produk/Tas gagal dimuat: ${productResult.error.message}`);
+  if (productResult.error) throw new Error(`Produk gagal dimuat: ${productResult.error.message}`);
 
   const projects = (projectResult.data ?? []) as ProjectRef[];
   const projectMap = new Map(projects.map((item) => [item.id, item]));
@@ -83,14 +83,14 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
   return (
     <MasterPageShell
       eyebrow="Master Data"
-      title="Produk / Tas Proyek"
-      description="Target produksi aktif disimpan per Produk/Tas. Anda dapat mengedit nama, target, satuan, maupun memindahkan proyek jika salah input."
+      title="Master Produk Proyek"
+      description="Target produksi aktif disimpan per Produk. Anda dapat mengedit nama, target, satuan, maupun memindahkan proyek jika salah input."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
       {canWrite ? (
-        <SectionCard title="Tambah Produk/Tas">
+        <SectionCard title="Tambah Produk">
           <form action={createProjectProduct} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Field label="Proyek">
               <select name="project_id" required defaultValue="" className={selectClass}>
@@ -100,7 +100,7 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
                 ))}
               </select>
             </Field>
-            <Field label="Nama Produk/Tas"><input name="name" required className={inputClass} /></Field>
+            <Field label="Nama Produk"><input name="name" required className={inputClass} /></Field>
             <Field label="Target Produksi"><input name="target_production" type="number" min="0.0001" step="0.0001" required className={inputClass} /></Field>
             <Field label="Satuan"><input name="unit" defaultValue="pcs" required className={inputClass} /></Field>
             <Field label="Status">
@@ -110,14 +110,14 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
               </select>
             </Field>
             <Field label="Keterangan"><input name="notes" className={inputClass} /></Field>
-            <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Produk/Tas</button></div>
+            <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Produk</button></div>
           </form>
         </SectionCard>
       ) : null}
 
-      <SectionCard title="Daftar Produk/Tas" description={`${count ?? 0} data ditemukan`}>
+      <SectionCard title="Daftar Produk" description={`${count ?? 0} data ditemukan`}>
         <form method="get" className="mb-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px_auto]">
-          <input name="q" defaultValue={q} placeholder="Cari ID atau nama Produk/Tas..." className={inputClass} />
+          <input name="q" defaultValue={q} placeholder="Cari ID atau nama Produk..." className={inputClass} />
           <select name="project" defaultValue={selectedProject ? String(selectedProject) : ""} className={selectClass}>
             <option value="">Semua proyek</option>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
@@ -125,7 +125,7 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
           <button className={secondaryButtonClass} type="submit">Filter</button>
         </form>
 
-        {rows.length === 0 ? <EmptyState text="Belum ada Produk/Tas pada filter ini." /> : (
+        {rows.length === 0 ? <EmptyState text="Belum ada Produk pada filter ini." /> : (
           <div className="space-y-3">
             {rows.map((row) => {
               const project = projectMap.get(row.project_id);
@@ -153,7 +153,7 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
                             ))}
                           </select>
                         </Field>
-                        <Field label="Nama Produk/Tas"><input name="name" required defaultValue={row.name} className={inputClass} /></Field>
+                        <Field label="Nama Produk"><input name="name" required defaultValue={row.name} className={inputClass} /></Field>
                         <Field label="Target Produksi"><input name="target_production" type="number" min="0.0001" step="0.0001" required defaultValue={String(row.target_production)} className={inputClass} /></Field>
                         <Field label="Satuan"><input name="unit" required defaultValue={row.unit} className={inputClass} /></Field>
                         <Field label="Status"><select name="status" defaultValue={row.status} className={selectClass}><option value="AKTIF">AKTIF</option><option value="NONAKTIF">NONAKTIF</option></select></Field>
@@ -166,7 +166,7 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
                             formNoValidate
                             className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
                           >
-                            🗑️ Hapus Produk/Tas
+                            🗑️ Hapus Produk
                           </button>
                         </div>
                       </form>

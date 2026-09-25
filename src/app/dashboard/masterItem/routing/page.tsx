@@ -19,6 +19,7 @@ import { requirePermission } from "@/lib/access/current-user";
 import { n, param, qty, text, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { deactivateDependency, saveDependency, saveWorkItemFlow } from "./actions";
+import { MasterRoutingFilter } from "./routing-client";
 
 type Props = { searchParams: Promise<SearchParams> };
 
@@ -99,22 +100,13 @@ export default async function Page({ searchParams }: Props) {
         MANDIRI = tidak dibandingkan dengan item lain. BERANTAI = sistem otomatis membuat 1 → 2 → 3 berdasarkan Nomor Alur. KHUSUS = gunakan hanya jika alurnya bercabang, parallel, atau bergabung kembali.
       </Flow>
 
-      <Card title="Pilih Produk/Tas">
-        <form method="get" className="grid gap-3 md:grid-cols-3">
-          <Field label="Proyek">
-            <select name="project" defaultValue={projectId || ""} className={inputClass}>
-              <option value="">Pilih proyek</option>
-              {projects.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Produk/Tas">
-            <select name="product" defaultValue={productId || ""} className={inputClass} required>
-              <option value="">Pilih Produk/Tas</option>
-              {productOptions.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
-          </Field>
-          <div><button className={buttonClass}>Buka Alur</button></div>
-        </form>
+      <Card title="Pilih Produk">
+        <MasterRoutingFilter
+          projects={projects as any[]}
+          products={products as any[]}
+          initialProjectId={projectId}
+          initialProductId={productId}
+        />
       </Card>
 
       {productId ? (
@@ -127,7 +119,7 @@ export default async function Page({ searchParams }: Props) {
           </div>
 
           <Card title="Atur Tipe Alur Item">
-            {items.length === 0 ? <Empty>Belum ada Item Pekerjaan untuk Produk/Tas ini.</Empty> : (
+            {items.length === 0 ? <Empty>Belum ada Item Pekerjaan untuk Produk ini.</Empty> : (
               <TableWrap>
                 <thead>
                   <tr>

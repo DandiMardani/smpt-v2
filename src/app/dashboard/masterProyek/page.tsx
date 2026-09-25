@@ -91,7 +91,7 @@ export default async function MasterProyekPage({ searchParams }: Props) {
       ? supabase.from("projects").select("id, project_code, name").in("id", sourceIds)
       : Promise.resolve({ data: [] as { id: number; project_code: string; name: string }[], error: null }),
   ]);
-  if (productTargetResult.error) throw new Error(`Produk/Tas Repeat Order gagal dimuat: ${productTargetResult.error.message}`);
+  if (productTargetResult.error) throw new Error(`Produk Repeat Order gagal dimuat: ${productTargetResult.error.message}`);
   if (sourceProjectResult.error) throw new Error(`Trace Repeat Order gagal dimuat: ${sourceProjectResult.error.message}`);
   const productsByProject = new Map<number, ProductTargetRow[]>();
   for (const product of (productTargetResult.data ?? []) as ProductTargetRow[]) {
@@ -105,7 +105,7 @@ export default async function MasterProyekPage({ searchParams }: Props) {
     <MasterPageShell
       eyebrow="Master Data"
       title="Master Proyek"
-      description="Data induk proyek V2. Target produksi aktif tetap dikelola per Produk/Tas, bukan di level proyek."
+      description="Data induk proyek V2. Target produksi aktif tetap dikelola per Produk, bukan di level proyek."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
@@ -203,7 +203,7 @@ export default async function MasterProyekPage({ searchParams }: Props) {
                         {canRepeat ? (
                           <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                             <h3 className="font-bold text-slate-900 text-sm">Repeat Order</h3>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">Membuat project baru dan hanya menyalin master/config reusable: Produk/Tas, target baru, BOM, Item Pekerjaan, profil pelaksana/pengajuan, dan Routing. Transaksi lama tidak disalin.</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">Membuat project baru dan hanya menyalin master/config reusable: Produk, target baru, BOM, Item Pekerjaan, profil pelaksana/pengajuan, dan Routing. Transaksi lama tidak disalin.</p>
                             <form action={repeatProject} className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                               <input type="hidden" name="source_project_id" value={row.id} />
                               <Field label="ID Proyek Baru"><input name="project_code" required className={inputClass} placeholder={`${row.project_code}-RO`} /></Field>
@@ -222,7 +222,7 @@ export default async function MasterProyekPage({ searchParams }: Props) {
                               ))}
                               <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Buat Repeat Order</button></div>
                             </form>
-                            {(productsByProject.get(row.id) ?? []).length === 0 ? <p className="mt-3 text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg border border-amber-200">Project ini belum mempunyai Produk/Tas. Repeat tetap bisa dibuat, tetapi tidak ada konfigurasi produk yang dicopy.</p> : null}
+                            {(productsByProject.get(row.id) ?? []).length === 0 ? <p className="mt-3 text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg border border-amber-200">Project ini belum mempunyai Produk. Repeat tetap bisa dibuat, tetapi tidak ada konfigurasi produk yang dicopy.</p> : null}
                           </div>
                         ) : null}
                         <form action={deleteProject} className="mt-4 border-t border-slate-100 pt-4">

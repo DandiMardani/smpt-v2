@@ -18,7 +18,7 @@ export default async function Page({searchParams}:Props){
   ]);
   const e=[fr.error,pr.error,ppr.error,ir.error].find(Boolean);if(e)throw new Error(e.message);
   const projects=pr.data??[],products=ppr.data??[],workItems=ir.data??[];
-  return <PageShell eyebrow="Master Data" title="Master Barang Jadi" description="Hubungkan Barang Jadi internal ke Proyek, Produk/Tas, dan item pekerjaan Output Final yang sama.">
+  return <PageShell eyebrow="Master Data" title="Master Barang Jadi" description="Hubungkan Barang Jadi internal ke Proyek, Produk, dan item pekerjaan Output Final yang sama.">
     <Notice success={param(q,"success")} error={param(q,"error")}/>{!canWrite?<ReadOnly/>:null}
     {canWrite?<Card title="Tambah Barang Jadi"><form action={saveFinishedGoodAction} className="grid gap-3 md:grid-cols-3">
       <MasterFinishedGoodFields projects={projects as any[]} products={products as any[]} workItems={workItems as any[]} className={inputClass}/>

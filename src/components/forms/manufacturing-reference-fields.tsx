@@ -66,7 +66,7 @@ export function ManufacturingReferenceFields({ projects, products, finishedGoods
         </select>
       </Label>
 
-      <Label text="Produk/Tas" help={!projectId ? "Pilih Proyek bila transaksi terkait Produk/Tas." : scopedProducts.length ? undefined : "Proyek ini belum memiliki Produk/Tas aktif."}>
+      <Label text="Produk" help={!projectId ? "Pilih Proyek bila transaksi terkait Produk." : scopedProducts.length ? undefined : "Proyek ini belum memiliki Produk aktif."}>
         <select
           name="product_id"
           value={productId}

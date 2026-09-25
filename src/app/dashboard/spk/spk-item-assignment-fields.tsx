@@ -129,7 +129,7 @@ export function SpkItemAssignmentFields({ orderId, workItems, capacities }: Prop
               {" "}Maks SPK saat ini {fmt(maxAssignable)} {selectedItem.unit}.
               {exceedsHard ? " HARD: qty ini melebihi WIP yang tersedia dan tidak bisa disimpan." : ""}
               {warningOverWip ? " WARNING: qty melebihi WIP saat ini; SPK boleh lanjut tetapi anomaly akan dicatat saat diterbitkan." : ""}
-              {exceedsTarget ? " Qty juga melebihi sisa target Produk/Tas." : ""}
+              {exceedsTarget ? " Qty juga melebihi sisa target Produk." : ""}
             </span>
           )}
         </span>

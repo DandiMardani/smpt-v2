@@ -161,7 +161,7 @@ export default async function Page({ searchParams }: Props) {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card title="Runtime Test · Repeat Order">
           <p className="text-sm leading-6 text-slate-600">
-            Membuat source dummy, menjalankan Repeat Order lewat RPC yang sama dengan fitur utama, lalu memverifikasi target baru, Produk/Tas, BOM, Item, Routing, profile pelaksana/pengajuan, trace source, transaksi tercopy = 0, dan repeat project bisa dipakai membuat Draft SPK normal.
+            Membuat source dummy, menjalankan Repeat Order lewat RPC yang sama dengan fitur utama, lalu memverifikasi target baru, Produk, BOM, Item, Routing, profile pelaksana/pengajuan, trace source, transaksi tercopy = 0, dan repeat project bisa dipakai membuat Draft SPK normal.
           </p>
           <form action={runRepeatOrderTest} className="mt-4"><button className={buttonClass}>Jalankan Repeat Order Test</button></form>
           {latestRepeat ? <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-500"><span>Terakhir:</span><b className="font-semibold text-slate-900">{latestRepeat.run_code}</b><Badge>{latestRepeat.status}</Badge><span>{latestRepeat.started_at}</span></div> : null}

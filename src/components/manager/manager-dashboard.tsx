@@ -86,11 +86,11 @@ function renderRows(section: SectionKey, rows: JsonRow[]) {
   if (!rows.length) return <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50/60 px-4 py-8 text-center text-sm font-medium text-gray-500">Belum ada data untuk filter ini.</div>;
 
   if (section === "PRODUCTION") {
-    return <TableWrap><thead><tr><Th>Project</Th><Th>Produk/Tas</Th><Th>Item</Th><Th>Alur</Th><Th>Target Produk</Th><Th>Target Item</Th><Th>Qty Sah</Th><Th>Equivalent</Th><Th>Sisa Eq.</Th><Th>Over Eq.</Th><Th>Progress</Th><Th>Hasil Periode</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.work_item_name)}</Td><Td>{text(r.flow_mode)} {r.flow_order ? `#${text(r.flow_order)}` : ""}</Td><Td>{num(r.target_production)}</Td><Td>{num(r.target_item_qty)}</Td><Td>{num(r.qty_sah)}</Td><Td>{num(r.equivalent_product)}</Td><Td>{num(r.remaining_equivalent)}</Td><Td>{num(r.over_equivalent)}</Td><Td>{num(r.progress_percent)}%</Td><Td>{num(r.qty_sah_period)}</Td></tr>)}</tbody></TableWrap>;
+    return <TableWrap><thead><tr><Th>Project</Th><Th>Produk</Th><Th>Item</Th><Th>Alur</Th><Th>Target Produk</Th><Th>Target Item</Th><Th>Qty Sah</Th><Th>Equivalent</Th><Th>Sisa Eq.</Th><Th>Over Eq.</Th><Th>Progress</Th><Th>Hasil Periode</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.work_item_name)}</Td><Td>{text(r.flow_mode)} {r.flow_order ? `#${text(r.flow_order)}` : ""}</Td><Td>{num(r.target_production)}</Td><Td>{num(r.target_item_qty)}</Td><Td>{num(r.qty_sah)}</Td><Td>{num(r.equivalent_product)}</Td><Td>{num(r.remaining_equivalent)}</Td><Td>{num(r.over_equivalent)}</Td><Td>{num(r.progress_percent)}%</Td><Td>{num(r.qty_sah_period)}</Td></tr>)}</tbody></TableWrap>;
   }
 
   if (section === "MATERIAL") {
-    return <div className="space-y-3"><TableWrap><thead><tr><Th>Project</Th><Th>Produk/Tas</Th><Th>Material</Th><Th>Kebutuhan</Th><Th>Datang Global</Th><Th>Kurang Datang*</Th><Th>Stok Gudang Global</Th><Th>Keluar ke Produksi</Th><Th>Actual Dipakai</Th><Th>Sisa Area Produksi</Th><Th>Total Sisa Terlihat</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.material_name)} · {text(r.unit)}</Td><Td>{num(r.total_requirement)}</Td><Td>{num(r.received_global)}</Td><Td>{num(r.shortfall_vs_global_receipt)}</Td><Td>{num(r.warehouse_stock_global)}</Td><Td>{num(r.issued_to_production)}</Td><Td>{num(r.actual_consumed)}</Td><Td>{num(r.production_area_stock)}</Td><Td>{num(r.total_visible_stock)}</Td></tr>)}</tbody></TableWrap><p className="text-xs leading-5 text-amber-800">Catatan: Barang Masuk dan stok Gudang bahan masih global per material. Dashboard tidak menganggap Barang Keluar = actual consumption.</p></div>;
+    return <div className="space-y-3"><TableWrap><thead><tr><Th>Project</Th><Th>Produk</Th><Th>Material</Th><Th>Kebutuhan</Th><Th>Datang Global</Th><Th>Kurang Datang*</Th><Th>Stok Gudang Global</Th><Th>Keluar ke Produksi</Th><Th>Actual Dipakai</Th><Th>Sisa Area Produksi</Th><Th>Total Sisa Terlihat</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.material_name)} · {text(r.unit)}</Td><Td>{num(r.total_requirement)}</Td><Td>{num(r.received_global)}</Td><Td>{num(r.shortfall_vs_global_receipt)}</Td><Td>{num(r.warehouse_stock_global)}</Td><Td>{num(r.issued_to_production)}</Td><Td>{num(r.actual_consumed)}</Td><Td>{num(r.production_area_stock)}</Td><Td>{num(r.total_visible_stock)}</Td></tr>)}</tbody></TableWrap><p className="text-xs leading-5 text-amber-800">Catatan: Barang Masuk dan stok Gudang bahan masih global per material. Dashboard tidak menganggap Barang Keluar = actual consumption.</p></div>;
   }
 
   if (section === "WORKFORCE") {
@@ -102,10 +102,10 @@ function renderRows(section: SectionKey, rows: JsonRow[]) {
   }
 
   if (section === "ATTENTION") {
-    return <TableWrap><thead><tr><Th>Waktu</Th><Th>Level</Th><Th>Jenis</Th><Th>Project</Th><Th>Produk/Tas</Th><Th>Sumber</Th><Th>Detail</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.event_at).slice(0, 19).replace("T", " ")}</Td><Td><Badge>{text(r.severity)}</Badge></Td><Td>{text(r.attention_type)}</Td><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.source_name)}</Td><Td className="max-w-lg whitespace-normal">{text(r.detail)}</Td></tr>)}</tbody></TableWrap>;
+    return <TableWrap><thead><tr><Th>Waktu</Th><Th>Level</Th><Th>Jenis</Th><Th>Project</Th><Th>Produk</Th><Th>Sumber</Th><Th>Detail</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.event_at).slice(0, 19).replace("T", " ")}</Td><Td><Badge>{text(r.severity)}</Badge></Td><Td>{text(r.attention_type)}</Td><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.source_name)}</Td><Td className="max-w-lg whitespace-normal">{text(r.detail)}</Td></tr>)}</tbody></TableWrap>;
   }
 
-  return <TableWrap><thead><tr><Th>Waktu</Th><Th>Jenis</Th><Th>Kode</Th><Th>Project</Th><Th>Produk/Tas</Th><Th>Status</Th><Th>Detail</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.event_at).slice(0, 19).replace("T", " ")}</Td><Td><Badge>{text(r.event_type)}</Badge></Td><Td>{text(r.code)}</Td><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.status)}</Td><Td className="max-w-lg whitespace-normal">{text(r.detail)}</Td></tr>)}</tbody></TableWrap>;
+  return <TableWrap><thead><tr><Th>Waktu</Th><Th>Jenis</Th><Th>Kode</Th><Th>Project</Th><Th>Produk</Th><Th>Status</Th><Th>Detail</Th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><Td>{text(r.event_at).slice(0, 19).replace("T", " ")}</Td><Td><Badge>{text(r.event_type)}</Badge></Td><Td>{text(r.code)}</Td><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{text(r.status)}</Td><Td className="max-w-lg whitespace-normal">{text(r.detail)}</Td></tr>)}</tbody></TableWrap>;
 }
 
 export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSummary }) {
@@ -191,14 +191,14 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="Proyek Aktif" value={num(prod.active_projects)} />
-        <Kpi label="Produk/Tas Aktif" value={num(prod.active_products)} />
+        <Kpi label="Produk Aktif" value={num(prod.active_products)} />
         <Kpi label="SPK Aktif" value={num(prod.active_spk)} />
         <Kpi label="Qty Sah Periode" value={num(prod.qty_sah_period)} />
       </section>
 
       <section className="rounded-2xl border border-gray-200/90 bg-white p-5 shadow-xs sm:p-6">
         <div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-gray-900">Proyek & Produksi</h2><p className="text-sm text-gray-500">Actual memakai hasil Checker yang sah pada Output Final.</p></div><button onClick={() => loadSection("PRODUCTION")} className="rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-xs hover:bg-gray-50">Detail Item</button></div>
-        {topProducts.length ? <TableWrap><thead><tr><Th>Project</Th><Th>Produk/Tas</Th><Th>Target</Th><Th>Actual</Th><Th>Sisa</Th><Th>Progress</Th><Th>Status Produk</Th><Th>Status Output Final</Th></tr></thead><tbody>{topProducts.map((r, i) => <tr key={i}><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{num(r.target_production)}</Td><Td>{num(r.actual)}</Td><Td>{num(r.remaining)}</Td><Td>{num(r.progress_percent)}%</Td><Td>{text(r.product_status)}</Td><Td>{r.output_final_configured ? "Siap" : "Belum diset"}</Td></tr>)}</tbody></TableWrap> : <div className="text-sm font-medium text-gray-500">Belum ada Produk/Tas aktif.</div>}
+        {topProducts.length ? <TableWrap><thead><tr><Th>Project</Th><Th>Produk</Th><Th>Target</Th><Th>Actual</Th><Th>Sisa</Th><Th>Progress</Th><Th>Status Produk</Th><Th>Status Output Final</Th></tr></thead><tbody>{topProducts.map((r, i) => <tr key={i}><Td>{text(r.project_name)}</Td><Td>{text(r.product_name)}</Td><Td>{num(r.target_production)}</Td><Td>{num(r.actual)}</Td><Td>{num(r.remaining)}</Td><Td>{num(r.progress_percent)}%</Td><Td>{text(r.product_status)}</Td><Td>{r.output_final_configured ? "Siap" : "Belum diset"}</Td></tr>)}</tbody></TableWrap> : <div className="text-sm font-medium text-gray-500">Belum ada Produk aktif.</div>}
       </section>
 
       <section className="space-y-3">
@@ -242,7 +242,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
         <p className="mt-1 text-sm text-gray-500">Filter aktif dipakai untuk detail. Data tidak diambil sebelum tombol section diklik.</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <select value={projectId || ""} onChange={(e) => { const v=Number(e.target.value)||0; setProjectId(v); setProductId(0); }} className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-xs focus:border-[#0d6efd]"><option value="">Semua Project</option>{projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-          <select value={productId || ""} onChange={(e) => setProductId(Number(e.target.value)||0)} className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-xs focus:border-[#0d6efd]"><option value="">Semua Produk/Tas</option>{productOptions.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+          <select value={productId || ""} onChange={(e) => setProductId(Number(e.target.value)||0)} className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-xs focus:border-[#0d6efd]"><option value="">Semua Produk</option>{productOptions.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
           <div className="md:col-span-2 flex flex-wrap gap-2">{(Object.keys(sectionLabels) as SectionKey[]).map((section) => <button key={section} onClick={() => loadSection(section)} disabled={sectionLoading !== null} className={`rounded-xl border px-3.5 py-2 text-sm font-semibold transition shadow-xs ${activeSection===section ? "border-[#0d6efd] bg-blue-50 text-[#0d6efd]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}>{sectionLoading===section ? "Memuat..." : sectionLabels[section]}</button>)}</div>
         </div>
 

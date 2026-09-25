@@ -134,7 +134,7 @@ export async function repeatProject(formData: FormData) {
       "master_kebutuhan.write",
     ];
     if (!required.every((permission) => access.permissionCodes.includes(permission))) {
-      throw new Error("Repeat Order memerlukan izin tulis Proyek, Produk/Tas, Item Pekerjaan, dan Kebutuhan/BOM.");
+      throw new Error("Repeat Order memerlukan izin tulis Proyek, Produk, Item Pekerjaan, dan Kebutuhan/BOM.");
     }
 
     const sourceProjectId = getId(formData, "source_project_id");
@@ -161,7 +161,7 @@ export async function repeatProject(formData: FormData) {
       if (!/^\d+$/.test(sourceProductId)) continue;
       const target = Number(String(rawValue ?? "").trim());
       if (!Number.isFinite(target) || target <= 0) {
-        throw new Error("Semua target Produk/Tas Repeat Order harus lebih dari 0.");
+        throw new Error("Semua target Produk Repeat Order harus lebih dari 0.");
       }
       productTargets[sourceProductId] = target;
     }

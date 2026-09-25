@@ -25,7 +25,14 @@ import {
   type SearchParams,
   totalPages,
 } from "@/lib/master/page-utils";
-import { saveWorkItem, saveWorkItemFlowInline, saveWorkItemPayrollProfile, setWorkItemStatus } from "./actions";
+import {
+  deleteWorkItem,
+  saveWorkItem,
+  saveWorkItemFlowInline,
+  saveWorkItemPayrollProfile,
+  setWorkItemStatus,
+} from "./actions";
+import { MasterItemCreateForm, MasterItemFilter } from "./master-item-client";
 
 type ProjectRef = { id: number; project_code: string; name: string; status: string };
 type ProductRef = {
@@ -69,7 +76,7 @@ function flowBadge(row: WorkItemRow) {
 
 export default async function MasterItemPage({ searchParams }: Props) {
   const access = await requirePermission("master_item.view");
-  const canWrite = access.role === "ADMIN" && access.permissionCodes.includes("master_item.write");
+  const canWrite = access.permissionCodes.includes("master_item.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
   const selectedProject = Number(param(params, "project")) || 0;
@@ -97,22 +104,16 @@ export default async function MasterItemPage({ searchParams }: Props) {
     query,
   ]);
   if (projectResult.error) throw new Error(`Referensi proyek gagal dimuat: ${projectResult.error.message}`);
-  if (productResult.error) throw new Error(`Referensi Produk/Tas gagal dimuat: ${productResult.error.message}`);
+  if (productResult.error) throw new Error(`Referensi Produk gagal dimuat: ${productResult.error.message}`);
   if (workItemsResult.error) throw new Error(`Master Item Pekerjaan gagal dimuat: ${workItemsResult.error.message}`);
 
   const projects = (projectResult.data ?? []) as ProjectRef[];
   const products = (productResult.data ?? []) as ProductRef[];
   const projectMap = new Map(projects.map((item) => [item.id, item]));
   const productMap = new Map(products.map((item) => [item.id, item]));
-  const productsForProject = selectedProject
-    ? products.filter((item) => item.project_id === selectedProject)
-    : [];
 
   const rows = (workItemsResult.data ?? []) as WorkItemRow[];
   const pages = totalPages(workItemsResult.count ?? 0);
-  const routingHref = selectedProject && selectedProduct
-    ? `/dashboard/masterItem/routing?project=${selectedProject}&product=${selectedProduct}`
-    : "/dashboard/masterItem/routing";
 
   return (
     <MasterPageShell
@@ -123,27 +124,13 @@ export default async function MasterItemPage({ searchParams }: Props) {
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
-      <SectionCard title="Pilih Proyek / Produk" description="Filter ini menentukan konteks Item Pekerjaan dan alurnya.">
-        <form method="get" className="grid gap-3 md:grid-cols-3">
-          <Field label="Proyek">
-            <select name="project" defaultValue={selectedProject ? String(selectedProject) : ""} className={selectClass}>
-              <option value="">Semua proyek</option>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.project_code} · {project.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Produk/Tas">
-            <select name="product" defaultValue={selectedProduct ? String(selectedProduct) : ""} className={selectClass}>
-              <option value="">Semua Produk/Tas</option>
-              {productsForProject.map((product) => <option key={product.id} value={product.id}>{product.product_code} · {product.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Cari"><input name="q" defaultValue={q} placeholder="ID atau nama pekerjaan" className={inputClass} /></Field>
-          <div className="md:col-span-3 flex flex-wrap gap-2">
-            <button type="submit" className={secondaryButtonClass}>Terapkan Filter</button>
-            {selectedProject && selectedProduct ? <Link href={routingHref} className={secondaryButtonClass}>Lihat / Atur Alur</Link> : null}
-          </div>
-        </form>
-      </SectionCard>
+      <MasterItemFilter
+        projects={projects}
+        products={products}
+        initialProjectId={selectedProject}
+        initialProductId={selectedProduct}
+        initialQ={q}
+      />
 
       <SectionCard title="Cara Pakai Alur" description="User tidak perlu membuat predecessor/successor satu-satu untuk pekerjaan normal.">
         <div className="grid gap-3 md:grid-cols-3">
@@ -162,32 +149,14 @@ export default async function MasterItemPage({ searchParams }: Props) {
         </div>
       </SectionCard>
 
-      {canWrite && selectedProject && selectedProduct ? (
-        <SectionCard title="Tambah Item Pekerjaan" description="Item baru default MANDIRI. Setelah tersimpan, atur alurnya pada kartu item di bawah.">
-          <form action={saveWorkItem} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <input type="hidden" name="project_id" value={selectedProject} />
-            <input type="hidden" name="product_id" value={selectedProduct} />
-            <input type="hidden" name="return_project" value={selectedProject} />
-            <input type="hidden" name="return_product" value={selectedProduct} />
-            <input type="hidden" name="return_q" value={q} />
-            <Field label="Proyek"><input disabled value={projectMap.get(selectedProject)?.name ?? "-"} className={inputClass} /></Field>
-            <Field label="Produk/Tas"><input disabled value={productMap.get(selectedProduct)?.name ?? "-"} className={inputClass} /></Field>
-            <Field label="Nama Pekerjaan"><input name="name" required className={inputClass} /></Field>
-            <Field label="Satuan">
-              <select name="unit" required defaultValue="" className={selectClass}><option value="" disabled>Pilih satuan</option>{ITEM_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select>
-            </Field>
-            <Field label="Qty Pekerjaan / Produk"><input name="qty_per_product" type="number" min="1" step="1" defaultValue="1" required className={inputClass} /></Field>
-            <Field label="Harga Operator"><input name="operator_price" type="number" min="0" step="1" defaultValue="0" required className={inputClass} /></Field>
-            <Field label="Harga Pengajuan"><input name="proposed_price" type="number" min="0" step="1" defaultValue="0" required className={inputClass} /></Field>
-            <Field label="Status"><select name="status" defaultValue="AKTIF" className={selectClass}><option value="AKTIF">AKTIF</option><option value="NONAKTIF">NONAKTIF</option></select></Field>
-            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-xs font-semibold text-slate-700 cursor-pointer">
-              <input name="output_final" type="checkbox" className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" /> Output Final
-            </label>
-            <div className="md:col-span-2 xl:col-span-3 flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Item</button></div>
-          </form>
-        </SectionCard>
-      ) : canWrite ? (
-        <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 text-xs font-medium text-blue-800">Pilih satu Proyek dan satu Produk/Tas pada filter untuk menambah item baru.</div>
+      {canWrite ? (
+        <MasterItemCreateForm
+          projects={projects}
+          products={products}
+          defaultProjectId={selectedProject || undefined}
+          defaultProductId={selectedProduct || undefined}
+          currentQ={q}
+        />
       ) : null}
 
       <SectionCard title="Daftar Item Pekerjaan" description={`${workItemsResult.count ?? 0} item ditemukan · alur bisa diatur langsung dari setiap item`}>
@@ -254,7 +223,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
                             </Field>
                             <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Alur</button></div>
                           </form>
-                          <p className="mt-3 text-xs leading-5 text-slate-500">BERANTAI akan disambungkan otomatis berdasarkan Nomor Alur pada Produk/Tas yang sama. MANDIRI tidak punya predecessor. KHUSUS membuka routing cabang/join.</p>
+                          <p className="mt-3 text-xs leading-5 text-slate-500">BERANTAI akan disambungkan otomatis berdasarkan Nomor Alur pada Produk yang sama. MANDIRI tidak punya predecessor. KHUSUS membuka routing cabang/join.</p>
                         </div>
                       ) : (
                         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">Aktifkan item terlebih dahulu untuk mengubah alurnya.</div>
@@ -292,7 +261,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
                         <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
                         <input type="hidden" name="return_q" value={q} />
                         <Field label="Proyek"><input disabled value={project?.name ?? "-"} className={inputClass} /></Field>
-                        <Field label="Produk/Tas"><input disabled value={product?.name ?? "-"} className={inputClass} /></Field>
+                        <Field label="Produk"><input disabled value={product?.name ?? "-"} className={inputClass} /></Field>
                         <Field label="Nama Pekerjaan"><input name="name" required defaultValue={row.name} className={inputClass} /></Field>
                         <Field label="Satuan"><select name="unit" required defaultValue={row.unit} className={selectClass}>{!ITEM_UNITS.includes(row.unit as (typeof ITEM_UNITS)[number]) ? <option value={row.unit}>{row.unit}</option> : null}{ITEM_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>
                         <Field label="Qty Pekerjaan / Produk"><input name="qty_per_product" type="number" min="1" step="1" required defaultValue={row.qty_per_product} className={inputClass} /></Field>
@@ -304,14 +273,28 @@ export default async function MasterItemPage({ searchParams }: Props) {
                         </label>
                         <div className="md:col-span-2 xl:col-span-3 flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Perubahan</button></div>
                       </form>
-                      <form action={setWorkItemStatus} className="border-t border-slate-100 pt-4">
-                        <input type="hidden" name="id" value={row.id} />
-                        <input type="hidden" name="status" value={row.status === "AKTIF" ? "NONAKTIF" : "AKTIF"} />
-                        <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
-                        <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
-                        <input type="hidden" name="return_q" value={q} />
-                        <button type="submit" className={secondaryButtonClass}>{row.status === "AKTIF" ? "Nonaktifkan Item" : "Aktifkan Item"}</button>
-                      </form>
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                        <form action={setWorkItemStatus}>
+                          <input type="hidden" name="id" value={row.id} />
+                          <input type="hidden" name="status" value={row.status === "AKTIF" ? "NONAKTIF" : "AKTIF"} />
+                          <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
+                          <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
+                          <input type="hidden" name="return_q" value={q} />
+                          <button type="submit" className={secondaryButtonClass}>{row.status === "AKTIF" ? "Nonaktifkan Item" : "Aktifkan Item"}</button>
+                        </form>
+                        <form action={deleteWorkItem}>
+                          <input type="hidden" name="id" value={row.id} />
+                          <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
+                          <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
+                          <input type="hidden" name="return_q" value={q} />
+                          <button
+                            type="submit"
+                            className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
+                          >
+                            🗑️ Hapus Item
+                          </button>
+                        </form>
+                      </div>
                     </div>
                   ) : null}
                 </details>

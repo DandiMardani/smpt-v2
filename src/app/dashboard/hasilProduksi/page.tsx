@@ -210,7 +210,7 @@ export default async function Page({ searchParams }: Props) {
         <Metric label="Anomaly Terbuka" value={anomalies.length} />
       </div>
 
-      <Card title="Progress Project → Produk/Tas → Item">
+      <Card title="Progress Proyek → Produk → Item">
         {byProduct.size === 0 ? <Empty>Belum ada progress produksi.</Empty> : (
           <div className="space-y-4">
             {[...byProduct.entries()].map(([key, items]) => {

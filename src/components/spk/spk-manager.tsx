@@ -438,7 +438,7 @@ export function SpkManager({
           <div>
             <h3 className="text-base font-bold text-slate-900">Daftar Surat Perintah Kerja (SPK)</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Penugasan borongan dari Supervisor kepada satu operator untuk satu proyek & produk/tas.
+              Penugasan borongan dari Supervisor kepada satu operator untuk satu proyek & produk.
             </p>
           </div>
 
@@ -632,7 +632,7 @@ export function SpkManager({
               <div>
                 <h3 className="font-extrabold text-slate-900 text-lg">Buat Surat Perintah Kerja (SPK)</h3>
                 <p className="text-xs text-slate-500">
-                  Pilih proyek, produk/tas, operator borongan, checker, lalu tentukan item pekerjaan dan Qty Penugasan.
+                  Pilih proyek, produk, operator borongan, checker, lalu tentukan item pekerjaan dan Qty Penugasan.
                 </p>
               </div>
               <button
@@ -830,7 +830,7 @@ export function SpkManager({
 
                 {!selectedProjectId || !selectedProductId ? (
                   <div className="py-8 text-center text-xs text-slate-400">
-                    Pilih <b>Proyek</b> dan <b>Produk/Tas</b> di atas untuk menampilkan daftar item pekerjaan.
+                    Pilih <b>Proyek</b> dan <b>Produk</b> di atas untuk menampilkan daftar item pekerjaan.
                   </div>
                 ) : availableWorkItems.length === 0 ? (
                   <div className="py-8 text-center text-xs text-slate-400">

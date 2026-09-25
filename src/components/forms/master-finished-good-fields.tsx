@@ -43,7 +43,7 @@ export function MasterFinishedGoodFields({ projects, products, workItems, classN
       </label>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-semibold text-slate-400">Produk/Tas</span>
+        <span className="mb-1 block text-xs font-semibold text-slate-400">Produk</span>
         <select
           name="product_id"
           value={productId}
@@ -51,7 +51,7 @@ export function MasterFinishedGoodFields({ projects, products, workItems, classN
           disabled={!projectId}
           className={className}
         >
-          <option value="">{projectId ? "Pilih Produk/Tas (Opsional)" : "- (Tanpa Proyek)"}</option>
+          <option value="">{projectId ? "Pilih Produk (Opsional)" : "- (Tanpa Proyek)"}</option>
           {ps.map((x) => (
             <option key={x.id} value={x.id}>
               {x.name}

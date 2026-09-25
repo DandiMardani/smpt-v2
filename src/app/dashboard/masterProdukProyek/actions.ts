@@ -7,7 +7,6 @@ import {
   errorMessage,
   getId,
   getNumber,
-  getOptionalId,
   getText,
   redirectWithMessage,
   requireOneOf,
@@ -19,6 +18,9 @@ const STATUSES = ["AKTIF", "NONAKTIF"] as const;
 export async function createProjectProduct(formData: FormData) {
   await requirePermission("master_produk_proyek.write");
 
+  let redirectType: "success" | "error" = "success";
+  let message = "";
+
   try {
     const projectId = getId(formData, "project_id");
     const name = getText(formData, "name");
@@ -27,11 +29,11 @@ export async function createProjectProduct(formData: FormData) {
     const status = requireOneOf(
       getText(formData, "status") || "AKTIF",
       STATUSES,
-      "Status Produk/Tas",
+      "Status Produk",
     );
     const notes = getText(formData, "notes");
 
-    if (!name) throw new Error("Nama Produk/Tas wajib diisi.");
+    if (!name) throw new Error("Nama Produk wajib diisi.");
 
     const supabase = await createClient();
     const { error } = await supabase.from("project_products").insert({
@@ -44,16 +46,21 @@ export async function createProjectProduct(formData: FormData) {
     });
 
     if (error) throw error;
+    message = "Produk berhasil ditambahkan.";
   } catch (error) {
-    redirectWithMessage(PATH, "error", errorMessage(error, "Gagal menambah Produk/Tas."));
+    redirectType = "error";
+    message = errorMessage(error, "Gagal menambah Produk.");
   }
 
   revalidatePath(PATH);
-  redirectWithMessage(PATH, "success", "Produk/Tas berhasil ditambahkan.");
+  redirectWithMessage(PATH, redirectType, message);
 }
 
 export async function updateProjectProduct(formData: FormData) {
   await requirePermission("master_produk_proyek.write");
+
+  let redirectType: "success" | "error" = "success";
+  let message = "";
 
   try {
     const id = getId(formData, "id");
@@ -64,11 +71,11 @@ export async function updateProjectProduct(formData: FormData) {
     const status = requireOneOf(
       getText(formData, "status") || "AKTIF",
       STATUSES,
-      "Status Produk/Tas",
+      "Status Produk",
     );
     const notes = getText(formData, "notes");
 
-    if (!name) throw new Error("Nama Produk/Tas wajib diisi.");
+    if (!name) throw new Error("Nama Produk wajib diisi.");
 
     const supabase = await createClient();
     const { error } = await supabase
@@ -84,42 +91,54 @@ export async function updateProjectProduct(formData: FormData) {
       .eq("id", id);
 
     if (error) throw error;
+    message = "Produk berhasil diperbarui.";
   } catch (error) {
-    redirectWithMessage(PATH, "error", errorMessage(error, "Gagal memperbarui Produk/Tas."));
+    redirectType = "error";
+    message = errorMessage(error, "Gagal memperbarui Produk.");
   }
 
   revalidatePath(PATH);
-  redirectWithMessage(PATH, "success", "Produk/Tas berhasil diperbarui.");
+  redirectWithMessage(PATH, redirectType, message);
 }
 
 export async function deleteProjectProduct(formData: FormData) {
   await requirePermission("master_produk_proyek.write");
 
+  let redirectType: "success" | "error" = "success";
+  let message = "";
+
   try {
     const id = getId(formData, "id");
     const supabase = await createClient();
 
-    const [wiRes, spkRes, bomRes] = await Promise.all([
-      supabase.from("work_items").select("id").eq("product_id", id).limit(1),
-      supabase.from("production_orders").select("id").eq("product_id", id).limit(1),
-      supabase.from("bom_requirements").select("id").eq("product_id", id).limit(1),
-    ]);
+    // Cek apakah produk sudah digunakan dalam SPK produksi aktif
+    const { data: spkRows } = await supabase
+      .from("production_orders")
+      .select("id")
+      .eq("product_id", id)
+      .limit(1);
 
-    const inUse = (wiRes.data?.length ?? 0) > 0 || (spkRes.data?.length ?? 0) > 0 || (bomRes.data?.length ?? 0) > 0;
+    const hasSpk = (spkRows?.length ?? 0) > 0;
 
-    if (inUse) {
+    if (hasSpk) {
       const { error } = await supabase.from("project_products").update({ status: "NONAKTIF" }).eq("id", id);
       if (error) throw error;
-      revalidatePath(PATH);
-      redirectWithMessage(PATH, "success", "Produk/Tas dinonaktifkan karena telah memiliki SPK / Item Pekerjaan.");
+      message = "Produk dinonaktifkan (status: NONAKTIF) karena telah tercatat dalam SPK Produksi.";
     } else {
+      // Jika salah input dan belum masuk SPK, bersihkan draft kebutuhan & item terlebih dahulu agar bersih tuntas
+      await supabase.from("bom_requirements").delete().eq("product_id", id);
+      await supabase.from("work_items").delete().eq("product_id", id);
+      await supabase.from("cutting_components").delete().eq("product_id", id);
+
       const { error } = await supabase.from("project_products").delete().eq("id", id);
       if (error) throw error;
-      revalidatePath(PATH);
-      redirectWithMessage(PATH, "success", "Produk/Tas berhasil dihapus.");
+      message = "Produk berhasil dihapus.";
     }
   } catch (error) {
-    redirectWithMessage(PATH, "error", errorMessage(error, "Gagal menghapus Produk/Tas."));
+    redirectType = "error";
+    message = errorMessage(error, "Gagal menghapus Produk.");
   }
-}
 
+  revalidatePath(PATH);
+  redirectWithMessage(PATH, redirectType, message);
+}

@@ -76,6 +76,15 @@ export function requireOneOf(value: string, allowed: readonly string[], label: s
 }
 
 export function errorMessage(error: unknown, fallback: string): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    (("digest" in error && String((error as any).digest).startsWith("NEXT_REDIRECT")) ||
+      ("message" in error && (error as any).message === "NEXT_REDIRECT"))
+  ) {
+    throw error;
+  }
+
   if (error && typeof error === "object") {
     const candidate = error as {
       code?: string;

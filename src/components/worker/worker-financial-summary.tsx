@@ -101,39 +101,98 @@ export function WorkerFinancialSummary({
         </div>
 
         {/* Card 2: Hutang Warung */}
-        <div className="rounded-xl bg-amber-50/80 border border-amber-200 p-4 shadow-2xs">
-          <div className="text-[11px] font-semibold text-amber-900 flex items-center justify-between">
-            <span>🍜 Hutang Warung Luar:</span>
-            <span className="font-bold">{warungDebts.length} nota</span>
+        <div className="rounded-xl bg-amber-50/80 border border-amber-200 p-4 shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-amber-900 flex items-center justify-between">
+              <span>🍜 Hutang Warung Luar:</span>
+              <span className="font-bold bg-amber-100/80 text-amber-800 px-2 py-0.5 rounded-md text-[10px]">{warungDebts.length} nota</span>
+            </div>
+            <div className="mt-1 text-xl font-black text-amber-800">{money(totalWarung)}</div>
+            <div className="mt-1 text-[10px] text-amber-950 font-medium">
+              Otomatis dipotong saat payroll
+            </div>
           </div>
-          <div className="mt-1 text-xl font-black text-amber-800">{money(totalWarung)}</div>
-          <div className="mt-1 text-[10px] text-amber-950 font-medium">
-            Otomatis dipotong saat payroll
-          </div>
+
+          {/* Riwayat Detail Hutang Warung langsung di Card */}
+          {warungDebts.length > 0 ? (
+            <div className="mt-3 pt-2.5 border-t border-amber-200/70 space-y-1.5 text-[11px]">
+              <div className="font-bold text-amber-900 text-[10px] uppercase tracking-wider">Riwayat Hutang:</div>
+              <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                {warungDebts.map((w) => {
+                  const rem = n(w.amount) - n(w.paid_amount);
+                  return (
+                    <div key={w.id} className="rounded-lg bg-white/90 border border-amber-200/60 p-2 flex justify-between items-start gap-1">
+                      <div className="leading-tight">
+                        <span className="font-bold text-gray-800">{w.warung_name || "Warung Luar"}</span>
+                        <span className="text-gray-500 text-[10px] block mt-0.5">{w.advance_date} {w.notes ? `· ${w.notes}` : ""}</span>
+                      </div>
+                      <span className="font-black text-amber-800 whitespace-nowrap text-xs">{money(rem)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Card 3: Kasbon Perusahaan */}
-        <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs">
-          <div className="text-[11px] font-semibold text-gray-500 flex items-center justify-between">
-            <span>🏢 Sisa Kasbon Kantor:</span>
-            {activeCompanyInstallment > 0 && (
-              <span className="text-blue-600 font-bold text-[10px]">Cicilan Aktif</span>
-            )}
+        <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-gray-500 flex items-center justify-between">
+              <span>🏢 Sisa Kasbon Kantor:</span>
+              {activeCompanyInstallment > 0 && (
+                <span className="text-blue-600 font-bold text-[10px] bg-blue-50 px-2 py-0.5 rounded-md">Cicilan Aktif</span>
+              )}
+            </div>
+            <div className="mt-1 text-xl font-black text-rose-600">{money(totalCompanyLoan)}</div>
+            <div className="mt-1 text-[10px] text-gray-500">
+              {activeCompanyInstallment > 0
+                ? `Potongan bln ini: ${money(activeCompanyInstallment)}`
+                : "Tidak ada cicilan aktif"}
+            </div>
           </div>
-          <div className="mt-1 text-xl font-black text-rose-600">{money(totalCompanyLoan)}</div>
-          <div className="mt-1 text-[10px] text-gray-500">
-            {activeCompanyInstallment > 0
-              ? `Potongan bln ini: ${money(activeCompanyInstallment)}`
-              : "Tidak ada cicilan aktif"}
-          </div>
+
+          {/* Rincian Angsuran langsung di Card */}
+          {companyLoans.length > 0 ? (
+            <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-1.5 text-[11px]">
+              <div className="font-bold text-gray-700 text-[10px] uppercase tracking-wider">Rincian Angsuran:</div>
+              <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                {companyLoans.map((l) => {
+                  const rem = n(l.amount) - n(l.paid_amount);
+                  const count = Number(l.installment_count) || 1;
+                  const paid = Number(l.installments_paid) || 0;
+                  const currentInst = paid + 1;
+                  const instAmt = n(l.installment_amount) || Math.round(n(l.amount) / count);
+                  return (
+                    <div key={l.id} className="rounded-lg bg-gray-50 border border-gray-200/60 p-2 flex justify-between items-start gap-1">
+                      <div className="leading-tight">
+                        <span className="font-bold text-blue-700">
+                          {count > 1 ? `Angsuran ke-${Math.min(currentInst, count)} dari ${count} kali` : "Sekali Lunas"}
+                        </span>
+                        <span className="text-gray-500 text-[10px] block mt-0.5">
+                          {count > 1 ? `${money(instAmt)}/bln · ` : ""}{l.advance_date}
+                        </span>
+                      </div>
+                      <span className="font-black text-rose-600 whitespace-nowrap text-xs">{money(rem)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Card 4: Estimasi Bersih Diterima */}
-        <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 shadow-2xs">
-          <div className="text-[11px] font-semibold text-emerald-900">Perkiraan Gaji Bersih (Net):</div>
-          <div className="mt-1 text-xl font-black text-emerald-700">{money(estimatedNet)}</div>
-          <div className="mt-1 text-[10px] text-emerald-800 font-medium">
-            Setelah dikurangi seluruh kasbon
+        <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-emerald-900">Perkiraan Gaji Bersih (Net):</div>
+            <div className="mt-1 text-xl font-black text-emerald-700">{money(estimatedNet)}</div>
+            <div className="mt-1 text-[10px] text-emerald-800 font-medium">
+              Setelah dikurangi seluruh kasbon
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-emerald-200/60 text-[11px] text-emerald-800">
+            Total pemotongan berjalan: <b>{money(totalDeductionPending)}</b>
           </div>
         </div>
       </div>
@@ -144,7 +203,7 @@ export function WorkerFinancialSummary({
           {/* Detail Hutang Warung */}
           <div className="rounded-xl bg-white border border-amber-200 p-4">
             <h3 className="font-bold text-sm text-amber-950 mb-2 flex items-center gap-1.5">
-              <span>🍜</span> Rincian Hutang Warung Mitra ({warungDebts.length} Catatan)
+              <span>🍜</span> Rincian Riwayat Hutang Warung Mitra ({warungDebts.length} Catatan)
             </h3>
             {warungDebts.length === 0 ? (
               <p className="text-xs text-gray-500 italic">Anda tidak memiliki tagihan hutang di warung luar.</p>
@@ -176,7 +235,7 @@ export function WorkerFinancialSummary({
           {/* Detail Kasbon Perusahaan */}
           <div className="rounded-xl bg-white border border-gray-200 p-4">
             <h3 className="font-bold text-sm text-gray-900 mb-2 flex items-center gap-1.5">
-              <span>🏢</span> Rincian Kasbon Perusahaan & Angsuran ({companyLoans.length} Pinjaman)
+              <span>🏢</span> Rincian Kasbon Perusahaan & Progress Angsuran ({companyLoans.length} Pinjaman)
             </h3>
             {companyLoans.length === 0 ? (
               <p className="text-xs text-gray-500 italic">Anda tidak memiliki pinjaman kasbon perusahaan yang aktif.</p>
@@ -186,6 +245,7 @@ export function WorkerFinancialSummary({
                   const rem = n(l.amount) - n(l.paid_amount);
                   const count = Number(l.installment_count) || 1;
                   const paid = Number(l.installments_paid) || 0;
+                  const currentInst = paid + 1;
                   const instAmt = n(l.installment_amount) || Math.round(n(l.amount) / count);
                   return (
                     <div key={l.id} className="py-2.5 flex flex-wrap items-center justify-between gap-2">
@@ -194,7 +254,13 @@ export function WorkerFinancialSummary({
                           {l.advance_code} · {l.advance_date}
                         </div>
                         <div className="text-[11px] text-gray-500 mt-0.5">
-                          {count > 1 ? `Angsuran: ${paid} dari ${count} kali dipotong (${money(instAmt)}/bln)` : "Pinjaman Sekali Lunas"}
+                          {count > 1 ? (
+                            <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                              Angsuran ke-{Math.min(currentInst, count)} dari {count} kali ({money(instAmt)}/bln)
+                            </span>
+                          ) : (
+                            "Pinjaman Sekali Lunas"
+                          )}
                           {l.notes ? ` · ${l.notes}` : ""}
                         </div>
                       </div>

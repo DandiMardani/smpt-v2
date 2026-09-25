@@ -23,7 +23,7 @@ export async function createSpkUnifiedAction(f: FormData) {
 
   if (!orderDate) redirectWithMessage(PATH, "error", "Tanggal SPK wajib diisi.");
   if (!projectId) redirectWithMessage(PATH, "error", "Proyek wajib dipilih.");
-  if (!productId) redirectWithMessage(PATH, "error", "Produk/Tas wajib dipilih.");
+  if (!productId) redirectWithMessage(PATH, "error", "Produk wajib dipilih.");
   if (!operatorWorkerId) redirectWithMessage(PATH, "error", "Operator Borongan wajib dipilih.");
   if (!checkerEmail) redirectWithMessage(PATH, "error", "Checker wajib dipilih.");
 

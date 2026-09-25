@@ -81,7 +81,7 @@ function fileSlug(value: string): string {
 }
 function label(key: string): string {
   const aliases: Record<string, string> = {
-    id: "ID", project_id: "Project ID", product_id: "Produk/Tas ID", material_id: "Material ID", worker_id: "Pekerja ID",
+    id: "ID", project_id: "Project ID", product_id: "Produk ID", material_id: "Material ID", worker_id: "Pekerja ID",
     created_at: "Dibuat Pada", updated_at: "Diubah Pada", created_by: "Dibuat Oleh", updated_by: "Diubah Oleh",
     qty_sah: "Qty Sah", equivalent_product: "Equivalent Product", progress_percent: "Progress %",
     target_production: "Target Produk", target_item_qty: "Target Item", remaining_equivalent: "Sisa Equivalent", over_equivalent: "Over Equivalent",
@@ -105,7 +105,7 @@ function metaSheet(title: string, from: string, to: string, params: URLSearchPar
       { field: "Laporan", value: title },
       { field: "Periode", value: `${from} s/d ${to}` },
       { field: "Project ID", value: params.get("project") || "Semua" },
-      { field: "Produk/Tas ID", value: params.get("product") || "Semua" },
+      { field: "Produk ID", value: params.get("product") || "Semua" },
       { field: "Material ID", value: params.get("material") || "Semua" },
       { field: "Pekerja ID", value: params.get("worker") || "Semua" },
       { field: "Status", value: params.get("status") || "Semua" },
