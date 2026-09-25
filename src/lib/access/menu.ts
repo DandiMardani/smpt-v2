@@ -148,7 +148,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("sablon", "Sablon"),
       item("permintaanProduksi", "Permintaan Barang"),
       item("spk", "Surat Perintah Kerja"),
-      item("setoran", "Pekerjaan Saya"),
+      item("setoran", "Gaji & Pekerjaan Saya"),
       item("produksi", "Siap Produksi"),
       item("borongan", "Setoran Borongan"),
       item("hasilProduksi", "Hasil Produksi"),

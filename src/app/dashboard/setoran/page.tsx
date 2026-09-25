@@ -22,7 +22,7 @@ export default async function Page() {
   if (e) throw new Error(e.message);
 
   const workerId = wr.data;
-  let workerData = null;
+  let workerData: any = null;
   let warungDebts: any[] = [];
   let companyLoans: any[] = [];
   let workedDays = 0;
@@ -30,13 +30,19 @@ export default async function Page() {
   let estimatedGross = 0;
 
   if (workerId) {
-    const [wRes, advRes, attRes] = await Promise.all([
+    const [rpcProfRes, wRes, advRes, attRes] = await Promise.all([
+      s.rpc("smpt_get_my_worker_profile"),
       s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department").eq("id", workerId).maybeSingle(),
       s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
-      s.from("attendance_records").select("id,day_class,attendance_status,overtime_minutes").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth),
+      s.from("attendance_records").select("id,day_class,attendance_status,overtime_minutes,manual_overtime_hours").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth),
     ]);
 
-    workerData = wRes.data;
+    if (rpcProfRes.data && rpcProfRes.data.length > 0) {
+      workerData = rpcProfRes.data[0];
+    } else if (wRes.data) {
+      workerData = wRes.data;
+    }
+
     const allAdv = advRes.data ?? [];
     warungDebts = allAdv.filter((a) => a.category === "KASBON_WARUNG");
     companyLoans = allAdv.filter((a) => a.category !== "KASBON_WARUNG");
@@ -51,7 +57,7 @@ export default async function Page() {
         if (a.day_class === "FULL_DAY") fullDays += 1;
         else if (a.day_class === "HALF_DAY") halfDays += 1;
       }
-      otMins += Number(a.overtime_minutes || 0);
+      otMins += Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
     }
 
     workedDays = fullDays + (halfDays * 0.5);
@@ -68,6 +74,7 @@ export default async function Page() {
     }
   }
 
+  const isBulanan = workerData?.pay_system === "BULANAN";
   const orders = or.data ?? [];
   const items = ir.data ?? [];
   const checks = cr.data ?? [];
@@ -75,11 +82,11 @@ export default async function Page() {
   return (
     <PageShell
       eyebrow="Pekerja"
-      title="Pekerjaan Saya & Transparansi Gaji"
-      description="Pantau status akumulasi gaji berjalan, rincian potongan hutang di warung luar, sisa cicilan kasbon kantor, dan daftar tugas produksi harian Anda."
+      title="Gaji, Kasbon & Pekerjaan Saya"
+      description="Transparansi akumulasi gaji berjalan, rincian potongan hutang di warung makan luar, cicilan pinjaman perusahaan, dan status pekerjaan Anda."
     >
       <Flow>
-        Hasil kerja dicatat oleh Checker yang ditentukan SPV. Data gaji dan hutang diperbarui secara real-time setiap hari.
+        Informasi gaji, cicilan pinjaman perusahaan, dan hutang warung makan diperbarui secara transparan dan otomatis masuk ke slip payroll bulanan Anda.
       </Flow>
 
       {/* Real-time Worker Salary & Debt Transparency */}
@@ -92,53 +99,78 @@ export default async function Page() {
           overtimeHours={overtimeHours}
           estimatedGross={estimatedGross}
         />
+      ) : (
+        <Card title="Status Akun Pekerja">
+          <Empty>
+            Akun login Anda belum terhubung ke profil Master Pekerja. Silakan hubungi Administrator (melalui menu Manajemen User) untuk menghubungkan akun email Anda ke data nama pekerja Anda.
+          </Empty>
+        </Card>
+      )}
+
+      {/* Rincian Status Khusus Karyawan Bulanan */}
+      {isBulanan ? (
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 shadow-xs">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xl">💼</span>
+            <h3 className="text-base font-extrabold text-indigo-950">
+              Informasi Karyawan Sistem Upah Bulanan
+            </h3>
+          </div>
+          <p className="text-xs leading-relaxed text-indigo-800">
+            Anda terdaftar sebagai <b>Karyawan Bulanan ({workerData.department || "Operasional / Staf"})</b>. Penghasilan Anda bersifat tetap setiap periode gajian bulanan sesuai ketentuan manajemen. Potongan kasbon perusahaan akan dicicil per bulan sesuai kesepakatan, dan hutang konsumsi di warung mitra akan dilunasi otomatis saat slip gaji diterbitkan.
+          </p>
+        </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Worker ID" value={String(workerId ?? "-")} />
-        <Metric label="Penugasan SPK" value={orders.length} />
-        <Metric label="Input Operator" value="Tervalidasi" />
-      </div>
+      {!isBulanan ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Metric label="Worker ID" value={String(workerId ?? "-")} />
+            <Metric label="Penugasan SPK" value={orders.length} />
+            <Metric label="Input Operator" value="Tervalidasi" />
+          </div>
 
-      <Card title="Penugasan & Hasil Kerja">
-        <div className="space-y-3">
-          {orders.length === 0 ? (
-            <Empty>
-              Belum ada SPK untuk akun pekerja ini. Hubungkan akun ke Master Pekerja lewat Manajemen User.
-            </Empty>
-          ) : (
-            orders.map((o: any) => {
-              const oi = (items as any[]).filter((x) => x.order_id === o.id);
-              return (
-                <div key={o.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-                  <div className="flex justify-between items-center gap-2">
-                    <b className="font-bold text-slate-900 text-sm">{o.spk_code}</b>
-                    <Badge>{o.status}</Badge>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {o.order_date} · Checker {o.checker_email}
-                  </p>
-                  <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-                    {oi.map((i: any) => {
-                      const c = (checks as any[]).filter((x) => x.order_item_id === i.id);
-                      const good = c.reduce((a, x) => a + n(x.good_qty), 0);
-                      const reject = c.reduce((a, x) => a + n(x.reject_qty), 0);
-                      return (
-                        <div key={i.id} className="flex flex-wrap justify-between gap-2 text-sm">
-                          <span className="font-medium text-slate-800">{i.work_item_name_snapshot}</span>
-                          <span className="text-xs font-semibold text-slate-500">
-                            Tugas {qty(i.assigned_qty)} · Sah <span className="text-emerald-700">{qty(good)}</span> · Reject <span className="text-rose-600">{qty(reject)}</span>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </Card>
+          <Card title="Penugasan & Hasil Kerja Borongan / Harian">
+            <div className="space-y-3">
+              {orders.length === 0 ? (
+                <Empty>
+                  Belum ada SPK aktif yang ditugaskan ke pekerja ini.
+                </Empty>
+              ) : (
+                orders.map((o: any) => {
+                  const oi = (items as any[]).filter((x) => x.order_id === o.id);
+                  return (
+                    <div key={o.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
+                      <div className="flex justify-between items-center gap-2">
+                        <b className="font-bold text-slate-900 text-sm">{o.spk_code}</b>
+                        <Badge>{o.status}</Badge>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {o.order_date} · Checker {o.checker_email}
+                      </p>
+                      <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                        {oi.map((i: any) => {
+                          const c = (checks as any[]).filter((x) => x.order_item_id === i.id);
+                          const good = c.reduce((a, x) => a + n(x.good_qty), 0);
+                          const reject = c.reduce((a, x) => a + n(x.reject_qty), 0);
+                          return (
+                            <div key={i.id} className="flex flex-wrap justify-between gap-2 text-sm">
+                              <span className="font-medium text-slate-800">{i.work_item_name_snapshot}</span>
+                              <span className="text-xs font-semibold text-slate-500">
+                                Tugas {qty(i.assigned_qty)} · Sah <span className="text-emerald-700">{qty(good)}</span> · Reject <span className="text-rose-600">{qty(reject)}</span>
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </Card>
+        </>
+      ) : null}
     </PageShell>
   );
 }

@@ -12,7 +12,9 @@ export default async function Page({ searchParams }: Props) {
   const query = await searchParams;
   const supabase = await createClient();
 
-  const [workersResult, warungAdvancesResult] = await Promise.all([
+  let workers: any[] = [];
+  const [rpcWorkersResult, fallbackWorkersResult, warungAdvancesResult] = await Promise.all([
+    supabase.rpc("smpt_get_active_workers_for_reference"),
     supabase
       .from("workers")
       .select("id,worker_code,name,pay_system,department,status")
@@ -26,10 +28,14 @@ export default async function Page({ searchParams }: Props) {
       .limit(1000),
   ]);
 
-  const error = [workersResult.error, warungAdvancesResult.error].find(Boolean);
-  if (error) throw new Error(error.message);
+  if (warungAdvancesResult.error) throw new Error(warungAdvancesResult.error.message);
 
-  const workers = workersResult.data ?? [];
+  if (rpcWorkersResult.data && rpcWorkersResult.data.length > 0) {
+    workers = rpcWorkersResult.data;
+  } else if (fallbackWorkersResult.data && fallbackWorkersResult.data.length > 0) {
+    workers = fallbackWorkersResult.data;
+  }
+
   const transactions = warungAdvancesResult.data ?? [];
 
   const todayStr = new Date().toISOString().slice(0, 10);

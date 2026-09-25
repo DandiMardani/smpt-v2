@@ -9,10 +9,37 @@ function t(f:FormData,k:string){return String(f.get(k)??"").trim()}
 function num(f:FormData,k:string,nullable=false){const raw=t(f,k);if(!raw&&nullable)return null;const v=Number(raw);if(!Number.isFinite(v))throw new Error(`${k} tidak valid.`);return v}
 function id(f:FormData,k:string,nullable=false){const v=num(f,k,nullable);if(v===null)return null;if(!Number.isSafeInteger(v)||v<=0)throw new Error(`${k} tidak valid.`);return v}
 function date(f:FormData,k:string,nullable=false){const v=t(f,k);if(!v&&nullable)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(v))throw new Error(`${k} tidak valid.`);return v}
-function msg(e:unknown){return e instanceof Error?e.message:"Terjadi kesalahan."}
-function go(path:string,type:"success"|"error",message:string){redirect(`${path}?${type}=${encodeURIComponent(message)}`)}
-async function rpc(name:string,args:Record<string,unknown>){const s=await createClient();const {data,error}=await s.rpc(name,args);if(error)throw error;return data}
-async function mutate(path:string,permission:string,fn:()=>Promise<void>,success:string){await requirePermission(permission);try{await fn()}catch(e){go(path,"error",msg(e))}revalidatePath(path);go(path,"success",success)}
+function msg(e: unknown): string {
+  if (!e) return "Terjadi kesalahan.";
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object" && e !== null) {
+    const o = e as Record<string, unknown>;
+    if (typeof o.message === "string" && o.message) return o.message;
+    if (typeof o.error_description === "string" && o.error_description) return o.error_description;
+    if (typeof o.details === "string" && o.details) return o.details;
+    if (typeof o.hint === "string" && o.hint) return o.hint;
+  }
+  return typeof e === "string" ? e : "Terjadi kesalahan.";
+}
+function go(path: string, type: "success" | "error", message: string) {
+  redirect(`${path}?${type}=${encodeURIComponent(message)}`);
+}
+async function rpc(name: string, args: Record<string, unknown>) {
+  const s = await createClient();
+  const { data, error } = await s.rpc(name, args);
+  if (error) throw error;
+  return data;
+}
+async function mutate(path: string, permission: string, fn: () => Promise<void>, success: string) {
+  await requirePermission(permission);
+  try {
+    await fn();
+  } catch (e) {
+    go(path, "error", msg(e));
+  }
+  revalidatePath(path);
+  go(path, "success", success);
+}
 
 export async function linkWorkerAction(f:FormData){const path="/dashboard/aksesUser";await mutate(path,"access_control.write",async()=>{await rpc("link_worker_account",{p_email:t(f,"email"),p_worker_id:id(f,"worker_id")})},"Akun berhasil dihubungkan ke pekerja.")}
 
@@ -58,6 +85,50 @@ export async function recordWarungDebtAction(f:FormData){const path="/dashboard/
 export async function payCashAdvanceAction(f:FormData){await mutate("/dashboard/kasbon","kasbon.write",async()=>{await rpc("pay_cash_advance",{p_advance_id:id(f,"advance_id"),p_date:date(f,"payment_date"),p_amount:num(f,"amount"),p_source:t(f,"source")||"MANUAL",p_reference:t(f,"reference")||null,p_notes:t(f,"notes")||null})},"Pembayaran Kasbon tersimpan.")}
 export async function addPettyCashAction(f:FormData){await mutate("/dashboard/kasKecil","kas_kecil.write",async()=>{const s=await createClient();const {error}=await s.from("petty_cash_transactions").insert({transaction_date:date(f,"transaction_date"),direction:t(f,"direction"),category:t(f,"category"),amount:num(f,"amount"),description:t(f,"description"),document_no:t(f,"document_no")||null});if(error)throw error},"Transaksi Kas Kecil tersimpan.")}
 export async function addFinanceAction(f:FormData){await mutate("/dashboard/keuangan","keuangan.write",async()=>{const s=await createClient();const {error}=await s.from("finance_transactions").insert({transaction_date:date(f,"transaction_date"),direction:t(f,"direction"),category:t(f,"category"),amount:num(f,"amount"),description:t(f,"description"),document_no:t(f,"document_no")||null});if(error)throw error},"Transaksi Keuangan tersimpan.")}
-export async function addManufacturingAction(f:FormData){const flow=t(f,"flow_type").toUpperCase();const permission=flow==="TITIPAN"?"manufaktur.titipan.write":flow==="BARANG_LUAR"?"manufaktur.barang_luar.write":flow==="PENGIRIMAN"?"manufaktur.pengiriman.write":"manufaktur.view";await mutate("/dashboard/manufaktur",permission,async()=>{await rpc("record_manufacturing_transaction",{p_flow_type:flow,p_date:date(f,"transaction_date"),p_project_id:id(f,"project_id",true),p_product_id:id(f,"product_id",true),p_material_id:id(f,"material_id",true),p_finished_good_id:id(f,"finished_good_id",true),p_vendor_id:id(f,"vendor_id",true),p_quantity:num(f,"quantity"),p_unit:t(f,"unit")||null,p_document_no:t(f,"document_no")||null,p_description:t(f,"description")})},"Transaksi Manufaktur tersimpan.")}
+export async function addManufacturingAction(f: FormData) {
+  const flow = t(f, "flow_type").toUpperCase();
+  const permission =
+    flow === "TITIPAN"
+      ? "manufaktur.titipan.write"
+      : flow === "BARANG_LUAR"
+      ? "manufaktur.barang_luar.write"
+      : flow === "PENGIRIMAN"
+      ? "manufaktur.pengiriman.write"
+      : "manufaktur.view";
+
+  await mutate("/dashboard/manufaktur", permission, async () => {
+    const rawQty = num(f, "quantity");
+    const quantity = Number(rawQty ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error("Jumlah Qty harus lebih dari 0.");
+    }
+
+    const materialId = id(f, "material_id", true);
+    const finishedGoodId = id(f, "finished_good_id", true);
+
+    if (!materialId && !finishedGoodId) {
+      throw new Error("Pilih Bahan Baku atau Barang Jadi terlebih dahulu.");
+    }
+
+    const description = t(f, "description");
+    if (!description) {
+      throw new Error("Keterangan / Catatan transaksi wajib diisi.");
+    }
+
+    await rpc("record_manufacturing_transaction", {
+      p_flow_type: flow,
+      p_date: date(f, "transaction_date"),
+      p_project_id: id(f, "project_id", true),
+      p_product_id: id(f, "product_id", true),
+      p_material_id: materialId,
+      p_finished_good_id: finishedGoodId,
+      p_vendor_id: id(f, "vendor_id", true),
+      p_quantity: quantity,
+      p_unit: t(f, "unit") || null,
+      p_document_no: t(f, "document_no") || null,
+      p_description: description,
+    });
+  }, "Transaksi Manufaktur tersimpan.");
+}
 export async function resolveEmbarkationIssueAction(f:FormData){await mutate("/dashboard/rejectEmbarkasi","reject_embarkasi.write",async()=>{const s=await createClient();const {error}=await s.from("embarkation_issues").update({status:"SELESAI",resolution:t(f,"resolution")||"Diselesaikan",resolved_at:new Date().toISOString()}).eq("id",id(f,"issue_id")).eq("status","OPEN");if(error)throw error},"Masalah Embarkasi diselesaikan.")}
 

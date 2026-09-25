@@ -110,13 +110,18 @@ export function WarungPortal({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Pilih Pekerja yang Berhutang">
                 <select name="worker_id" required className={`${inputClass} !bg-white`}>
-                  <option value="">-- Pilih Nama Pekerja --</option>
+                  <option value="">{workers.length === 0 ? "-- Belum ada pekerja (eksekusi SQL migrasi) --" : "-- Pilih Nama Pekerja --"}</option>
                   {workers.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name} ({w.department || "Produksi"} · {w.pay_system || "HARIAN"})
                     </option>
                   ))}
                 </select>
+                {workers.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-700 font-medium">
+                    ⚠️ Daftar nama pekerja masih kosong karena Supabase RLS membatasi akses role Warung. Jalankan skrip SQL migrasi terbaru di Supabase SQL Editor untuk membuka akses.
+                  </p>
+                ) : null}
               </Field>
 
               <Field label="Tanggal Transaksi">
