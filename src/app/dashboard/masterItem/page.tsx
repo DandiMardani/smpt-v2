@@ -5,7 +5,6 @@ import {
   inputClass,
   MasterPageShell,
   Notice,
-  Pagination,
   primaryButtonClass,
   ReadOnlyBanner,
   SectionCard,
@@ -19,20 +18,20 @@ import {
   cleanSearch,
   formatNumber,
   formatRupiah,
-  pageRange,
   param,
-  positivePage,
   type SearchParams,
-  totalPages,
 } from "@/lib/master/page-utils";
 import {
   deleteWorkItem,
-  saveWorkItem,
   saveWorkItemFlowInline,
   saveWorkItemPayrollProfile,
   setWorkItemStatus,
 } from "./actions";
-import { MasterItemCreateForm, MasterItemFilter } from "./master-item-client";
+import {
+  MasterItemCreateForm,
+  MasterItemFilter,
+  MasterItemProductGrid,
+} from "./master-item-client";
 
 type ProjectRef = { id: number; project_code: string; name: string; status: string };
 type ProductRef = {
@@ -66,7 +65,6 @@ type WorkItemRow = {
 };
 
 type Props = { searchParams: Promise<SearchParams> };
-const ITEM_UNITS = ["Pcs", "Set", "Pasang", "Unit"] as const;
 
 function flowBadge(row: WorkItemRow) {
   if (row.flow_mode === "BERANTAI") return `BERANTAI · Alur ${row.flow_order ?? "?"}`;
@@ -79,51 +77,83 @@ export default async function MasterItemPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("master_item.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
-  const selectedProject = Number(param(params, "project")) || 0;
+  let selectedProject = Number(param(params, "project")) || 0;
   const selectedProduct = Number(param(params, "product")) || 0;
-  const page = positivePage(param(params, "page", "1"));
-  const { from, to } = pageRange(page);
 
   const supabase = await createClient();
-  let query = supabase
-    .from("work_items")
-    .select("id, item_code, project_id, product_id, name, unit, qty_per_product, operator_price, proposed_price, status, output_final, flow_mode, flow_order, routing_validation_mode, executor_scope, submission_category", { count: "exact" })
-    .order("project_id", { ascending: true })
-    .order("product_id", { ascending: true })
-    .order("flow_order", { ascending: true, nullsFirst: false })
-    .order("name", { ascending: true })
-    .range(from, to);
 
-  if (selectedProject) query = query.eq("project_id", selectedProject);
-  if (selectedProduct) query = query.eq("product_id", selectedProduct);
-  if (q) query = query.or(`item_code.ilike.%${q}%,name.ilike.%${q}%`);
-
-  const [projectResult, productResult, workItemsResult] = await Promise.all([
+  // Load reference projects and products
+  const [projectResult, productResult] = await Promise.all([
     supabase.rpc("master_reference_projects"),
     supabase.rpc("master_reference_products", { p_project_id: null, p_include_inactive: true }),
-    query,
   ]);
   if (projectResult.error) throw new Error(`Referensi proyek gagal dimuat: ${projectResult.error.message}`);
   if (productResult.error) throw new Error(`Referensi Produk gagal dimuat: ${productResult.error.message}`);
-  if (workItemsResult.error) throw new Error(`Master Item Pekerjaan gagal dimuat: ${workItemsResult.error.message}`);
 
   const projects = (projectResult.data ?? []) as ProjectRef[];
   const products = (productResult.data ?? []) as ProductRef[];
   const projectMap = new Map(projects.map((item) => [item.id, item]));
   const productMap = new Map(products.map((item) => [item.id, item]));
 
-  const rows = (workItemsResult.data ?? []) as WorkItemRow[];
-  const pages = totalPages(workItemsResult.count ?? 0);
+  const currentProduct = selectedProduct ? productMap.get(selectedProduct) : undefined;
+  if (currentProduct && !selectedProject) {
+    selectedProject = currentProduct.project_id;
+  }
+  const currentProject = selectedProject ? projectMap.get(selectedProject) : undefined;
+
+  // Query work items: if product is selected, load all items for that product
+  let rows: WorkItemRow[] = [];
+  if (selectedProduct) {
+    let query = supabase
+      .from("work_items")
+      .select("id, item_code, project_id, product_id, name, unit, qty_per_product, operator_price, proposed_price, status, output_final, flow_mode, flow_order, routing_validation_mode, executor_scope, submission_category")
+      .eq("product_id", selectedProduct)
+      .order("flow_order", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true });
+
+    if (q) query = query.or(`item_code.ilike.%${q}%,name.ilike.%${q}%`);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Master Item Pekerjaan gagal dimuat: ${error.message}`);
+    rows = (data ?? []) as WorkItemRow[];
+  }
+
+  // Wage and margin calculations for the selected product
+  const activeItems = rows.filter((x) => x.status === "AKTIF");
+  const totalOperatorPrice = activeItems.reduce(
+    (sum, item) => sum + Number(item.qty_per_product || 1) * Number(item.operator_price || 0),
+    0
+  );
+  const totalProposedPrice = activeItems.reduce(
+    (sum, item) => sum + Number(item.qty_per_product || 1) * Number(item.proposed_price || 0),
+    0
+  );
+  const totalMargin = totalProposedPrice - totalOperatorPrice;
+  const marginPercent = totalProposedPrice > 0 ? ((totalMargin / totalProposedPrice) * 100).toFixed(1) : "0";
+  const targetProduction = Number(currentProduct?.target_production || 0);
+  const totalBoronganProject = targetProduction * totalProposedPrice;
+  const totalOperatorProject = targetProduction * totalOperatorPrice;
+
+  const routingHref =
+    selectedProject && selectedProduct
+      ? `/dashboard/masterItem/routing?project=${selectedProject}&product=${selectedProduct}`
+      : "/dashboard/masterItem/routing";
+
+  const kebutuhanHref =
+    selectedProject && selectedProduct
+      ? `/dashboard/masterKebutuhan?project=${selectedProject}&product=${selectedProduct}`
+      : "/dashboard/masterKebutuhan";
 
   return (
     <MasterPageShell
       eyebrow="Master Data"
       title="Master Item Pekerjaan"
-      description="Atur pekerjaan dan alurnya dari sini. Default MANDIRI; pilih BERANTAI cukup dengan Nomor Alur. Routing Khusus hanya untuk cabang, parallel, join, atau pengecualian."
+      description="Kelola tarif dan alur item pekerjaan per Produk. Sistem otomatis menghitung akumulasi Total Harga Pengajuan (Borongan) dan Total Harga Operator (Upah Tukang)."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
+      {/* Product-First Selector */}
       <MasterItemFilter
         projects={projects}
         products={products}
@@ -132,184 +162,315 @@ export default async function MasterItemPage({ searchParams }: Props) {
         initialQ={q}
       />
 
-      <SectionCard title="Cara Pakai Alur" description="User tidak perlu membuat predecessor/successor satu-satu untuk pekerjaan normal.">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-            <p className="font-bold text-slate-900">MANDIRI</p>
-            <p className="mt-1 text-xs text-slate-500">Pekerjaan berdiri sendiri dan tidak dibandingkan dengan item lain.</p>
-          </div>
-          <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 shadow-2xs">
-            <p className="font-bold text-blue-700">BERANTAI</p>
-            <p className="mt-1 text-xs text-slate-600">Isi Alur 1, 2, 3, dst. Sistem otomatis membentuk 1→2→3 dan validasi WIP saat Checker.</p>
-          </div>
-          <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 p-4 shadow-2xs">
-            <p className="font-bold text-amber-800">KHUSUS</p>
-            <p className="mt-1 text-xs text-slate-600">Dipakai hanya untuk cabang, parallel, join, atau alur tidak linear. Atur lewat Routing Khusus.</p>
-          </div>
-        </div>
-      </SectionCard>
+      {/* IF A PRODUCT IS SELECTED: SHOW DETAILED WAGE KPIS, ITEM CREATION FORM, AND ITEM LIST */}
+      {selectedProduct && currentProduct ? (
+        <>
+          {/* Active Product Banner & Quick Links */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-blue-200 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 p-4 sm:p-5 shadow-xs">
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-xl font-bold text-white shadow-xs">
+                🎒
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-extrabold text-slate-900">{currentProduct.name}</h2>
+                  <span className="font-mono text-xs font-bold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200">
+                    {currentProduct.product_code}
+                  </span>
+                  <StatusBadge status={currentProduct.status} />
+                </div>
+                <p className="mt-0.5 text-xs text-slate-600 font-medium">
+                  Proyek: <b className="text-slate-800">{currentProject?.name ?? "Umum"}</b> ({currentProject?.project_code ?? "-"}) · Target Produksi: <b className="text-slate-800">{formatNumber(targetProduction)} {currentProduct.unit}</b>
+                </p>
+              </div>
+            </div>
 
-      {canWrite ? (
-        <MasterItemCreateForm
-          projects={projects}
-          products={products}
-          defaultProjectId={selectedProject || undefined}
-          defaultProductId={selectedProduct || undefined}
-          currentQ={q}
-        />
-      ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={routingHref} className={secondaryButtonClass}>
+                🔄 Alur Routing
+              </Link>
+              <Link href={kebutuhanHref} className={secondaryButtonClass}>
+                📦 Kebutuhan Bahan (BOM)
+              </Link>
+            </div>
+          </div>
 
-      <SectionCard title="Daftar Item Pekerjaan" description={`${workItemsResult.count ?? 0} item ditemukan · alur bisa diatur langsung dari setiap item`}>
-        {rows.length === 0 ? <EmptyState text="Belum ada item pekerjaan pada filter ini." /> : (
-          <div className="space-y-3">
-            {rows.map((row) => {
-              const project = projectMap.get(row.project_id);
-              const product = row.product_id ? productMap.get(row.product_id) : undefined;
-              const itemRoutingHref = row.product_id
-                ? `/dashboard/masterItem/routing?project=${row.project_id}&product=${row.product_id}`
-                : "/dashboard/masterItem/routing";
-              return (
-                <details key={row.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs hover:border-slate-300 transition">
-                  <summary className="cursor-pointer list-none">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-slate-900 text-sm">{row.name}</span>
-                          <StatusBadge status={row.status} />
-                          <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">{flowBadge(row)}</span>
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{row.executor_scope.replaceAll("_", " ")}</span>
-                          <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">Pengajuan {row.submission_category.replaceAll("_", " ")}</span>
-                          {row.flow_mode !== "MANDIRI" ? <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${row.routing_validation_mode === "HARD" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>{row.routing_validation_mode}</span> : null}
-                          {row.output_final ? <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">OUTPUT FINAL</span> : null}
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500 font-medium">{row.item_code} · {project?.name ?? "-"} · {product?.name ?? "Legacy / belum terikat"}</p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4 text-xs lg:text-right">
-                        <div><p className="text-[11px] text-slate-400">Qty/Produk</p><p className="font-semibold text-slate-800">{formatNumber(row.qty_per_product)}</p></div>
-                        <div><p className="text-[11px] text-slate-400">Operator</p><p className="font-semibold text-slate-800">{formatRupiah(row.operator_price)}</p></div>
-                        <div><p className="text-[11px] text-slate-400">Pengajuan</p><p className="font-semibold text-slate-800">{formatRupiah(row.proposed_price)}</p></div>
-                      </div>
-                    </div>
-                  </summary>
+          {/* 4 SUMMARY KPI CARDS: TOTAL HARGA PENGAJUAN & OPERATOR */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border-2 border-blue-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Total Harga Pengajuan</p>
+                <span className="text-lg">📋</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(totalProposedPrice)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Total tarif borongan diajukan per 1 pcs produk ({activeItems.length} item aktif).
+              </p>
+            </div>
 
-                  {canWrite && row.product_id ? (
-                    <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
-                      {row.status === "AKTIF" ? (
-                        <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
-                          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div><h3 className="font-bold text-slate-900 text-sm">Alur Kerja</h3><p className="text-xs text-slate-500">Atur normalnya di sini. Routing manual hanya untuk KHUSUS.</p></div>
-                            {row.flow_mode === "KHUSUS" ? <Link href={itemRoutingHref} className={secondaryButtonClass}>Atur Routing Khusus</Link> : null}
+            <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Total Harga Operator</p>
+                <span className="text-lg">🪡</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-emerald-900">{formatRupiah(totalOperatorPrice)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Total upah yang diterima tukang/penjahit per 1 pcs produk.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Margin Upah</p>
+                <span className="text-lg">📈</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-800">{formatRupiah(totalMargin)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Margin upah pengajuan vs upah tukang ({marginPercent}%).
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Borongan Proyek</p>
+                <span className="text-lg">💰</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-800">{formatRupiah(totalBoronganProject)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Target {formatNumber(targetProduction)} pcs (Upah Operator: {formatRupiah(totalOperatorProject)}).
+              </p>
+            </div>
+          </div>
+
+          {/* Form Create Item: Pre-locked to selected product */}
+          {canWrite ? (
+            <MasterItemCreateForm
+              projects={projects}
+              products={products}
+              defaultProjectId={selectedProject}
+              defaultProductId={selectedProduct}
+              currentQ={q}
+            />
+          ) : null}
+
+          {/* Work Item List For This Product */}
+          <SectionCard
+            title={`Rincian Item Pekerjaan (${rows.length} item)`}
+            description={`Daftar pekerjaan untuk produk ${currentProduct.name}. Total pengajuan: ${formatRupiah(totalProposedPrice)} · Total operator: ${formatRupiah(totalOperatorPrice)}.`}
+          >
+            {rows.length === 0 ? (
+              <EmptyState text="Belum ada item pekerjaan untuk produk ini. Silakan input item baru menggunakan formulir di atas." />
+            ) : (
+              <div className="space-y-3">
+                {rows.map((row, idx) => {
+                  const subOp = Number(row.qty_per_product || 1) * Number(row.operator_price || 0);
+                  const subProp = Number(row.qty_per_product || 1) * Number(row.proposed_price || 0);
+                  const itemRoutingHref = `/dashboard/masterItem/routing?project=${row.project_id}&product=${row.product_id}`;
+
+                  return (
+                    <details
+                      key={row.id}
+                      className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs hover:border-slate-300 transition"
+                    >
+                      <summary className="cursor-pointer list-none">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">
+                                {idx + 1}
+                              </span>
+                              <span className="font-bold text-slate-900 text-sm">{row.name}</span>
+                              <StatusBadge status={row.status} />
+                              <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                                {flowBadge(row)}
+                              </span>
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                {row.executor_scope.replaceAll("_", " ")}
+                              </span>
+                              <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">
+                                Pengajuan {row.submission_category.replaceAll("_", " ")}
+                              </span>
+                              {row.output_final ? (
+                                <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
+                                  OUTPUT FINAL
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500 font-medium">
+                              Kode: <span className="font-mono font-semibold text-slate-700">{row.item_code}</span> · Satuan: {row.unit}
+                            </p>
                           </div>
-                          <form action={saveWorkItemFlowInline} className="grid gap-3 md:grid-cols-4">
-                            <input type="hidden" name="work_item_id" value={row.id} />
-                            <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
-                            <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
-                            <input type="hidden" name="return_q" value={q} />
-                            <Field label="Tipe Alur">
-                              <select name="flow_mode" defaultValue={row.flow_mode} className={selectClass}>
-                                <option value="MANDIRI">MANDIRI</option>
-                                <option value="BERANTAI">BERANTAI</option>
-                                <option value="KHUSUS">KHUSUS</option>
-                              </select>
-                            </Field>
-                            <Field label="Nomor Alur">
-                              <input name="flow_order" type="number" min="1" step="1" defaultValue={row.flow_order ?? ""} placeholder="Isi jika BERANTAI" className={inputClass} />
-                            </Field>
-                            <Field label="Validasi">
-                              <select name="validation_mode" defaultValue={row.routing_validation_mode} className={selectClass}>
-                                <option value="WARNING">WARNING</option>
-                                <option value="HARD">HARD</option>
-                              </select>
-                            </Field>
-                            <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Alur</button></div>
-                          </form>
-                          <p className="mt-3 text-xs leading-5 text-slate-500">BERANTAI akan disambungkan otomatis berdasarkan Nomor Alur pada Produk yang sama. MANDIRI tidak punya predecessor. KHUSUS membuka routing cabang/join.</p>
+
+                          <div className="grid grid-cols-3 gap-4 text-xs lg:text-right border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
+                            <div>
+                              <p className="text-[11px] text-slate-400">Qty / Produk</p>
+                              <p className="font-semibold text-slate-800">{formatNumber(row.qty_per_product)} {row.unit}</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-400">Harga Operator</p>
+                              <p className="font-bold text-emerald-800">{formatRupiah(row.operator_price)}</p>
+                              {row.qty_per_product > 1 ? (
+                                <p className="text-[10px] text-slate-400">Subtotal: {formatRupiah(subOp)}</p>
+                              ) : null}
+                            </div>
+                            <div>
+                              <p className="text-[11px] text-slate-400">Harga Pengajuan</p>
+                              <p className="font-bold text-blue-800">{formatRupiah(row.proposed_price)}</p>
+                              {row.qty_per_product > 1 ? (
+                                <p className="text-[10px] text-slate-400">Subtotal: {formatRupiah(subProp)}</p>
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">Aktifkan item terlebih dahulu untuk mengubah alurnya.</div>
-                      )}
+                      </summary>
 
-                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
-                        <div className="mb-3"><h3 className="font-bold text-slate-900 text-sm">Pelaksana & Pengajuan</h3><p className="text-xs leading-5 text-slate-500">PEKERJA HARIAN/KEDUANYA membuka input hasil manual di Hasil Produksi. Untuk pekerja HARIAN, Nilai Operator selalu 0; pengajuan BORONGAN tetap memakai Qty Hasil × Harga Pengajuan.</p></div>
-                        <form action={saveWorkItemPayrollProfile} className="grid gap-3 md:grid-cols-3">
-                          <input type="hidden" name="work_item_id" value={row.id} />
-                          <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
-                          <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
-                          <input type="hidden" name="return_q" value={q} />
-                          <Field label="Pelaksana">
-                            <select name="executor_scope" defaultValue={row.executor_scope} className={selectClass}>
-                              <option value="OPERATOR_BORONGAN">Operator Borongan</option>
-                              <option value="PEKERJA_HARIAN">Pekerja Harian</option>
-                              <option value="KEDUANYA">Keduanya</option>
-                            </select>
-                          </Field>
-                          <Field label="Kategori Pengajuan">
-                            <select name="submission_category" defaultValue={row.submission_category} className={selectClass}>
-                              <option value="BORONGAN">BORONGAN</option>
-                              <option value="TIDAK_ADA">TIDAK ADA</option>
-                            </select>
-                          </Field>
-                          <div className="flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Profil</button></div>
-                        </form>
+                      {/* Detail / Inline Edits */}
+                      {canWrite && row.product_id ? (
+                        <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+                          {row.status === "AKTIF" ? (
+                            <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+                              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h3 className="font-bold text-slate-900 text-sm">Alur Kerja</h3>
+                                  <p className="text-xs text-slate-500">
+                                    Atur urutan alur berantai di sini.
+                                  </p>
+                                </div>
+                                {row.flow_mode === "KHUSUS" ? (
+                                  <Link href={itemRoutingHref} className={secondaryButtonClass}>
+                                    Atur Routing Khusus
+                                  </Link>
+                                ) : null}
+                              </div>
+                              <form action={saveWorkItemFlowInline} className="grid gap-3 md:grid-cols-4">
+                                <input type="hidden" name="work_item_id" value={row.id} />
+                                <input type="hidden" name="return_project" value={selectedProject} />
+                                <input type="hidden" name="return_product" value={selectedProduct} />
+                                <input type="hidden" name="return_q" value={q} />
+                                <Field label="Tipe Alur">
+                                  <select name="flow_mode" defaultValue={row.flow_mode} className={selectClass}>
+                                    <option value="MANDIRI">MANDIRI</option>
+                                    <option value="BERANTAI">BERANTAI</option>
+                                    <option value="KHUSUS">KHUSUS</option>
+                                  </select>
+                                </Field>
+                                <Field label="Nomor Alur">
+                                  <input
+                                    name="flow_order"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    defaultValue={row.flow_order ?? ""}
+                                    placeholder="Isi jika BERANTAI"
+                                    className={inputClass}
+                                  />
+                                </Field>
+                                <Field label="Validasi">
+                                  <select name="validation_mode" defaultValue={row.routing_validation_mode} className={selectClass}>
+                                    <option value="WARNING">WARNING</option>
+                                    <option value="HARD">HARD</option>
+                                  </select>
+                                </Field>
+                                <div className="flex items-end">
+                                  <button type="submit" className={primaryButtonClass}>
+                                    Simpan Alur
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          ) : null}
+
+                          <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
+                            <h3 className="mb-3 font-bold text-slate-900 text-sm">Pelaksana & Pengajuan</h3>
+                            <form action={saveWorkItemPayrollProfile} className="grid gap-3 md:grid-cols-3">
+                              <input type="hidden" name="work_item_id" value={row.id} />
+                              <input type="hidden" name="return_project" value={selectedProject} />
+                              <input type="hidden" name="return_product" value={selectedProduct} />
+                              <input type="hidden" name="return_q" value={q} />
+                              <Field label="Pelaksana">
+                                <select name="executor_scope" defaultValue={row.executor_scope} className={selectClass}>
+                                  <option value="OPERATOR_BORONGAN">OPERATOR BORONGAN</option>
+                                  <option value="PEKERJA_HARIAN">PEKERJA HARIAN</option>
+                                  <option value="KEDUANYA">KEDUANYA</option>
+                                </select>
+                              </Field>
+                              <Field label="Kategori Pengajuan">
+                                <select name="submission_category" defaultValue={row.submission_category} className={selectClass}>
+                                  <option value="BORONGAN">BORONGAN</option>
+                                  <option value="TIDAK_ADA">TIDAK ADA</option>
+                                </select>
+                              </Field>
+                              <div className="flex items-end">
+                                <button type="submit" className={primaryButtonClass}>
+                                  Simpan Profil
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                            <form action={setWorkItemStatus}>
+                              <input type="hidden" name="work_item_id" value={row.id} />
+                              <input type="hidden" name="status" value={row.status === "AKTIF" ? "NONAKTIF" : "AKTIF"} />
+                              <input type="hidden" name="return_project" value={selectedProject} />
+                              <input type="hidden" name="return_product" value={selectedProduct} />
+                              <button
+                                type="submit"
+                                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                              >
+                                {row.status === "AKTIF" ? "Nonaktifkan Item" : "Aktifkan Item"}
+                              </button>
+                            </form>
+
+                            <form action={deleteWorkItem}>
+                              <input type="hidden" name="work_item_id" value={row.id} />
+                              <input type="hidden" name="return_project" value={selectedProject} />
+                              <input type="hidden" name="return_product" value={selectedProduct} />
+                              <button
+                                type="submit"
+                                className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition"
+                              >
+                                🗑️ Hapus Item
+                              </button>
+                            </form>
+                          </div>
+                        </div>
+                      ) : null}
+                    </details>
+                  );
+                })}
+
+                {/* Grand Total Footer Summary */}
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 text-sm">
+                    <span className="font-bold text-slate-900">Total Biaya Upah Produk ({activeItems.length} Item Aktif):</span>
+                    <div className="flex flex-wrap items-center gap-6">
+                      <div>
+                        <span className="text-xs text-slate-500 block">Total Operator:</span>
+                        <b className="font-bold text-emerald-800 text-base">{formatRupiah(totalOperatorPrice)}</b>
                       </div>
-
-                      <form action={saveWorkItem} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        <input type="hidden" name="id" value={row.id} />
-                        <input type="hidden" name="project_id" value={row.project_id} />
-                        <input type="hidden" name="product_id" value={row.product_id} />
-                        <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
-                        <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
-                        <input type="hidden" name="return_q" value={q} />
-                        <Field label="Proyek"><input disabled value={project?.name ?? "-"} className={inputClass} /></Field>
-                        <Field label="Produk"><input disabled value={product?.name ?? "-"} className={inputClass} /></Field>
-                        <Field label="Nama Pekerjaan"><input name="name" required defaultValue={row.name} className={inputClass} /></Field>
-                        <Field label="Satuan"><select name="unit" required defaultValue={row.unit} className={selectClass}>{!ITEM_UNITS.includes(row.unit as (typeof ITEM_UNITS)[number]) ? <option value={row.unit}>{row.unit}</option> : null}{ITEM_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>
-                        <Field label="Qty Pekerjaan / Produk"><input name="qty_per_product" type="number" min="1" step="1" required defaultValue={row.qty_per_product} className={inputClass} /></Field>
-                        <Field label="Harga Operator"><input name="operator_price" type="number" min="0" step="1" required defaultValue={row.operator_price} className={inputClass} /></Field>
-                        <Field label="Harga Pengajuan"><input name="proposed_price" type="number" min="0" step="1" required defaultValue={row.proposed_price} className={inputClass} /></Field>
-                        <Field label="Status"><select name="status" defaultValue={row.status} className={selectClass}><option value="AKTIF">AKTIF</option><option value="NONAKTIF">NONAKTIF</option></select></Field>
-                        <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-xs font-semibold text-slate-700 cursor-pointer">
-                          <input name="output_final" type="checkbox" defaultChecked={row.output_final} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" /> Output Final
-                        </label>
-                        <div className="md:col-span-2 xl:col-span-3 flex items-end"><button type="submit" className={primaryButtonClass}>Simpan Perubahan</button></div>
-                      </form>
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-                        <form action={setWorkItemStatus}>
-                          <input type="hidden" name="id" value={row.id} />
-                          <input type="hidden" name="status" value={row.status === "AKTIF" ? "NONAKTIF" : "AKTIF"} />
-                          <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
-                          <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
-                          <input type="hidden" name="return_q" value={q} />
-                          <button type="submit" className={secondaryButtonClass}>{row.status === "AKTIF" ? "Nonaktifkan Item" : "Aktifkan Item"}</button>
-                        </form>
-                        <form action={deleteWorkItem}>
-                          <input type="hidden" name="id" value={row.id} />
-                          <input type="hidden" name="return_project" value={selectedProject || row.project_id} />
-                          <input type="hidden" name="return_product" value={selectedProduct || row.product_id} />
-                          <input type="hidden" name="return_q" value={q} />
-                          <button
-                            type="submit"
-                            className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
-                          >
-                            🗑️ Hapus Item
-                          </button>
-                        </form>
+                      <div>
+                        <span className="text-xs text-slate-500 block">Total Pengajuan:</span>
+                        <b className="font-bold text-blue-800 text-base">{formatRupiah(totalProposedPrice)}</b>
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-500 block">Total Margin:</span>
+                        <b className="font-bold text-slate-800 text-base">{formatRupiah(totalMargin)}</b>
                       </div>
                     </div>
-                  ) : null}
-                </details>
-              );
-            })}
-          </div>
-        )}
-
-        <Pagination
-          page={page}
-          total={pages}
-          basePath="/dashboard/masterItem"
-          params={{ ...(q ? { q } : {}), ...(selectedProject ? { project: String(selectedProject) } : {}), ...(selectedProduct ? { product: String(selectedProduct) } : {}) }}
+                  </div>
+                </div>
+              </div>
+            )}
+          </SectionCard>
+        </>
+      ) : (
+        /* IF NO PRODUCT SELECTED: RENDER QUICK PRODUCT GRID */
+        <MasterItemProductGrid
+          projects={projects}
+          products={products.filter((p) => p.status === "AKTIF")}
         />
-      </SectionCard>
+      )}
     </MasterPageShell>
   );
 }

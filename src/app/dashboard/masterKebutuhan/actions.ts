@@ -38,8 +38,21 @@ function calculationSnapshot(formData: FormData): Record<string, unknown> | null
   }
 }
 
+function contextPath(formData: FormData) {
+  const project = getText(formData, "return_project") || getText(formData, "project_id");
+  const product = getText(formData, "return_product") || getText(formData, "product_id");
+  const q = getText(formData, "return_q");
+  const params = new URLSearchParams();
+  if (project) params.set("project", project);
+  if (product) params.set("product", product);
+  if (q) params.set("q", q);
+  const query = params.toString();
+  return `${PATH}${query ? `?${query}` : ""}`;
+}
+
 export async function saveBomRequirement(formData: FormData) {
   await requirePermission("master_kebutuhan.write");
+  const targetPath = contextPath(formData);
 
   try {
     const requirementId = getOptionalId(formData, "id");
@@ -87,15 +100,16 @@ export async function saveBomRequirement(formData: FormData) {
 
     if (error) throw error;
   } catch (error) {
-    redirectWithMessage(PATH, "error", errorMessage(error, "Gagal menyimpan kebutuhan/BOM."));
+    redirectWithMessage(targetPath, "error", errorMessage(error, "Gagal menyimpan kebutuhan/BOM."));
   }
 
   revalidatePath(PATH);
-  redirectWithMessage(PATH, "success", "Master Kebutuhan/BOM berhasil disimpan.");
+  redirectWithMessage(targetPath, "success", "Master Kebutuhan/BOM berhasil disimpan.");
 }
 
 export async function deleteBomRequirement(formData: FormData) {
   await requirePermission("master_kebutuhan.write");
+  const targetPath = contextPath(formData);
 
   try {
     const id = getId(formData, "id");
@@ -103,9 +117,9 @@ export async function deleteBomRequirement(formData: FormData) {
     const { error } = await supabase.from("bom_requirements").delete().eq("id", id);
     if (error) throw error;
   } catch (error) {
-    redirectWithMessage(PATH, "error", errorMessage(error, "Gagal menghapus kebutuhan/BOM."));
+    redirectWithMessage(targetPath, "error", errorMessage(error, "Gagal menghapus kebutuhan/BOM."));
   }
 
   revalidatePath(PATH);
-  redirectWithMessage(PATH, "success", "Kebutuhan/BOM berhasil dihapus.");
+  redirectWithMessage(targetPath, "success", "Kebutuhan/BOM berhasil dihapus.");
 }

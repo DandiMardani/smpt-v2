@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Field,
   inputClass,
@@ -11,6 +11,7 @@ import {
   SectionCard,
   selectClass,
 } from "@/components/master/master-ui";
+import { formatNumber, formatRupiah } from "@/lib/master/page-utils";
 import { saveWorkItem } from "./actions";
 
 type ProjectRef = { id: number; project_code: string; name: string; status: string };
@@ -40,13 +41,12 @@ export function MasterItemFilter({
   initialQ: string;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [selectedProjectId, setSelectedProjectId] = useState<number>(initialProjectId || 0);
   const [selectedProductId, setSelectedProductId] = useState<number>(initialProductId || 0);
   const [searchQuery, setSearchQuery] = useState<string>(initialQ || "");
 
   const filteredProducts = useMemo(() => {
-    if (!selectedProjectId) return [];
+    if (!selectedProjectId) return products;
     return products.filter((p) => p.project_id === selectedProjectId);
   }, [products, selectedProjectId]);
 
@@ -55,9 +55,31 @@ export function MasterItemFilter({
       ? `/dashboard/masterItem/routing?project=${selectedProjectId}&product=${selectedProductId}`
       : "/dashboard/masterItem/routing";
 
+  const kebutuhanHref =
+    selectedProjectId && selectedProductId
+      ? `/dashboard/masterKebutuhan?project=${selectedProjectId}&product=${selectedProductId}`
+      : "/dashboard/masterKebutuhan";
+
   function handleProjectChange(projectId: number) {
     setSelectedProjectId(projectId);
     setSelectedProductId(0);
+    if (!projectId) {
+      router.push("/dashboard/masterItem");
+    }
+  }
+
+  function handleProductChange(productId: number) {
+    setSelectedProductId(productId);
+    if (productId > 0) {
+      const p = products.find((x) => x.id === productId);
+      const projId = p?.project_id || selectedProjectId;
+      if (projId && !selectedProjectId) setSelectedProjectId(projId);
+      const params = new URLSearchParams();
+      if (projId) params.set("project", String(projId));
+      params.set("product", String(productId));
+      if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      router.push(`/dashboard/masterItem?${params.toString()}`);
+    }
   }
 
   function handleFilterSubmit(e: React.FormEvent) {
@@ -78,84 +100,135 @@ export function MasterItemFilter({
 
   return (
     <SectionCard
-      title="Pilih Proyek / Produk"
-      description="Pilih Proyek untuk melihat daftar Produk dan menyaring Item Pekerjaan."
+      title="Pilih Produk Terlebih Dahulu"
+      description="Pilih Proyek dan Produk untuk menampilkan seluruh daftar item pekerjaan dan kalkulasi total upah per produk."
     >
-      <form onSubmit={handleFilterSubmit} className="grid gap-3 md:grid-cols-3">
-        <Field label="Proyek">
-          <select
-            name="project"
-            value={selectedProjectId || ""}
-            onChange={(e) => handleProjectChange(Number(e.target.value) || 0)}
-            className={selectClass}
+      <form onSubmit={handleFilterSubmit} className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="Proyek">
+            <select
+              name="project"
+              value={selectedProjectId || ""}
+              onChange={(e) => handleProjectChange(Number(e.target.value) || 0)}
+              className={selectClass}
+            >
+              <option value="">Semua proyek</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.project_code} · {project.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field
+            label="Pilih Produk"
+            hint={
+              selectedProjectId
+                ? filteredProducts.length > 0
+                  ? `${filteredProducts.length} produk tersedia pada proyek ini`
+                  : "Belum ada produk di proyek ini"
+                : "Pilih proyek atau pilih langsung produk"
+            }
           >
-            <option value="">Semua proyek</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.project_code} · {project.name}
-              </option>
-            ))}
-          </select>
-        </Field>
+            <select
+              name="product"
+              value={selectedProductId || ""}
+              onChange={(e) => handleProductChange(Number(e.target.value) || 0)}
+              className={`${selectClass} ${!selectedProductId ? "border-amber-400 bg-amber-50/30" : "border-emerald-400 bg-emerald-50/20 font-bold text-emerald-950"}`}
+            >
+              <option value="">-- Pilih Produk --</option>
+              {filteredProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.product_code} · {product.name}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-        <Field
-          label="Produk"
-          hint={
-            selectedProjectId
-              ? filteredProducts.length > 0
-                ? `${filteredProducts.length} produk tersedia`
-                : "Belum ada produk di proyek ini"
-              : "Pilih proyek terlebih dahulu"
-          }
-        >
-          <select
-            name="product"
-            value={selectedProductId || ""}
-            onChange={(e) => setSelectedProductId(Number(e.target.value) || 0)}
-            disabled={!selectedProjectId || filteredProducts.length === 0}
-            className={selectClass}
-          >
-            <option value="">
-              {!selectedProjectId
-                ? "Pilih proyek terlebih dahulu"
-                : filteredProducts.length === 0
-                  ? "Tidak ada produk aktif"
-                  : "Semua Produk"}
-            </option>
-            {filteredProducts.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.product_code} · {product.name}
-              </option>
-            ))}
-          </select>
-        </Field>
+          <Field label="Cari Item">
+            <input
+              name="q"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari kode atau nama pekerjaan..."
+              className={inputClass}
+            />
+          </Field>
+        </div>
 
-        <Field label="Cari">
-          <input
-            name="q"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="ID atau nama pekerjaan"
-            className={inputClass}
-          />
-        </Field>
-
-        <div className="md:col-span-3 flex flex-wrap items-center gap-2">
-          <button type="submit" className={secondaryButtonClass}>
-            Terapkan Filter
-          </button>
-          {(selectedProjectId || selectedProductId || searchQuery) && (
-            <button type="button" onClick={handleReset} className={secondaryButtonClass}>
-              Reset Filter
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="submit" className={secondaryButtonClass}>
+              Cari Item
             </button>
-          )}
-          {selectedProjectId && selectedProductId ? (
-            <Link href={routingHref} className={secondaryButtonClass}>
-              Lihat / Atur Alur
-            </Link>
+            {(selectedProjectId || selectedProductId || searchQuery) && (
+              <button type="button" onClick={handleReset} className={secondaryButtonClass}>
+                Reset Filter
+              </button>
+            )}
+          </div>
+
+          {selectedProductId ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={routingHref} className={secondaryButtonClass}>
+                🔄 Alur Routing
+              </Link>
+              <Link href={kebutuhanHref} className={secondaryButtonClass}>
+                📦 Kebutuhan Bahan (BOM)
+              </Link>
+            </div>
           ) : null}
         </div>
       </form>
+    </SectionCard>
+  );
+}
+
+export function MasterItemProductGrid({
+  projects,
+  products,
+}: {
+  projects: ProjectRef[];
+  products: ProductRef[];
+}) {
+  const router = useRouter();
+  const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+
+  return (
+    <SectionCard
+      title="🎯 Silakan Pilih Produk"
+      description="Data Item Pekerjaan dan kalkulasi Total Upah Borongan/Operator dikelompokkan dan dihitung per Produk. Klik salah satu produk di bawah:"
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {products.map((p) => {
+          const project = projectMap.get(p.project_id);
+          return (
+            <div
+              key={p.id}
+              onClick={() => router.push(`/dashboard/masterItem?project=${p.project_id}&product=${p.id}`)}
+              className="cursor-pointer rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs transition hover:border-blue-400 hover:bg-blue-50/30 hover:shadow-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs font-bold text-blue-600">{p.product_code}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                  {p.status}
+                </span>
+              </div>
+              <h3 className="mt-1.5 font-bold text-slate-900 text-sm line-clamp-1">{p.name}</h3>
+              <p className="mt-0.5 text-xs text-slate-500 font-medium">{project?.name ?? "Proyek"}</p>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+                <span className="text-slate-500">
+                  Target: <b className="text-slate-800">{formatNumber(p.target_production)} {p.unit}</b>
+                </span>
+                <span className="font-bold text-blue-600 hover:text-blue-700">
+                  Buka Item →
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </SectionCard>
   );
 }
@@ -175,148 +248,228 @@ export function MasterItemCreateForm({
 }) {
   const [projectId, setProjectId] = useState<number>(defaultProjectId || 0);
   const [productId, setProductId] = useState<number>(defaultProductId || 0);
+  const [showProductPicker, setShowProductPicker] = useState<boolean>(!defaultProductId);
+  const [qtyPerProduct, setQtyPerProduct] = useState<number>(1);
+  const [operatorPrice, setOperatorPrice] = useState<number>(0);
+  const [proposedPrice, setProposedPrice] = useState<number>(0);
 
   const availableProducts = useMemo(() => {
-    if (!projectId) return [];
+    if (!projectId) return products;
     return products.filter((p) => p.project_id === projectId);
   }, [products, projectId]);
 
+  const activeProduct = useMemo(() => {
+    return products.find((p) => p.id === productId);
+  }, [products, productId]);
+
+  const activeProject = useMemo(() => {
+    return projects.find((p) => p.id === (activeProduct?.project_id || projectId));
+  }, [projects, activeProduct, projectId]);
+
+  const subtotalOperator = qtyPerProduct * operatorPrice;
+  const subtotalProposed = qtyPerProduct * proposedPrice;
+
   return (
     <SectionCard
-      title="Tambah Item Pekerjaan"
-      description="Pilih Proyek dan Produk tujuan, lalu isi rincian pekerjaan. Item baru default MANDIRI."
+      title="Tambah Item Pekerjaan Baru"
+      description="Masukkan rincian pekerjaan dan tarif upah untuk produk ini. Item baru default bertipe alur MANDIRI."
     >
-      <form action={saveWorkItem} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <input type="hidden" name="return_project" value={projectId || ""} />
+      <form action={saveWorkItem} className="space-y-4">
+        <input type="hidden" name="return_project" value={projectId || activeProduct?.project_id || ""} />
         <input type="hidden" name="return_product" value={productId || ""} />
         <input type="hidden" name="return_q" value={currentQ || ""} />
+        <input type="hidden" name="project_id" value={projectId || activeProduct?.project_id || ""} />
+        <input type="hidden" name="product_id" value={productId || ""} />
 
-        <Field label="Proyek">
-          <select
-            name="project_id"
-            required
-            value={projectId || ""}
-            onChange={(e) => {
-              const val = Number(e.target.value) || 0;
-              setProjectId(val);
-              setProductId(0);
-            }}
-            className={selectClass}
+        {/* Selected Product Banner */}
+        {productId && activeProduct ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 text-xs text-blue-900">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🏷️</span>
+              <div>
+                <span className="font-bold text-slate-900">{activeProduct.product_code} · {activeProduct.name}</span>
+                <span className="text-slate-500 ml-2">({activeProject?.name ?? "Proyek"})</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowProductPicker(!showProductPicker)}
+              className="text-xs font-semibold text-blue-700 hover:underline"
+            >
+              {showProductPicker ? "Sembunyikan Pilihan Produk" : "Ganti Produk Tujuan"}
+            </button>
+          </div>
+        ) : null}
+
+        {/* Optional Project & Product Dropdowns if changing or not selected */}
+        {showProductPicker || !productId ? (
+          <div className="grid gap-4 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 md:grid-cols-2">
+            <Field label="Proyek">
+              <select
+                required
+                value={projectId || activeProduct?.project_id || ""}
+                onChange={(e) => {
+                  const val = Number(e.target.value) || 0;
+                  setProjectId(val);
+                  setProductId(0);
+                }}
+                className={selectClass}
+              >
+                <option value="">Pilih proyek</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.project_code} · {p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field
+              label="Produk"
+              hint={
+                !projectId && !activeProduct?.project_id
+                  ? "Pilih proyek terlebih dahulu"
+                  : availableProducts.length === 0
+                    ? "Proyek ini belum memiliki produk aktif"
+                    : `${availableProducts.length} produk siap dipilih`
+              }
+            >
+              <select
+                required
+                value={productId || ""}
+                onChange={(e) => setProductId(Number(e.target.value) || 0)}
+                className={selectClass}
+              >
+                <option value="">Pilih Produk</option>
+                {availableProducts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.product_code} · {p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        ) : null}
+
+        {/* Input Fields */}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="md:col-span-2">
+            <Field label="Nama Pekerjaan">
+              <input
+                name="name"
+                required
+                placeholder="Contoh: Jahit Badan, Pasang Resleting, Pasang Webbing"
+                className={inputClass}
+              />
+            </Field>
+          </div>
+
+          <Field label="Satuan">
+            <select name="unit" defaultValue="Pcs" className={selectClass}>
+              {ITEM_UNITS.map((unit) => (
+                <option key={unit} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Qty Pekerjaan / Produk" hint="Berapa kali dilakukan untuk 1 produk">
+            <input
+              name="qty_per_product"
+              type="number"
+              min="1"
+              step="1"
+              value={qtyPerProduct}
+              onChange={(e) => setQtyPerProduct(Number(e.target.value) || 1)}
+              required
+              className={inputClass}
+            />
+          </Field>
+
+          <Field
+            label="Harga Operator (Rp)"
+            hint={
+              subtotalOperator > 0
+                ? `Subtotal Operator: ${formatRupiah(subtotalOperator)}`
+                : "Upah borongan per unit pekerjaan yang diterima pekerja"
+            }
           >
-            <option value="">Pilih proyek</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.project_code} · {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
+            <input
+              name="operator_price"
+              type="number"
+              min="0"
+              step="50"
+              value={operatorPrice}
+              onChange={(e) => setOperatorPrice(Number(e.target.value) || 0)}
+              required
+              className={`${inputClass} font-bold text-slate-900`}
+            />
+          </Field>
 
-        <Field
-          label="Produk"
-          hint={
-            !projectId
-              ? "Pilih proyek terlebih dahulu"
-              : availableProducts.length === 0
-                ? "Proyek ini belum memiliki produk aktif"
-                : `${availableProducts.length} produk siap dipilih`
-          }
-        >
-          <select
-            name="product_id"
-            required
-            value={productId || ""}
-            onChange={(e) => setProductId(Number(e.target.value) || 0)}
-            disabled={!projectId || availableProducts.length === 0}
-            className={selectClass}
+          <Field
+            label="Harga Pengajuan (Rp)"
+            hint={
+              subtotalProposed > 0
+                ? `Subtotal Pengajuan: ${formatRupiah(subtotalProposed)}`
+                : "Tarif borongan yang diajukan ke klien/pemberi kerja"
+            }
           >
-            <option value="">
-              {!projectId
-                ? "Pilih proyek terlebih dahulu"
-                : availableProducts.length === 0
-                  ? "Tidak ada produk"
-                  : "Pilih Produk"}
-            </option>
-            {availableProducts.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.product_code} · {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
+            <input
+              name="proposed_price"
+              type="number"
+              min="0"
+              step="50"
+              value={proposedPrice}
+              onChange={(e) => setProposedPrice(Number(e.target.value) || 0)}
+              required
+              className={`${inputClass} font-bold text-blue-900`}
+            />
+          </Field>
 
-        <Field label="Nama Pekerjaan">
-          <input name="name" required placeholder="Contoh: Jahit Badan, Pasang Resleting" className={inputClass} />
-        </Field>
+          <Field label="Pelaksana">
+            <select name="executor_scope" defaultValue="OPERATOR_BORONGAN" className={selectClass}>
+              <option value="OPERATOR_BORONGAN">OPERATOR BORONGAN</option>
+              <option value="PEKERJA_HARIAN">PEKERJA HARIAN</option>
+              <option value="KEDUANYA">KEDUANYA (Bisa Harian / Borongan)</option>
+            </select>
+          </Field>
 
-        <Field label="Satuan">
-          <select name="unit" defaultValue="Pcs" className={selectClass}>
-            {ITEM_UNITS.map((unit) => (
-              <option key={unit} value={unit}>
-                {unit}
-              </option>
-            ))}
-          </select>
-        </Field>
+          <Field label="Kategori Pengajuan">
+            <select name="submission_category" defaultValue="BORONGAN" className={selectClass}>
+              <option value="BORONGAN">BORONGAN</option>
+              <option value="TIDAK_ADA">TIDAK ADA</option>
+            </select>
+          </Field>
 
-        <Field label="Qty Pekerjaan / Produk" hint="Berapa kali pekerjaan ini dilakukan untuk 1 produk">
-          <input
-            name="qty_per_product"
-            type="number"
-            min="1"
-            step="1"
-            defaultValue="1"
-            required
-            className={inputClass}
-          />
-        </Field>
+          <Field label="Status">
+            <select name="status" defaultValue="AKTIF" className={selectClass}>
+              <option value="AKTIF">AKTIF</option>
+              <option value="NONAKTIF">NONAKTIF</option>
+            </select>
+          </Field>
 
-        <Field label="Harga Operator (Rp)" hint="Upah borongan yang diterima pekerja">
-          <input
-            name="operator_price"
-            type="number"
-            min="0"
-            step="50"
-            defaultValue="0"
-            required
-            className={inputClass}
-          />
-        </Field>
+          <div className="md:col-span-2 xl:col-span-3 flex items-center gap-2 pt-2">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                name="output_final"
+                value="1"
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>Jadikan Output Final Produk ini (Menandakan barang jadi selesai dirakit)</span>
+            </label>
+          </div>
 
-        <Field label="Harga Pengajuan (Rp)" hint="Harga pengajuan ke klien/atasan">
-          <input
-            name="proposed_price"
-            type="number"
-            min="0"
-            step="50"
-            defaultValue="0"
-            required
-            className={inputClass}
-          />
-        </Field>
-
-        <Field label="Status">
-          <select name="status" defaultValue="AKTIF" className={selectClass}>
-            <option value="AKTIF">AKTIF</option>
-            <option value="NONAKTIF">NONAKTIF</option>
-          </select>
-        </Field>
-
-        <div className="md:col-span-2 xl:col-span-3 flex items-center gap-2 pt-2">
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
-            <input type="checkbox" name="output_final" value="1" className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-            <span>Jadikan Output Final Produk ini (Menandakan pekerjaan selesai per unit produk)</span>
-          </label>
-        </div>
-
-        <div className="flex items-end">
-          <button
-            type="submit"
-            disabled={!projectId || !productId}
-            className={primaryButtonClass}
-          >
-            Simpan Item Pekerjaan
-          </button>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={!productId}
+              className={primaryButtonClass}
+            >
+              Simpan Item Pekerjaan
+            </button>
+          </div>
         </div>
       </form>
     </SectionCard>
