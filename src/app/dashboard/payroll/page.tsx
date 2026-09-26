@@ -17,6 +17,7 @@ import {
 import { PayrollSlipManager, type WorkerInfo, type PayrollRunRow, type PayrollItemRow } from "@/components/payroll/payroll-slip-manager";
 import PayrollSettingsModal, { type PayrollSettingsMap } from "@/components/payroll/payroll-settings-modal";
 import PayrollFinalizeForm from "@/components/payroll/payroll-finalize-form";
+import PayrollViewTabs from "@/components/payroll/payroll-view-tabs";
 import { requireAnyPermission } from "@/lib/access/current-user";
 import { finalizeOperatorPayrollAction, finalizePayrollAction } from "@/lib/final/actions";
 import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
@@ -98,68 +99,96 @@ export default async function Page({ searchParams }: Props) {
         ) : null}
       </div>
 
-      {canWrite ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card title="Finalisasi Payroll Umum">
-            <PayrollFinalizeForm />
-          </Card>
-          <Card title="Finalisasi Payroll Operator / Pengajuan">
-            <form action={finalizeOperatorPayrollAction} className="grid gap-3">
-              <Field label="Periode Mulai"><input name="period_start" type="date" required className={inputClass} /></Field>
-              <Field label="Periode Selesai"><input name="period_end" type="date" required className={inputClass} /></Field>
-              <Field label="Catatan"><input name="notes" className={inputClass} /></Field>
-              <button className={buttonClass}>Finalisasi Operator</button>
-            </form>
-          </Card>
-        </div>
-      ) : null}
+      <PayrollViewTabs
+        canWrite={canWrite}
+        activeRunCode={payrollRuns[0]?.payroll_code}
+        workerCount={payrollRuns[0] ? payrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
+        slipsNode={
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-2 text-center sm:text-left">
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-2xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Run</span>
+                <div className="text-lg sm:text-2xl font-black text-slate-800">{payrollRuns.length}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-2xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pekerja Aktif</span>
+                <div className="text-lg sm:text-2xl font-black text-blue-600">{workers.length}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-2xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Run Operator</span>
+                <div className="text-lg sm:text-2xl font-black text-emerald-600">{operatorRuns.length}</div>
+              </div>
+            </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Run Payroll" value={payrollRuns.length} />
-        <Metric label="Run Operator" value={operatorRuns.length} />
-        <Metric label="Snapshot Detail" value={payrollItems.length + operatorItems.length} />
-      </div>
+            {/* Slip Gaji & WhatsApp Manager (Utama) */}
+            <PayrollSlipManager
+              runs={payrollRuns}
+              items={payrollItems}
+              workers={workers}
+              currentWorkerId={currentWorkerId}
+              canWrite={canWrite}
+            />
+          </div>
+        }
+        finalizeNode={
+          canWrite ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card title="Finalisasi Payroll Umum">
+                <PayrollFinalizeForm />
+              </Card>
+              <Card title="Finalisasi Payroll Operator / Pengajuan">
+                <form action={finalizeOperatorPayrollAction} className="grid gap-3">
+                  <Field label="Periode Mulai"><input name="period_start" type="date" required className={inputClass} /></Field>
+                  <Field label="Periode Selesai"><input name="period_end" type="date" required className={inputClass} /></Field>
+                  <Field label="Catatan"><input name="notes" className={inputClass} /></Field>
+                  <button className={buttonClass}>Finalisasi Operator</button>
+                </form>
+              </Card>
+            </div>
+          ) : null
+        }
+        historyNode={
+          <div className="space-y-4">
+            <Card title="Riwayat Finalisasi Payroll Umum">
+              <TableWrap>
+                <thead><tr><Th>Kode</Th><Th>Jenis</Th><Th>Periode</Th><Th>Bruto</Th><Th>Potongan</Th><Th>Net</Th></tr></thead>
+                <tbody>{payrollRuns.map((item) => <tr key={item.id}><Td>{item.payroll_code}</Td><Td>{item.payroll_type}</Td><Td>{item.period_start}—{item.period_end}</Td><Td>{money(item.total_gross)}</Td><Td>{money(item.total_deduction)}</Td><Td>{money(item.total_net)}</Td></tr>)}</tbody>
+              </TableWrap>
+            </Card>
 
-      {/* Slip Gaji & WhatsApp Manager */}
-      <PayrollSlipManager runs={payrollRuns} items={payrollItems} workers={workers} currentWorkerId={currentWorkerId} canWrite={canWrite} />
+            <Card title="Payroll Operator / Pengajuan">
+              {operatorRuns.length === 0 ? <Empty>Belum ada finalisasi Payroll Operator.</Empty> : (
+                <TableWrap>
+                  <thead><tr><Th>Kode</Th><Th>Periode</Th><Th>Status</Th><Th>Nilai Operator</Th><Th>Nilai Pengajuan</Th></tr></thead>
+                  <tbody>{operatorRuns.map((item) => <tr key={item.id}><Td>{item.payroll_code}</Td><Td>{item.period_start}—{item.period_end}</Td><Td><Badge>{item.status}</Badge></Td><Td>{money(item.total_operator_value)}</Td><Td>{money(item.total_submission_value)}</Td></tr>)}</tbody>
+                </TableWrap>
+              )}
+            </Card>
 
-      <Card title="Riwayat Finalisasi Payroll Umum">
-        <TableWrap>
-          <thead><tr><Th>Kode</Th><Th>Jenis</Th><Th>Periode</Th><Th>Bruto</Th><Th>Potongan</Th><Th>Net</Th></tr></thead>
-          <tbody>{payrollRuns.map((item) => <tr key={item.id}><Td>{item.payroll_code}</Td><Td>{item.payroll_type}</Td><Td>{item.period_start}—{item.period_end}</Td><Td>{money(item.total_gross)}</Td><Td>{money(item.total_deduction)}</Td><Td>{money(item.total_net)}</Td></tr>)}</tbody>
-        </TableWrap>
-      </Card>
-
-      <Card title="Payroll Operator / Pengajuan">
-        {operatorRuns.length === 0 ? <Empty>Belum ada finalisasi Payroll Operator.</Empty> : (
-          <TableWrap>
-            <thead><tr><Th>Kode</Th><Th>Periode</Th><Th>Status</Th><Th>Nilai Operator</Th><Th>Nilai Pengajuan</Th></tr></thead>
-            <tbody>{operatorRuns.map((item) => <tr key={item.id}><Td>{item.payroll_code}</Td><Td>{item.period_start}—{item.period_end}</Td><Td><Badge>{item.status}</Badge></Td><Td>{money(item.total_operator_value)}</Td><Td>{money(item.total_submission_value)}</Td></tr>)}</tbody>
-          </TableWrap>
-        )}
-      </Card>
-
-      <Card title="Detail Payroll Operator / Pengajuan">
-        {operatorItems.length === 0 ? <Empty>Belum ada detail Payroll Operator.</Empty> : (
-          <TableWrap>
-            <thead><tr><Th>Run</Th><Th>Pekerja</Th><Th>Item Pekerjaan</Th><Th>Qty</Th><Th>Harga Operator</Th><Th>Harga Pengajuan</Th><Th>Nilai Operator</Th><Th>Nilai Pengajuan</Th></tr></thead>
-            <tbody>
-              {operatorItems.map((item) => (
-                <tr key={item.id}>
-                  <Td>{operatorRunMap.get(item.run_id)?.payroll_code ?? `Run #${item.run_id}`}</Td>
-                  <Td>{item.worker_name_snapshot}</Td>
-                  <Td>{item.work_item_name_snapshot}</Td>
-                  <Td>{qty(item.qty_approved)}</Td>
-                  <Td>{money(item.operator_price_snapshot)}</Td>
-                  <Td>{money(item.submission_price_snapshot)}</Td>
-                  <Td>{money(item.operator_value)}</Td>
-                  <Td><b>{money(item.submission_value)}</b></Td>
-                </tr>
-              ))}
-            </tbody>
-          </TableWrap>
-        )}
-      </Card>
+            <Card title="Detail Payroll Operator / Pengajuan">
+              {operatorItems.length === 0 ? <Empty>Belum ada detail Payroll Operator.</Empty> : (
+                <TableWrap>
+                  <thead><tr><Th>Run</Th><Th>Pekerja</Th><Th>Item Pekerjaan</Th><Th>Qty</Th><Th>Harga Operator</Th><Th>Harga Pengajuan</Th><Th>Nilai Operator</Th><Th>Nilai Pengajuan</Th></tr></thead>
+                  <tbody>
+                    {operatorItems.map((item) => (
+                      <tr key={item.id}>
+                        <Td>{operatorRunMap.get(item.run_id)?.payroll_code ?? `Run #${item.run_id}`}</Td>
+                        <Td>{item.worker_name_snapshot}</Td>
+                        <Td>{item.work_item_name_snapshot}</Td>
+                        <Td>{qty(item.qty_approved)}</Td>
+                        <Td>{money(item.operator_price_snapshot)}</Td>
+                        <Td>{money(item.submission_price_snapshot)}</Td>
+                        <Td>{money(item.operator_value)}</Td>
+                        <Td><b>{money(item.submission_value)}</b></Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableWrap>
+              )}
+            </Card>
+          </div>
+        }
+      />
     </PageShell>
   );
 }

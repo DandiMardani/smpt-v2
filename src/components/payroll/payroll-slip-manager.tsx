@@ -758,109 +758,222 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
             </div>
           )
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
-              <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600 text-left">
-                <tr>
-                  <th className="px-3.5 py-2.5">Pekerja</th>
-                  <th className="px-3.5 py-2.5">Bagian & Sistem</th>
-                  <th className="px-3.5 py-2.5">Kehadiran</th>
-                  <th className="px-3.5 py-2.5 text-right">Gaji Pokok</th>
-                  <th className="px-3.5 py-2.5 text-right">Lembur/Bonus</th>
-                  <th className="px-3.5 py-2.5 text-right">Kasbon</th>
-                  <th className="px-3.5 py-2.5 text-right">Diterima (Net)</th>
-                  <th className="px-3.5 py-2.5 text-center">Aksi Slip & WhatsApp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {runItems.map((item) => {
-                  const w = workerMap.get(item.worker_id);
-                  const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount) + num(item.overtime_amount);
-                  const isMe = item.worker_id === currentWorkerId;
-                  return (
-                    <tr key={item.id} className={`transition ${isMe ? "bg-blue-50/50 hover:bg-blue-50/80" : "hover:bg-slate-50/70"}`}>
-                      <td className="px-3.5 py-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-900">{item.worker_name_snapshot}</span>
+          <div>
+            {/* 1. Mobile Cards View (Khusus Layar HP / Mobile Responsive) */}
+            <div className="space-y-3 md:hidden">
+              {runItems.map((item) => {
+                const w = workerMap.get(item.worker_id);
+                const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount) + num(item.overtime_amount);
+                const isMe = item.worker_id === currentWorkerId;
+                return (
+                  <div
+                    key={item.id}
+                    className={`rounded-2xl border p-3.5 sm:p-4 transition shadow-xs ${
+                      isMe ? "border-blue-400 bg-blue-50/40 ring-1 ring-blue-300" : "border-slate-200/90 bg-white"
+                    }`}
+                  >
+                    {/* Header Pekerja & Total Net */}
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-black text-slate-900 text-sm">{item.worker_name_snapshot}</span>
                           {isMe ? (
-                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                            <span className="rounded bg-blue-600 text-white px-1.5 py-0.2 text-[9px] font-bold">
                               Slip Saya
                             </span>
                           ) : null}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                              item.pay_system_snapshot === "BULANAN"
+                                ? "bg-purple-100 text-purple-800 border border-purple-200"
+                                : "bg-blue-100 text-blue-800 border border-blue-200"
+                            }`}
+                          >
+                            {item.pay_system_snapshot}
+                          </span>
                         </div>
-                        <div className="text-[11px] text-slate-400">{w?.worker_code || `ID #${item.worker_id}`}{w?.phone ? ` • 📞 ${w.phone}` : " • ⚠️ Tanpa No. HP"}</div>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-slate-700">
-                        <div>{w?.department || w?.position || "Produksi"}</div>
-                        <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                          {item.pay_system_snapshot}
+                        <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                          {w?.department || w?.position || "Produksi"} • {w?.worker_code || `ID #${item.worker_id}`}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[9px] uppercase font-bold tracking-wider text-slate-400 block">
+                          Gaji Bersih (Net)
                         </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-slate-600">
-                        {num(item.full_days)} Full • {num(item.half_days)} Half
-                      </td>
-                      <td className="px-3.5 py-2.5 text-right font-medium text-slate-800">
-                        {money(item.base_amount)}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-right text-slate-600">
-                        {bonus + num(item.manual_overtime_amount) > 0 ? (
-                          <div>
-                            <div>{money(bonus + num(item.manual_overtime_amount))}</div>
-                            {num(item.manual_overtime_amount) > 0 ? (
-                              <div className="text-[10px] text-blue-600 font-semibold">+Manual {money(item.manual_overtime_amount)}</div>
+                        <span className="text-base font-black text-emerald-600">
+                          {money(item.net_amount)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Ringkasan Angka Gaji (Grid 2 Kolom) */}
+                    <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Gaji Pokok:</span>
+                        <span className="font-bold text-slate-800">{money(item.base_amount)}</span>
+                        <span className="text-[10px] text-slate-500 block">({num(item.full_days)} Hari Kerja)</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Lembur & Bonus:</span>
+                        <span className="font-bold text-blue-700">
+                          {bonus + num(item.manual_overtime_amount) > 0 ? money(bonus + num(item.manual_overtime_amount)) : "-"}
+                        </span>
+                        <span className="text-[10px] text-slate-500 block">({(num(item.overtime_minutes) / 60).toFixed(1)} Jam)</span>
+                      </div>
+                      {num(item.meal_amount) > 0 ? (
+                        <div>
+                          <span className="text-slate-400 text-[10px] block">Uang Makan Minggu:</span>
+                          <span className="font-bold text-amber-700">{money(item.meal_amount)}</span>
+                        </div>
+                      ) : null}
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Potongan Kasbon:</span>
+                        <span className="font-bold text-rose-600">
+                          {num(item.deduction_amount) > 0 ? `-${money(item.deduction_amount)}` : "-"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 3 Tombol Aksi Mobile Ramah Sentuhan */}
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {canWrite ? (
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(item)}
+                          className="min-h-[40px] rounded-xl border border-amber-300 bg-amber-50 py-2 px-1 text-xs font-bold text-amber-900 hover:bg-amber-100 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs"
+                        >
+                          ✏️ Koreksi
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => openSlip(item)}
+                        className={`min-h-[40px] rounded-xl border border-slate-200 bg-white py-2 px-1 text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs ${
+                          !canWrite ? "col-span-1" : ""
+                        }`}
+                      >
+                        📄 Slip
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openWaDialog(item)}
+                        className={`min-h-[40px] rounded-xl bg-emerald-600 py-2 px-1 text-xs font-bold text-white hover:bg-emerald-700 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs ${
+                          !canWrite ? "col-span-2" : ""
+                        }`}
+                      >
+                        💬 Share WA
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 2. Desktop Table View (Khusus Layar Tablet / PC) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600 text-left">
+                  <tr>
+                    <th className="px-3.5 py-2.5">Pekerja</th>
+                    <th className="px-3.5 py-2.5">Bagian & Sistem</th>
+                    <th className="px-3.5 py-2.5">Kehadiran</th>
+                    <th className="px-3.5 py-2.5 text-right">Gaji Pokok</th>
+                    <th className="px-3.5 py-2.5 text-right">Lembur/Bonus</th>
+                    <th className="px-3.5 py-2.5 text-right">Kasbon</th>
+                    <th className="px-3.5 py-2.5 text-right">Diterima (Net)</th>
+                    <th className="px-3.5 py-2.5 text-center">Aksi Slip & WhatsApp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {runItems.map((item) => {
+                    const w = workerMap.get(item.worker_id);
+                    const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount) + num(item.overtime_amount);
+                    const isMe = item.worker_id === currentWorkerId;
+                    return (
+                      <tr key={item.id} className={`transition ${isMe ? "bg-blue-50/50 hover:bg-blue-50/80" : "hover:bg-slate-50/70"}`}>
+                        <td className="px-3.5 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-900">{item.worker_name_snapshot}</span>
+                            {isMe ? (
+                              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                                Slip Saya
+                              </span>
                             ) : null}
                           </div>
-                        ) : "-"}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-right font-medium text-rose-600">
-                        {num(item.deduction_amount) > 0 ? (
-                          <div>
-                            <div>-{money(item.deduction_amount)}</div>
-                            <div className="text-[10px] text-slate-500 font-normal">
-                              {num(item.kasbon_perusahaan_amount) > 0 ? `🏢 ${money(item.kasbon_perusahaan_amount)} ` : ""}
-                              {num(item.kasbon_warung_amount) > 0 ? `🍜 ${money(item.kasbon_warung_amount)}` : ""}
+                          <div className="text-[11px] text-slate-400">{w?.worker_code || `ID #${item.worker_id}`}{w?.phone ? ` • 📞 ${w.phone}` : " • ⚠️ Tanpa No. HP"}</div>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-slate-700">
+                          <div>{w?.department || w?.position || "Produksi"}</div>
+                          <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                            {item.pay_system_snapshot}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-slate-600">
+                          {num(item.full_days)} Full • {num(item.half_days)} Half
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-medium text-slate-800">
+                          {money(item.base_amount)}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right text-slate-600">
+                          {bonus + num(item.manual_overtime_amount) > 0 ? (
+                            <div>
+                              <div>{money(bonus + num(item.manual_overtime_amount))}</div>
+                              {num(item.manual_overtime_amount) > 0 ? (
+                                <div className="text-[10px] text-blue-600 font-semibold">+Manual {money(item.manual_overtime_amount)}</div>
+                              ) : null}
                             </div>
-                          </div>
-                        ) : "-"}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-right font-bold text-emerald-600 text-sm">
-                        {money(item.net_amount)}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {canWrite ? (
+                          ) : "-"}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-medium text-rose-600">
+                          {num(item.deduction_amount) > 0 ? (
+                            <div>
+                              <div>-{money(item.deduction_amount)}</div>
+                              <div className="text-[10px] text-slate-500 font-normal">
+                                {num(item.kasbon_perusahaan_amount) > 0 ? `🏢 ${money(item.kasbon_perusahaan_amount)} ` : ""}
+                                {num(item.kasbon_warung_amount) > 0 ? `🍜 ${money(item.kasbon_warung_amount)}` : ""}
+                              </div>
+                            </div>
+                          ) : "-"}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-bold text-emerald-600 text-sm">
+                          {money(item.net_amount)}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {canWrite ? (
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(item)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 shadow-2xs transition"
+                                title="Koreksi Gaji Pokok, Uang Makan, atau Lembur"
+                              >
+                                ✏️ Koreksi
+                              </button>
+                            ) : null}
                             <button
                               type="button"
-                              onClick={() => openEditModal(item)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 shadow-2xs transition"
-                              title="Koreksi Gaji Pokok, Uang Makan, atau Lembur"
+                              onClick={() => openSlip(item)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs"
+                              title="Lihat & Cetak Slip"
                             >
-                              ✏️ Koreksi
+                              📄 Slip
                             </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => openSlip(item)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs"
-                            title="Lihat & Cetak Slip"
-                          >
-                            📄 Slip
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openWaDialog(item)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-2xs"
-                            title="Bagikan ke WhatsApp"
-                          >
-                            💬 Share WA
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            <button
+                              type="button"
+                              onClick={() => openWaDialog(item)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-2xs"
+                              title="Bagikan ke WhatsApp"
+                            >
+                              💬 Share WA
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
