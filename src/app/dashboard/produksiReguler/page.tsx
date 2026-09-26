@@ -7,6 +7,7 @@ import {
 } from "@/components/master/master-ui";
 import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
+import { resolveProjectCategory } from "@/lib/project-category";
 import { createClient } from "@/lib/supabase/server";
 import { ProduksiRegulerClient } from "./produksi-reguler-client";
 
@@ -20,7 +21,10 @@ export default async function ProduksiRegulerPage({ searchParams }: Props) {
 
   // Load supporting reference data
   const [projectRes, productRes, workerRes, workItemRes, recentChecksRes] = await Promise.all([
-    supabase.from("projects").select("id, project_code, name").eq("status", "AKTIF").order("name"),
+    supabase
+      .from("projects")
+      .select("id, project_code, name, status, product_category")
+      .order("name"),
     supabase.from("project_products").select("id, project_id, product_code, name, unit").eq("status", "AKTIF").order("name"),
     supabase.from("workers").select("id, worker_code, name, pay_system").eq("status", "AKTIF").order("name"),
     supabase.from("work_items").select("id, project_id, product_id, name, operator_price, proposed_price, unit").eq("status", "AKTIF").order("name"),
@@ -32,7 +36,24 @@ export default async function ProduksiRegulerPage({ searchParams }: Props) {
       .limit(30),
   ]);
 
-  const projects = (projectRes.data ?? []) as any[];
+  const rawProjects = (projectRes.data ?? []) as any[];
+  const projects = rawProjects
+    .filter(
+      (x) =>
+        !["SELESAI", "NONAKTIF", "BATAL", "DIBATALKAN"].includes(
+          String(x.status ?? "").trim().toUpperCase(),
+        ),
+    )
+    .map((x) => ({
+      id: x.id,
+      project_code: x.project_code,
+      name: x.name,
+      category: resolveProjectCategory(x),
+    }))
+    .sort((a, b) => {
+      if (a.category === b.category) return a.name.localeCompare(b.name);
+      return a.category === "REGULER" ? -1 : 1;
+    });
   const products = (productRes.data ?? []) as any[];
   const workers = (workerRes.data ?? []) as any[];
   const workItems = (workItemRes.data ?? []) as any[];

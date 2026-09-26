@@ -2,6 +2,7 @@ import { Flow, Notice, PageShell, ReadOnly } from "@/components/final/final-ui";
 import { SpkManager, type SpkOrder } from "@/components/spk/spk-manager";
 import { requirePermission } from "@/lib/access/current-user";
 import { param, type SearchParams } from "@/lib/final/final-utils";
+import { resolveProjectCategory } from "@/lib/project-category";
 import { createClient } from "@/lib/supabase/server";
 import { isProductionSupervisor, isSewingOperator } from "@/lib/workers/options";
 
@@ -14,7 +15,7 @@ export default async function Page({ searchParams }: Props) {
   const s = await createClient();
 
   const [pr, ppr, wr, ir, or, oir, checkerRes] = await Promise.all([
-    s.from("projects").select("id, name, status").order("name").limit(300),
+    s.from("projects").select("id, name, status, product_category").order("name").limit(300),
     s.from("project_products").select("id, project_id, name, target_production, status").eq("status", "AKTIF").order("name").limit(500),
     s.from("workers").select("id, worker_code, name, department, position, pay_system, status").eq("status", "AKTIF").order("name").limit(500),
     s.from("work_items").select("id, project_id, product_id, name, unit, operator_price, qty_per_product, display_order, status").eq("status", "AKTIF").order("display_order").limit(1500),
@@ -28,7 +29,18 @@ export default async function Page({ searchParams }: Props) {
 
   const activeProjects = (pr.data ?? [])
     .filter((x: any) => !["SELESAI", "NONAKTIF", "BATAL", "DIBATALKAN"].includes(String(x.status ?? "").trim().toUpperCase()))
-    .map((x: any) => ({ id: x.id, name: x.name }));
+    .map((x: any) => {
+      const cat = resolveProjectCategory(x);
+      return {
+        id: x.id,
+        name: `${cat === "HAJI" ? "🕋 [HAJI] " : "🎒 [REGULER] "}${x.name}`,
+        category: cat,
+      };
+    })
+    .sort((a, b) => {
+      if (a.category === b.category) return a.name.localeCompare(b.name);
+      return a.category === "HAJI" ? -1 : 1;
+    });
 
   const products = (ppr.data ?? []).map((x: any) => ({
     id: x.id,

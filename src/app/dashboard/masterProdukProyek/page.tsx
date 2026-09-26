@@ -20,6 +20,7 @@ import {
   type SearchParams,
   totalPages,
 } from "@/lib/master/page-utils";
+import { formatProjectOption } from "@/lib/project-category";
 import { createProjectProduct } from "./actions";
 import { ProductUnifiedClient } from "./product-unified-client";
 
@@ -27,6 +28,7 @@ type ProjectRef = {
   id: number;
   project_code: string;
   name: string;
+  product_category?: string | null;
   status: string;
 };
 
@@ -117,7 +119,9 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
                 <select name="project_id" required defaultValue="" className={selectClass}>
                   <option value="" disabled>Pilih proyek</option>
                   {projects.map((project) => (
-                    <option key={project.id} value={project.id}>{project.project_code} · {project.name}</option>
+                    <option key={project.id} value={project.id}>
+                      {formatProjectOption(project)}
+                    </option>
                   ))}
                 </select>
               </Field>

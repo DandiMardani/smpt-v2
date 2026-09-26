@@ -22,7 +22,7 @@ export async function createProject(formData: FormData) {
   try {
     const projectCode = getText(formData, "project_code");
     const name = getText(formData, "name");
-    const productCategory = getText(formData, "product_category");
+    const productCategory = getText(formData, "product_category") || "REGULER";
     const customerName = getText(formData, "customer_name");
     const contractValue = getNumber(formData, "contract_value", { min: 0 });
     const startDate = getOptionalDate(formData, "start_date");
@@ -43,7 +43,7 @@ export async function createProject(formData: FormData) {
     const { error } = await supabase.from("projects").insert({
       project_code: projectCode,
       name,
-      product_category: productCategory || null,
+      product_category: productCategory,
       customer_name: customerName || null,
       contract_value: contractValue,
       legacy_target_production: 0,
@@ -67,7 +67,7 @@ export async function updateProject(formData: FormData) {
   try {
     const id = getId(formData, "id");
     const name = getText(formData, "name");
-    const productCategory = getText(formData, "product_category");
+    const productCategory = getText(formData, "product_category") || "REGULER";
     const customerName = getText(formData, "customer_name");
     const contractValue = getNumber(formData, "contract_value", { min: 0 });
     const startDate = getOptionalDate(formData, "start_date");
@@ -85,7 +85,7 @@ export async function updateProject(formData: FormData) {
       .from("projects")
       .update({
         name,
-        product_category: productCategory || null,
+        product_category: productCategory,
         customer_name: customerName || null,
         contract_value: contractValue,
         start_date: startDate,
@@ -140,7 +140,7 @@ export async function repeatProject(formData: FormData) {
     const sourceProjectId = getId(formData, "source_project_id");
     const projectCode = getText(formData, "project_code");
     const name = getText(formData, "name");
-    const productCategory = getText(formData, "product_category");
+    const productCategory = getText(formData, "product_category") || "REGULER";
     const customerName = getText(formData, "customer_name");
     const contractValue = getNumber(formData, "contract_value", { min: 0 });
     const startDate = getOptionalDate(formData, "start_date");
@@ -171,7 +171,7 @@ export async function repeatProject(formData: FormData) {
       p_source_project_id: sourceProjectId,
       p_project_code: projectCode,
       p_name: name,
-      p_product_category: productCategory || null,
+      p_product_category: productCategory,
       p_customer_name: customerName || null,
       p_contract_value: contractValue,
       p_start_date: startDate,

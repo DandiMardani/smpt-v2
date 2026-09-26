@@ -7,6 +7,7 @@ type Project = {
   id: number;
   project_code: string;
   name: string;
+  category?: "HAJI" | "REGULER";
 };
 
 type Product = {
@@ -47,7 +48,9 @@ export function ProduksiRegulerClient({
   workItems: WorkItem[];
   canWrite: boolean;
 }) {
-  const [selectedProjectId, setSelectedProjectId] = useState<number>(projects[0]?.id || 0);
+  const initialProjectId =
+    projects.find((p) => p.category === "REGULER")?.id || projects[0]?.id || 0;
+  const [selectedProjectId, setSelectedProjectId] = useState<number>(initialProjectId);
   const [selectedProductId, setSelectedProductId] = useState<number>(0);
   const [selectedWorkerId, setSelectedWorkerId] = useState<number | "">("");
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<number>(0);
@@ -146,7 +149,7 @@ export function ProduksiRegulerClient({
               >
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.project_code} · {p.name}
+                    {p.category === "HAJI" ? "🕋 [HAJI] " : "🎒 [REGULER] "} {p.project_code} · {p.name}
                   </option>
                 ))}
               </select>
