@@ -245,6 +245,49 @@ export default async function Page() {
           notes: run?.notes,
         };
       }
+
+      // SINKRONISASI DATA UTAMA DENGAN SLIP RESMI HASIL KOREKSI ADMIN
+      // Mencegah munculnya "2 data kontradiktif" antara estimasi mentah absensi vs slip resmi
+      if (officialSlip) {
+        if (officialSlip.type === "BORONGAN") {
+          estimatedGross = officialSlip.grossAmount;
+          breakdown = {
+            baseAmount: officialSlip.grossAmount,
+            overtimeWage: 0,
+            bonus4h: 0,
+            sundayMealOrBonus: 0,
+            regularMeal: 0,
+            totalGross: officialSlip.grossAmount,
+            boronganItems: officialSlip.boronganItems?.map((b) => ({
+              workItemName: b.workItemName,
+              goodQty: b.qtyApproved,
+              operatorPrice: b.operatorPrice,
+              totalValue: b.operatorValue,
+            })),
+          };
+        } else {
+          // Bulanan atau Harian
+          estimatedGross = officialSlip.grossAmount;
+          const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
+          overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
+          workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
+
+          const totalOtWage = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
+          const sundayAmt = (officialSlip.type === "BULANAN" ? officialSlip.mealAmount : officialSlip.holidayBonus) || 0;
+
+          breakdown = {
+            baseAmount: officialSlip.baseAmount || 0,
+            overtimeWage: totalOtWage,
+            bonus4h: officialSlip.overtimeBonus || 0,
+            sundayMealOrBonus: sundayAmt,
+            regularMeal: 0,
+            totalGross: officialSlip.grossAmount,
+            otMinutes: totalOtMins,
+            sundayCount: sundayAmt > 0 ? (officialSlip.type === "BULANAN" ? Math.round(sundayAmt / 50000) : Math.round(sundayAmt / 20000)) : 0,
+            count4h: (officialSlip.overtimeBonus || 0) > 0 ? (officialSlip.type === "BULANAN" ? Math.round((officialSlip.overtimeBonus || 0) / 17500) : Math.round((officialSlip.overtimeBonus || 0) / 5000)) : 0,
+          };
+        }
+      }
     }
   }
 

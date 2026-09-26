@@ -180,8 +180,11 @@ ${itemsList || "• Hasil kerja borongan periode ini"}
 Catatan: Dokumen sah diterbitkan otomatis oleh sistem SMPT V2.`;
     }
 
-    const otHrs = Math.round(((officialSlip.overtimeMinutes || 0) / 60) * 10) / 10;
-    return `*SLIP GAJI RESMI - CV. SMPT*
+    const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
+    const otHrs = Math.round((totalOtMins / 60) * 10) / 10;
+    const totalOtAmt = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
+
+    return `*SLIP GAJI RESMI - CV. SMPT - Kreasi Dinamika*
 No. Dokumen: ${officialSlip.payrollCode}
 Status: ${statusText}
 Periode: ${formatDateId(officialSlip.periodStart)} s/d ${formatDateId(officialSlip.periodEnd)}
@@ -192,157 +195,149 @@ Sistem Upah: ${officialSlip.type}
 
 *RINCIAN PENGHASILAN (BRUTO):*
 • Gaji / Upah Pokok: ${money(officialSlip.baseAmount || 0)}
-${(officialSlip.overtimeAmount || 0) > 0 ? `• Upah Lembur (${otHrs} Jam): ${money(officialSlip.overtimeAmount || 0)}\n` : ""}${(officialSlip.overtimeBonus || 0) > 0 ? `• Bonus Lembur ≥4 Jam: ${money(officialSlip.overtimeBonus || 0)}\n` : ""}${(officialSlip.mealAmount || 0) > 0 ? `• Uang Makan Minggu: ${money(officialSlip.mealAmount || 0)}\n` : ""}${(officialSlip.holidayBonus || 0) > 0 ? `• Insentif Hadir Minggu: ${money(officialSlip.holidayBonus || 0)}\n` : ""}*Total Penghasilan Bruto:* ${money(officialSlip.grossAmount)}
+${totalOtAmt > 0 ? `• Upah Lembur (${otHrs} Jam): ${money(totalOtAmt)}\n` : ""}${(officialSlip.overtimeBonus || 0) > 0 ? `• Bonus Lembur ≥4 Jam: ${money(officialSlip.overtimeBonus || 0)}\n` : ""}${(officialSlip.mealAmount || 0) > 0 ? `• Uang Makan Minggu: ${money(officialSlip.mealAmount || 0)}\n` : ""}${(officialSlip.holidayBonus || 0) > 0 ? `• Insentif Hadir Minggu: ${money(officialSlip.holidayBonus || 0)}\n` : ""}*Total Penghasilan Bruto:* ${money(officialSlip.grossAmount)}
 
 *RINCIAN POTONGAN:*
-• Angsuran Kasbon Perusahaan: ${money(officialSlip.kasbonPerusahaanAmount || 0)}
+• Angsuran Kasbon Kantor: ${money(officialSlip.kasbonPerusahaanAmount || 0)}
 • Tagihan Warung Makan Luar: ${money(officialSlip.kasbonWarungAmount || 0)}
 *Total Potongan:* ${money(officialSlip.deductionAmount)}
 ---------------------------------------------
 *GAJI BERSIH (TAKE HOME PAY): ${money(officialSlip.netAmount)}*
 
-Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
+Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
   };
 
   const handlePrint = () => {
     window.print();
   };
 
+  // Tentukan angka yang ditampilkan (Prioritas ke officialSlip terverifikasi admin)
+  const displayedGross = officialSlip ? officialSlip.grossAmount : estimatedGross;
+  const displayedDeduction = officialSlip ? officialSlip.deductionAmount : totalDeductionPending;
+  const displayedNet = officialSlip ? officialSlip.netAmount : estimatedNet;
+  const displayedKasbonPerusahaan = officialSlip && officialSlip.kasbonPerusahaanAmount !== undefined
+    ? officialSlip.kasbonPerusahaanAmount
+    : (isBulanan ? activeCompanyInstallment : totalCompanyLoan);
+  const displayedKasbonWarung = officialSlip && officialSlip.kasbonWarungAmount !== undefined
+    ? officialSlip.kasbonWarungAmount
+    : totalWarung;
+
   return (
     <div className="space-y-5">
-      {/* ================= 1. BANNER SLIP GAJI RESMI TERAKHIR ================= */}
-      {officialSlip ? (
-        <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-900 via-slate-900 to-teal-950 p-5 sm:p-6 text-white shadow-lg">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-black text-emerald-300 ring-1 ring-emerald-400/40">
-                  📜 SLIP GAJI RESMI TERAKHIR
-                </span>
+      {/* ================= SATU KARTU STATUS KEUANGAN & SLIP TERVERIFIKASI ================= */}
+      <div
+        className={`rounded-2xl border-2 p-5 sm:p-6 shadow-sm space-y-5 ${
+          officialSlip
+            ? "border-emerald-300 bg-gradient-to-br from-emerald-50/50 via-white to-slate-50"
+            : "border-blue-200 bg-gradient-to-br from-blue-50/50 via-white to-amber-50/30"
+        }`}
+      >
+        {/* Header Kartu */}
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-200/80 pb-4">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs ${
+                  officialSlip ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"
+                }`}
+              >
+                {officialSlip ? "📜 DOKUMEN SLIP RESMI TERVERIFIKASI" : "⏱️ ESTIMASI GAJI BERJALAN"}
+              </span>
+
+              {officialSlip ? (
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs ${
                     officialSlip.paymentStatus === "SUDAH DIBAYAR"
-                      ? "bg-emerald-500 text-slate-950 ring-2 ring-emerald-300"
-                      : "bg-amber-400 text-slate-950 ring-2 ring-amber-300 animate-pulse"
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      : "bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
                   }`}
                 >
-                  {officialSlip.paymentStatus === "SUDAH DIBAYAR" ? "🟢 SUDAH DIBAYAR" : "⏳ BELUM DIBAYAR (PROSES KASIR)"}
+                  {officialSlip.paymentStatus === "SUDAH DIBAYAR"
+                    ? "🟢 SUDAH DIBAYAR (LUNAS)"
+                    : "⏳ BELUM DIBAYAR (PROSES KASIR)"}
                 </span>
-              </div>
-
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white mt-1">
-                Slip No: {officialSlip.payrollCode}
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-300 flex items-center gap-2">
-                <span>📅 <b>Periode Penggajian:</b> {formatDateId(officialSlip.periodStart)} s/d {formatDateId(officialSlip.periodEnd)}</span>
-                <span>•</span>
-                <span>Sistem Upah: <b>{officialSlip.type}</b></span>
-              </p>
+              ) : null}
             </div>
 
-            <div className="text-left sm:text-right">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
-                Gaji Bersih Resmi (Take Home Pay)
-              </div>
-              <div className="text-2xl sm:text-3xl font-black text-emerald-300 mt-0.5">
-                {money(officialSlip.netAmount)}
-              </div>
-              <div className="text-xs text-slate-300 mt-1">
-                Bruto: <b>{money(officialSlip.grossAmount)}</b> · Potongan: <b>{money(officialSlip.deductionAmount)}</b>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-white/15 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-300 flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
-              <span>Data payroll resmi telah disinkronkan & diverifikasi oleh Admin Keuangan.</span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowSlipModal(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-black text-slate-950 hover:bg-emerald-400 shadow-md transition"
-              >
-                📄 Lihat / Cetak Slip Resmi
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const text = getOfficialWhatsAppText();
-                  const phone = normalizePhone(worker.phone);
-                  const appUrl = phone
-                    ? `whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`
-                    : `whatsapp://send?text=${encodeURIComponent(text)}`;
-                  window.location.href = appUrl;
-                }}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white transition ring-1 ring-emerald-400/40"
-              >
-                💬 Buka Aplikasi WA
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const text = getOfficialWhatsAppText();
-                  navigator.clipboard.writeText(text).then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  });
-                }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-bold text-white hover:bg-white/20 transition"
-              >
-                {copied ? "✅ Teks Disalin!" : "📋 Salin Slip WA"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-900 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl">ℹ️</span>
-            <div>
-              <p className="font-bold text-blue-950">Slip Gaji Resmi Periode Ini Belum Difinalisasi Admin</p>
-              <p className="text-blue-700 mt-0.5">
-                Data di bawah menyajikan akumulasi jam kerja, absensi, atau pekerjaan borongan berjalan secara transparan dan real-time.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= 2. TRANSPARANSI GAJI & KASBON BERJALAN ================= */}
-      <div className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50/50 via-white to-amber-50/30 p-5 sm:p-6 shadow-xs space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200/80 pb-3">
-          <div>
-            <span className="inline-block rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800 uppercase tracking-wider">
-              Status Berjalan Real-Time
-            </span>
-            <h2 className="text-lg font-extrabold text-gray-900 mt-1">
-              Akumulasi Upah & Kasbon Saya Hari Ini
+            <h2 className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
+              {officialSlip ? `Slip Payout: ${officialSlip.payrollCode}` : "Akumulasi Upah & Kasbon Saya Hari Ini"}
             </h2>
-            <p className="text-xs text-gray-500">
-              {worker.name} ({worker.worker_code}) · Sistem Upah: <b>{worker.pay_system}</b>
+
+            <p className="text-xs text-gray-600 flex flex-wrap items-center gap-2">
+              <span><b>{worker.name}</b> ({worker.worker_code})</span>
+              <span>•</span>
+              <span>Sistem Upah: <b>{officialSlip?.type || worker.pay_system}</b></span>
+              {officialSlip?.periodStart && (
+                <>
+                  <span>•</span>
+                  <span>📅 <b>Periode Gaji:</b> {formatDateId(officialSlip.periodStart)} s/d {formatDateId(officialSlip.periodEnd)}</span>
+                </>
+              )}
             </p>
+
+            {officialSlip ? (
+              <p className="text-[11px] text-emerald-700 flex items-center gap-1 font-medium">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Data telah diverifikasi Admin Keuangan. Tidak ada perbedaan antara estimasi dan slip resmi.</span>
+              </p>
+            ) : null}
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Action Buttons Header */}
+          <div className="flex flex-wrap items-center gap-2">
+            {officialSlip ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowSlipModal(true)}
+                  className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition inline-flex items-center gap-1.5"
+                >
+                  📄 Lihat / Cetak Slip
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = getOfficialWhatsAppText();
+                    const phone = normalizePhone(worker.phone);
+                    const appUrl = phone
+                      ? `whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`
+                      : `whatsapp://send?text=${encodeURIComponent(text)}`;
+                    window.location.href = appUrl;
+                  }}
+                  className="rounded-xl border border-emerald-600 bg-white hover:bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 shadow-2xs transition inline-flex items-center gap-1.5"
+                >
+                  💬 Buka WA App
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = getOfficialWhatsAppText();
+                    navigator.clipboard.writeText(text).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    });
+                  }}
+                  className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 shadow-2xs transition"
+                >
+                  {copied ? "✅ Disalin!" : "📋 Salin Teks"}
+                </button>
+              </>
+            ) : null}
+
             <button
               type="button"
               onClick={() => setShowRulesInfo(!showRulesInfo)}
-              className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 shadow-2xs transition"
+              className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100 shadow-2xs transition"
             >
-              {showRulesInfo ? "✕ Tutup SOP Periode" : "ℹ️ Aturan Periode & Lupa Absen"}
+              {showRulesInfo ? "✕ Tutup SOP" : "ℹ️ SOP Periode & Lupa Absen"}
             </button>
 
             <button
               type="button"
               onClick={() => setShowDetail(!showDetail)}
-              className="rounded-xl border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 shadow-2xs transition"
+              className="rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 shadow-2xs transition"
             >
-              {showDetail ? "▲ Sembunyikan Rincian" : "▼ Rincian Komponen Upah"}
+              {showDetail ? "▲ Sembunyikan Rincian" : "▼ Rincian Komponen"}
             </button>
           </div>
         </div>
@@ -397,76 +392,46 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
           </div>
         )}
 
-        {/* 4 Primary Cards */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Card 1: Gaji Terkumpul */}
+        {/* 4 Kartu Metrik Keuangan Utama */}
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Card 1: Upah Bruto */}
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-gray-500">
-                {isBorongan ? "Estimasi Hasil Borongan Berjalan:" : "Estimasi Upah Terkumpul Berjalan:"}
+                {officialSlip ? "Gaji / Upah Bruto Resmi:" : "Perkiraan Upah Bruto Berjalan:"}
               </div>
-              <div className="mt-1 text-xl font-black text-blue-700">{money(estimatedGross)}</div>
-              <div className="mt-1 text-[11px] text-gray-500">
-                {isBorongan
-                  ? `${breakdown?.boronganItems?.length || 0} Tugas SPK Aktif`
-                  : workedDays > 0
-                  ? `${workedDays} Hari Kerja`
-                  : "Gaji Pokok Tetap"}
-                {overtimeHours > 0 ? ` · Lembur ${overtimeHours} jam` : ""}
+              <div className="mt-1 text-2xl font-black text-gray-900">{money(displayedGross)}</div>
+              <div className="mt-1 text-[11px] text-gray-600">
+                {isBulanan
+                  ? (officialSlip && ((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0)) > 0
+                      ? `Pokok + Lembur ${overtimeHours} Jam + Insentif`
+                      : "Gaji Pokok Bulanan Tetap")
+                  : isBorongan
+                  ? `${qty(officialSlip?.totalQtyApproved || breakdown?.boronganItems?.reduce((a, b) => a + (b.goodQty || 0), 0) || 0)} PCS disetujui`
+                  : `${workedDays} Hari Kerja + ${overtimeHours} Jam Lembur`}
               </div>
             </div>
-
-            {breakdown && !isBorongan && (breakdown.overtimeWage > 0 || breakdown.bonus4h > 0 || breakdown.sundayMealOrBonus > 0 || breakdown.regularMeal > 0) ? (
-              <div className="mt-2.5 pt-2 border-t border-slate-100 text-[10px] text-slate-500 space-y-0.5">
-                <div className="flex justify-between">
-                  <span>Pokok:</span>
-                  <span className="font-semibold text-slate-700">{money(breakdown.baseAmount)}</span>
-                </div>
-                {breakdown.overtimeWage > 0 ? (
-                  <div className="flex justify-between text-blue-600 font-semibold">
-                    <span>Lembur ({overtimeHours}h):</span>
-                    <span>+{money(breakdown.overtimeWage)}</span>
-                  </div>
-                ) : null}
-                {breakdown.bonus4h > 0 ? (
-                  <div className="flex justify-between text-emerald-600 font-semibold">
-                    <span>Bonus 4H ({breakdown.count4h || 1}x):</span>
-                    <span>+{money(breakdown.bonus4h)}</span>
-                  </div>
-                ) : null}
-                {breakdown.sundayMealOrBonus > 0 ? (
-                  <div className="flex justify-between text-indigo-600 font-semibold">
-                    <span>{isBulanan ? "Makan Minggu" : "Insentif Minggu"} ({breakdown.sundayCount || 1}x):</span>
-                    <span>+{money(breakdown.sundayMealOrBonus)}</span>
-                  </div>
-                ) : null}
-                {breakdown.regularMeal > 0 ? (
-                  <div className="flex justify-between text-amber-600 font-semibold">
-                    <span>Makan Reguler:</span>
-                    <span>+{money(breakdown.regularMeal)}</span>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </div>
 
-          {/* Card 2: Hutang Warung */}
-          <div className="rounded-xl bg-amber-50/80 border border-amber-200 p-4 shadow-2xs flex flex-col justify-between">
+          {/* Card 2: Tagihan Warung */}
+          <div className="rounded-xl bg-amber-50/70 border border-amber-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-amber-900 flex items-center justify-between">
-                <span>🍜 Hutang Warung Luar:</span>
-                <span className="font-bold bg-amber-100/80 text-amber-800 px-2 py-0.5 rounded-md text-[10px]">{warungDebts.length} nota</span>
+                <span>🍜 Tagihan Warung Luar:</span>
+                <span className="font-bold bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded text-[10px]">
+                  {warungDebts.length} nota
+                </span>
               </div>
-              <div className="mt-1 text-xl font-black text-amber-800">{money(totalWarung)}</div>
-              <div className="mt-1 text-[10px] text-amber-950 font-medium">
-                Otomatis dipotong saat payroll
+              <div className="mt-1 text-2xl font-black text-amber-800">{money(displayedKasbonWarung)}</div>
+              <div className="mt-1 text-[11px] text-amber-900">
+                {officialSlip ? "Potongan resmi tercantum di slip" : "Otomatis dipotong saat payroll"}
               </div>
             </div>
 
             {warungDebts.length > 0 ? (
               <div className="mt-3 pt-2.5 border-t border-amber-200/70 space-y-1.5 text-[11px]">
                 <div className="font-bold text-amber-900 text-[10px] uppercase tracking-wider">Riwayat Hutang:</div>
-                <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
                   {warungDebts.map((w) => {
                     const rem = n(w.amount) - n(w.paid_amount);
                     return (
@@ -485,26 +450,28 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
           </div>
 
           {/* Card 3: Kasbon Perusahaan */}
-          <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs flex flex-col justify-between">
+          <div className="rounded-xl bg-rose-50/40 border border-rose-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
-              <div className="text-[11px] font-semibold text-gray-500 flex items-center justify-between">
-                <span>🏢 Sisa Kasbon Kantor:</span>
-                {activeCompanyInstallment > 0 && (
-                  <span className="text-blue-600 font-bold text-[10px] bg-blue-50 px-2 py-0.5 rounded-md">Cicilan Aktif</span>
+              <div className="text-[11px] font-semibold text-rose-800 flex items-center justify-between">
+                <span>🏢 Angsuran Kasbon Kantor:</span>
+                {companyLoans.length > 0 && (
+                  <span className="font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded text-[10px]">
+                    {companyLoans.length} pinjaman
+                  </span>
                 )}
               </div>
-              <div className="mt-1 text-xl font-black text-rose-600">{money(totalCompanyLoan)}</div>
-              <div className="mt-1 text-[10px] text-gray-500">
-                {activeCompanyInstallment > 0
-                  ? `Potongan bln ini: ${money(activeCompanyInstallment)}`
-                  : "Tidak ada cicilan aktif"}
+              <div className="mt-1 text-2xl font-black text-rose-600">{money(displayedKasbonPerusahaan)}</div>
+              <div className="mt-1 text-[11px] text-rose-800">
+                {officialSlip
+                  ? "Potongan resmi tercantum di slip"
+                  : (activeCompanyInstallment > 0 ? `Cicilan aktif bln ini: ${money(activeCompanyInstallment)}` : "Lunas / Tidak ada cicilan")}
               </div>
             </div>
 
             {companyLoans.length > 0 ? (
-              <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-1.5 text-[11px]">
-                <div className="font-bold text-gray-700 text-[10px] uppercase tracking-wider">Rincian Angsuran:</div>
-                <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+              <div className="mt-3 pt-2.5 border-t border-rose-100 space-y-1.5 text-[11px]">
+                <div className="font-bold text-rose-800 text-[10px] uppercase tracking-wider">Rincian Angsuran:</div>
+                <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
                   {companyLoans.map((l) => {
                     const rem = n(l.amount) - n(l.paid_amount);
                     const count = Number(l.installment_count) || 1;
@@ -512,7 +479,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
                     const currentInst = paid + 1;
                     const instAmt = n(l.installment_amount) || Math.round(n(l.amount) / count);
                     return (
-                      <div key={l.id} className="rounded-lg bg-gray-50 border border-gray-200/60 p-2 flex justify-between items-start gap-1">
+                      <div key={l.id} className="rounded-lg bg-white border border-rose-100 p-2 flex justify-between items-start gap-1">
                         <div className="leading-tight">
                           <span className="font-bold text-blue-700">
                             {count > 1 ? `Angsuran ke-${Math.min(currentInst, count)} dari ${count} kali` : "Sekali Lunas"}
@@ -530,17 +497,21 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
             ) : null}
           </div>
 
-          {/* Card 4: Estimasi Bersih Diterima */}
-          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 shadow-2xs flex flex-col justify-between">
+          {/* Card 4: Gaji Bersih */}
+          <div className="rounded-xl bg-emerald-600 border border-emerald-700 p-4 shadow-sm text-white flex flex-col justify-between">
             <div>
-              <div className="text-[11px] font-semibold text-emerald-900">Perkiraan Gaji Bersih (Net):</div>
-              <div className="mt-1 text-xl font-black text-emerald-700">{money(estimatedNet)}</div>
-              <div className="mt-1 text-[10px] text-emerald-800 font-medium">
-                Setelah dikurangi seluruh kasbon
+              <div className="text-[11px] font-bold text-emerald-100 uppercase tracking-wider">
+                {officialSlip ? "Gaji Bersih Resmi (Take Home Pay):" : "Perkiraan Bersih (Take Home Pay):"}
+              </div>
+              <div className="mt-1 text-2xl sm:text-3xl font-black text-white">{money(displayedNet)}</div>
+              <div className="mt-1 text-[11px] text-emerald-100">
+                Total potongan kasbon: <b>{money(displayedDeduction)}</b>
               </div>
             </div>
-            <div className="mt-3 pt-2 border-t border-emerald-200/60 text-[11px] text-emerald-800">
-              Total pemotongan berjalan: <b>{money(totalDeductionPending)}</b>
+            <div className="mt-3 pt-2 border-t border-emerald-500/60 text-[11px] text-emerald-100">
+              {officialSlip
+                ? `Status Bayar: ${officialSlip.paymentStatus}`
+                : `Sisa bersih setelah dikurangi semua kasbon`}
             </div>
           </div>
         </div>
@@ -746,12 +717,12 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
             </div>
 
             {/* Konten Slip Format Cetak */}
-            <div id="printable-slip" className="mt-5 rounded-xl border border-slate-300 bg-white p-5 text-slate-900 space-y-4">
+            <div id="printable-slip" className="mt-4 rounded-xl border border-slate-300 bg-white p-4 sm:p-5 text-slate-900 space-y-4 min-w-0">
               {/* Header Slip */}
               <div className="border-b-2 border-slate-900 pb-3 flex flex-wrap justify-between items-start gap-2">
                 <div>
                   <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900">
-                    CV. SINAR MANDIRI PRINTING & TAILORING (SMPT)
+                    CV. SMPT - Kreasi Dinamika
                   </h2>
                   <p className="text-xs font-bold text-blue-700 uppercase tracking-wider mt-0.5">
                     SLIP PEMBAYARAN GAJI KARYAWAN ({officialSlip.type})
@@ -772,7 +743,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
               </div>
 
               {/* Meta Grid */}
-              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <div>
                   <span className="text-slate-500 block text-[11px]">Nama Pekerja:</span>
                   <b className="font-bold text-slate-900 text-sm">{worker.name}</b>
@@ -801,26 +772,28 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
                   <div className="font-bold text-xs uppercase tracking-wider text-slate-700">
                     Rincian Hasil Pengerjaan Borongan:
                   </div>
-                  <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
-                    <thead className="bg-slate-100 text-slate-700">
-                      <tr>
-                        <th className="p-2 text-left font-bold">Item Pekerjaan</th>
-                        <th className="p-2 text-right font-bold">Qty Sah</th>
-                        <th className="p-2 text-right font-bold">Tarif</th>
-                        <th className="p-2 text-right font-bold">Subtotal</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(officialSlip.boronganItems || []).map((it, idx) => (
-                        <tr key={idx}>
-                          <td className="p-2 font-medium text-slate-800">{it.workItemName}</td>
-                          <td className="p-2 text-right font-mono">{qty(it.qtyApproved)} pcs</td>
-                          <td className="p-2 text-right font-mono">{money(it.operatorPrice)}</td>
-                          <td className="p-2 text-right font-bold font-mono text-emerald-800">{money(it.operatorValue)}</td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden min-w-[280px]">
+                      <thead className="bg-slate-100 text-slate-700">
+                        <tr>
+                          <th className="p-2 text-left font-bold">Item Pekerjaan</th>
+                          <th className="p-2 text-right font-bold">Qty Sah</th>
+                          <th className="p-2 text-right font-bold">Tarif</th>
+                          <th className="p-2 text-right font-bold">Subtotal</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(officialSlip.boronganItems || []).map((it, idx) => (
+                          <tr key={idx}>
+                            <td className="p-2 font-medium text-slate-800">{it.workItemName}</td>
+                            <td className="p-2 text-right font-mono">{qty(it.qtyApproved)} pcs</td>
+                            <td className="p-2 text-right font-mono">{money(it.operatorPrice)}</td>
+                            <td className="p-2 text-right font-bold font-mono text-emerald-800">{money(it.operatorValue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : (
                 <div className="grid sm:grid-cols-2 gap-4 text-xs">
@@ -834,10 +807,14 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
                         <span>Gaji / Upah Pokok:</span>
                         <span className="font-bold">{money(officialSlip.baseAmount || 0)}</span>
                       </div>
-                      {(officialSlip.overtimeAmount || 0) > 0 ? (
+                      {((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0)) > 0 ? (
                         <div className="flex justify-between text-blue-700">
-                          <span>Upah Lembur ({Math.round(((officialSlip.overtimeMinutes || 0) / 60) * 10) / 10}h):</span>
-                          <span className="font-bold">+{money(officialSlip.overtimeAmount || 0)}</span>
+                          <span>
+                            Upah Lembur ({Math.round(((officialSlip.overtimeMinutes || 0) / 60 + (officialSlip.manualOvertimeHours || 0)) * 10) / 10}h):
+                          </span>
+                          <span className="font-bold">
+                            +{money((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0))}
+                          </span>
                         </div>
                       ) : null}
                       {(officialSlip.overtimeBonus || 0) > 0 ? (

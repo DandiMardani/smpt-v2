@@ -152,7 +152,7 @@ function getSlipTitle(run: PayrollRunRow, item: PayrollItemRow): string {
 
 function generateWhatsAppText(run: PayrollRunRow, item: PayrollItemRow, worker?: WorkerInfo): string {
   const title = getSlipTitle(run, item);
-  const otHours = (num(item.overtime_minutes) / 60).toFixed(1);
+  const otHours = ((num(item.overtime_minutes) / 60) + num(item.manual_overtime_hours)).toFixed(1);
   const manualOt = num(item.manual_overtime_amount);
   const totalOt = num(item.overtime_amount) + manualOt;
   const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount);
@@ -165,7 +165,7 @@ function generateWhatsAppText(run: PayrollRunRow, item: PayrollItemRow, worker?:
 
   return [
     `*${title}*`,
-    `*PT KREASI DINAMIKA MAJU BERSAMA*`,
+    `*CV. SMPT - Kreasi Dinamika*`,
     `=============================`,
     `👤 *Nama:* ${item.worker_name_snapshot}`,
     `🆔 *ID:* ${worker?.worker_code || `PKR-${item.worker_id}`}${worker?.identity_no ? ` | NIK: ${worker.identity_no}` : ""}`,
@@ -179,7 +179,7 @@ function generateWhatsAppText(run: PayrollRunRow, item: PayrollItemRow, worker?:
     `• Kehadiran: ${num(item.full_days)} Full Day, ${num(item.half_days)} Half Day`,
     `• Gaji / Upah Pokok: ${money(item.base_amount)}`,
     num(item.meal_amount) > 0 ? `• Uang Makan Minggu: ${money(item.meal_amount)}` : null,
-    totalOt > 0 ? `• Lembur (${otHours} jam${manualOt > 0 ? ` + Manual ${money(manualOt)}` : ""}): ${money(totalOt)}` : null,
+    totalOt > 0 ? `• Lembur (${otHours} jam${manualOt > 0 ? ` incl manual` : ""}): ${money(totalOt)}` : null,
     bonus > 0 ? `• Bonus / Insentif: ${money(bonus)}` : null,
     `-----------------------------`,
     `*Total Bruto:* ${money(num(item.base_amount) + num(item.meal_amount) + totalOt + bonus)}`,
@@ -205,7 +205,7 @@ function generateOperatorWhatsAppText(run: OperatorRunRow, workerGroup: GroupedO
 
   return [
     `*SLIP UPAH BORONGAN*`,
-    `*PT KREASI DINAMIKA MAJU BERSAMA*`,
+    `*CV. SMPT - Kreasi Dinamika*`,
     `=============================`,
     `👤 *Nama:* ${workerGroup.workerName}`,
     `🆔 *ID:* ${workerGroup.workerCode}${workerGroup.identityNo ? ` | NIK: ${workerGroup.identityNo}` : ""}`,
@@ -266,6 +266,8 @@ export function PayrollSlipManager({
   // Active items for view/preview/WA
   const [activeItem, setActiveItem] = useState<PayrollItemRow | null>(null);
   const [activeOpWorker, setActiveOpWorker] = useState<GroupedOperatorWorker | null>(null);
+  const [previewItem, setPreviewItem] = useState<PayrollItemRow | null>(null);
+  const [previewOpWorker, setPreviewOpWorker] = useState<GroupedOperatorWorker | null>(null);
 
   // WhatsApp dialog state
   const [waModalOpen, setWaModalOpen] = useState(false);
@@ -435,7 +437,7 @@ export function PayrollSlipManager({
     if (!selectedRun) return;
     const title = getSlipTitle(selectedRun, item);
     const worker = workerMap.get(item.worker_id);
-    const otHours = (num(item.overtime_minutes) / 60).toFixed(1);
+    const otHours = ((num(item.overtime_minutes) / 60) + num(item.manual_overtime_hours)).toFixed(1);
     const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount);
     const periodDesc = getPeriodDescription(selectedRun.period_start, selectedRun.period_end, selectedRun.payroll_type);
     const payStatus = getRunPaymentStatus(selectedRun);
@@ -445,36 +447,39 @@ export function PayrollSlipManager({
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${title} - ${item.worker_name_snapshot}</title>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; background: #fff; }
-          .slip { max-width: 650px; margin: 0 auto; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 24px; box-sizing: border-box; }
-          .header { border-bottom: 2px solid #0f2747; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; }
-          .company { font-size: 19px; font-weight: 800; color: #0f2747; }
-          .title { font-size: 13px; font-weight: 700; color: #2563eb; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
-          .right { text-align: right; font-size: 12px; color: #64748b; }
+          * { box-sizing: border-box; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 12px; background: #fff; }
+          .slip { width: 100%; max-width: 600px; margin: 0 auto; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 16px; box-sizing: border-box; }
+          .header { border-bottom: 2px solid #0f2747; padding-bottom: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+          .company { font-size: 17px; font-weight: 800; color: #0f2747; }
+          .title { font-size: 12px; font-weight: 700; color: #2563eb; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+          .right { text-align: right; font-size: 11px; color: #64748b; }
           .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 4px; ${payStatus === "SUDAH DIBAYAR" ? "background:#dcfce7;color:#15803d;border:1px solid #86efac;" : "background:#fef3c7;color:#b45309;border:1px solid #fde68a;"} }
-          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-bottom: 18px; background: #f8fafc; padding: 12px 14px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
-          .meta div { display: flex; justify-content: space-between; }
-          .meta span { color: #64748b; }
-          .meta strong { color: #0f172a; }
-          .table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
-          .table td { padding: 7px 4px; border-bottom: 1px solid #f1f5f9; }
+          .meta { display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 14px; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 11px; }
+          @media (min-width: 480px) { .meta { grid-template-columns: 1fr 1fr; gap: 8px 16px; } }
+          .meta div { display: flex; justify-content: space-between; gap: 8px; }
+          .meta span { color: #64748b; white-space: nowrap; }
+          .meta strong { color: #0f172a; text-align: right; word-break: break-word; }
+          .table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12px; }
+          .table td { padding: 6px 3px; border-bottom: 1px solid #f1f5f9; }
           .table tr.total td { font-weight: 700; border-top: 1.5px solid #94a3b8; border-bottom: 1.5px solid #94a3b8; }
-          .net-box { background: #ecfdf5; border: 2px solid #10b981; border-radius: 8px; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
-          .net-box .lbl { font-size: 13px; font-weight: 700; color: #065f46; }
-          .net-box .val { font-size: 22px; font-weight: 800; color: #065f46; }
-          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 30px; text-align: center; font-size: 12px; }
-          .sig-box { border-top: 1px solid #94a3b8; padding-top: 6px; margin-top: 50px; font-weight: 600; }
-          .footer { margin-top: 20px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px; }
-          @media print { body { padding: 0; } .slip { border: 0; padding: 0; } }
+          .net-box { background: #ecfdf5; border: 2px solid #10b981; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+          .net-box .lbl { font-size: 12px; font-weight: 700; color: #065f46; }
+          .net-box .val { font-size: 18px; font-weight: 800; color: #065f46; }
+          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; text-align: center; font-size: 11px; }
+          .sig-box { border-top: 1px solid #94a3b8; padding-top: 4px; margin-top: 40px; font-weight: 600; }
+          .footer { margin-top: 16px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+          @media print { body { padding: 0; } .slip { border: 0; padding: 0; max-width: 100%; } }
         </style>
       </head>
       <body>
         <div class="slip">
           <div class="header">
             <div>
-              <div class="company">PT Kreasi Dinamika Maju Bersama</div>
+              <div class="company">CV. SMPT - Kreasi Dinamika</div>
               <div class="title">${title}</div>
             </div>
             <div class="right">
@@ -497,7 +502,7 @@ export function PayrollSlipManager({
             <tbody>
               <tr><td>Upah / Gaji Pokok</td><td style="text-align: right; font-weight: 600;">${money(item.base_amount)}</td></tr>
               ${num(item.meal_amount) > 0 ? `<tr><td>Uang Makan Minggu (Masuk 08:00–17:00)</td><td style="text-align: right; font-weight: 600;">${money(item.meal_amount)}</td></tr>` : ""}
-              ${(num(item.overtime_amount) + num(item.manual_overtime_amount)) > 0 ? `<tr><td>Upah Lembur (${otHours} jam${num(item.manual_overtime_amount) > 0 ? ` + Manual ${money(item.manual_overtime_amount)}` : ""})</td><td style="text-align: right; font-weight: 600;">${money(num(item.overtime_amount) + num(item.manual_overtime_amount))}</td></tr>` : ""}
+              ${(num(item.overtime_amount) + num(item.manual_overtime_amount)) > 0 ? `<tr><td>Upah Lembur (${otHours} jam${num(item.manual_overtime_amount) > 0 ? ` incl manual` : ""})</td><td style="text-align: right; font-weight: 600;">${money(num(item.overtime_amount) + num(item.manual_overtime_amount))}</td></tr>` : ""}
               ${bonus > 0 ? `<tr><td>Bonus / Tambahan Hadir Minggu</td><td style="text-align: right; font-weight: 600;">${money(bonus)}</td></tr>` : ""}
               <tr class="total"><td>Total Pendapatan Bruto</td><td style="text-align: right; font-weight: 700;">${money(num(item.base_amount) + num(item.meal_amount) + num(item.overtime_amount) + num(item.manual_overtime_amount) + bonus)}</td></tr>
               ${num(item.kasbon_perusahaan_amount) > 0 ? `<tr><td style="color: #dc2626;">Potongan Kasbon Kantor (Cicilan)</td><td style="text-align: right; font-weight: 600; color: #dc2626;">-${money(item.kasbon_perusahaan_amount)}</td></tr>` : ""}
@@ -514,7 +519,7 @@ export function PayrollSlipManager({
           <div class="signatures">
             <div>
               <span>Diterbitkan Oleh:</span>
-              <div class="sig-box">Finance / HRD PT KDMB</div>
+              <div class="sig-box">Finance / HRD CV. SMPT</div>
             </div>
             <div>
               <span>Diterima Oleh:</span>
@@ -553,37 +558,40 @@ export function PayrollSlipManager({
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Slip Borongan - ${group.workerName}</title>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; background: #fff; }
-          .slip { max-width: 650px; margin: 0 auto; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 24px; box-sizing: border-box; }
-          .header { border-bottom: 2px solid #0f2747; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; }
-          .company { font-size: 19px; font-weight: 800; color: #0f2747; }
-          .title { font-size: 13px; font-weight: 700; color: #16a34a; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
-          .right { text-align: right; font-size: 12px; color: #64748b; }
+          * { box-sizing: border-box; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 12px; background: #fff; }
+          .slip { width: 100%; max-width: 600px; margin: 0 auto; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 16px; box-sizing: border-box; }
+          .header { border-bottom: 2px solid #0f2747; padding-bottom: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+          .company { font-size: 17px; font-weight: 800; color: #0f2747; }
+          .title { font-size: 12px; font-weight: 700; color: #16a34a; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+          .right { text-align: right; font-size: 11px; color: #64748b; }
           .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 4px; ${payStatus === "SUDAH DIBAYAR" ? "background:#dcfce7;color:#15803d;border:1px solid #86efac;" : "background:#fef3c7;color:#b45309;border:1px solid #fde68a;"} }
-          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-bottom: 18px; background: #f8fafc; padding: 12px 14px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
-          .meta div { display: flex; justify-content: space-between; }
-          .meta span { color: #64748b; }
-          .meta strong { color: #0f172a; }
-          .table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
-          .table th { background: #f1f5f9; padding: 8px 6px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; }
-          .table td { padding: 8px 6px; border-bottom: 1px solid #e2e8f0; }
+          .meta { display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 14px; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 11px; }
+          @media (min-width: 480px) { .meta { grid-template-columns: 1fr 1fr; gap: 8px 16px; } }
+          .meta div { display: flex; justify-content: space-between; gap: 8px; }
+          .meta span { color: #64748b; white-space: nowrap; }
+          .meta strong { color: #0f172a; text-align: right; word-break: break-word; }
+          .table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12px; }
+          .table th { background: #f1f5f9; padding: 7px 5px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; }
+          .table td { padding: 7px 5px; border-bottom: 1px solid #e2e8f0; }
           .table tr.total td { font-weight: 700; border-top: 1.5px solid #94a3b8; border-bottom: 1.5px solid #94a3b8; background: #f8fafc; }
-          .net-box { background: #ecfdf5; border: 2px solid #10b981; border-radius: 8px; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
-          .net-box .lbl { font-size: 13px; font-weight: 700; color: #065f46; }
-          .net-box .val { font-size: 22px; font-weight: 800; color: #065f46; }
-          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 30px; text-align: center; font-size: 12px; }
-          .sig-box { border-top: 1px solid #94a3b8; padding-top: 6px; margin-top: 50px; font-weight: 600; }
-          .footer { margin-top: 20px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px; }
-          @media print { body { padding: 0; } .slip { border: 0; padding: 0; } }
+          .net-box { background: #ecfdf5; border: 2px solid #10b981; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+          .net-box .lbl { font-size: 12px; font-weight: 700; color: #065f46; }
+          .net-box .val { font-size: 18px; font-weight: 800; color: #065f46; }
+          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; text-align: center; font-size: 11px; }
+          .sig-box { border-top: 1px solid #94a3b8; padding-top: 4px; margin-top: 40px; font-weight: 600; }
+          .footer { margin-top: 16px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+          @media print { body { padding: 0; } .slip { border: 0; padding: 0; max-width: 100%; } }
         </style>
       </head>
       <body>
         <div class="slip">
           <div class="header">
             <div>
-              <div class="company">PT Kreasi Dinamika Maju Bersama</div>
+              <div class="company">CV. SMPT - Kreasi Dinamika</div>
               <div class="title">SLIP UPAH BORONGAN OPERATOR</div>
             </div>
             <div class="right">
@@ -647,7 +655,7 @@ export function PayrollSlipManager({
 
           <div class="footer">
             Dokumen ini sah dan diterbitkan resmi oleh Sistem SMPT V2 pada ${new Date().toLocaleDateString("id-ID")}.<br>
-            Harap simpan slip ini sebagai tanda bukti pembayaran upah borongan yang sah.
+            Harap simpan slip ini sebagai tanda bukti pembayaran upah yang sah.
           </div>
         </div>
       </body>
@@ -1006,10 +1014,10 @@ export function PayrollSlipManager({
                     <div className="mt-3 flex items-center justify-end gap-2 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => handlePrintOperatorSlip(group)}
+                        onClick={() => setPreviewOpWorker(group)}
                         className="rounded-xl border border-slate-200 bg-white py-1.5 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs transition flex items-center gap-1"
                       >
-                        📄 Cetak Slip Borongan
+                        📄 Pratinjau / Cetak Slip
                       </button>
                       <button
                         type="button"
@@ -1151,7 +1159,7 @@ export function PayrollSlipManager({
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => handlePrintSlip(item)}
+                        onClick={() => setPreviewItem(item)}
                         className="rounded-xl border border-slate-200 bg-white py-2 px-3 text-[11px] sm:text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs transition"
                       >
                         📄 Cetak Slip
@@ -1640,6 +1648,443 @@ export function PayrollSlipManager({
                   💬 Buka WhatsApp App
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL PRATINJAU SLIP GAJI IN-APP (HARIAN & BULANAN) ================= */}
+      {previewItem && selectedRun && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="relative w-full max-w-xl rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div>
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Pratinjau Slip Gaji Resmi
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 mt-0.5">
+                  {getSlipTitle(selectedRun, previewItem)}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Konten Slip */}
+            <div className="mt-4 rounded-xl border border-slate-300 bg-white p-4 sm:p-5 text-slate-900 space-y-3.5 min-w-0">
+              {/* Header Slip */}
+              <div className="border-b-2 border-slate-900 pb-3 flex flex-wrap justify-between items-start gap-2">
+                <div>
+                  <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900">
+                    CV. SMPT - Kreasi Dinamika
+                  </h2>
+                  <p className="text-xs font-bold text-blue-700 uppercase tracking-wider mt-0.5">
+                    {getSlipTitle(selectedRun, previewItem)}
+                  </p>
+                </div>
+                <div className="text-right text-xs">
+                  <div className="font-mono font-bold text-slate-800">{selectedRun.payroll_code}</div>
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase mt-1 ${
+                      paymentStatusText === "SUDAH DIBAYAR"
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                        : "bg-amber-100 text-amber-800 border border-amber-300"
+                    }`}
+                  >
+                    {paymentStatusText}
+                  </span>
+                </div>
+              </div>
+
+              {/* Meta Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Nama Pekerja:</span>
+                  <b className="font-bold text-slate-900 text-sm">{previewItem.worker_name_snapshot}</b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">ID Pekerja:</span>
+                  <b className="font-bold text-slate-800">
+                    {workerMap.get(previewItem.worker_id)?.worker_code || `PKR-${previewItem.worker_id}`}
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Periode Kerja:</span>
+                  <b className="font-bold text-slate-800">
+                    {getPeriodDescription(selectedRun.period_start, selectedRun.period_end, selectedRun.payroll_type)}
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Bagian / Sistem:</span>
+                  <b className="font-bold text-slate-800">
+                    {workerMap.get(previewItem.worker_id)?.department || "Operasional"} · {previewItem.pay_system_snapshot}
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Kehadiran:</span>
+                  <b className="font-bold text-slate-800">
+                    {num(previewItem.full_days)} Full Day · {num(previewItem.half_days)} Half Day
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">NIK:</span>
+                  <b className="font-bold text-slate-800">
+                    {workerMap.get(previewItem.worker_id)?.identity_no || "-"}
+                  </b>
+                </div>
+              </div>
+
+              {/* Rincian Komponen Upah & Potongan */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {/* Penerimaan */}
+                <div className="rounded-lg border border-slate-200 p-3 space-y-1.5 bg-slate-50/50">
+                  <div className="font-bold uppercase tracking-wider text-slate-800 text-[11px] border-b border-slate-200 pb-1">
+                    Penerimaan (Upah Bruto)
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Gaji / Upah Pokok:</span>
+                    <span className="font-bold">{money(previewItem.base_amount)}</span>
+                  </div>
+                  {(num(previewItem.meal_amount) > 0) && (
+                    <div className="flex justify-between text-indigo-700">
+                      <span>Uang Makan Minggu:</span>
+                      <span className="font-bold">+{money(previewItem.meal_amount)}</span>
+                    </div>
+                  )}
+                  {((num(previewItem.overtime_amount) + num(previewItem.manual_overtime_amount)) > 0) && (
+                    <div className="flex justify-between text-blue-700">
+                      <span>
+                        Upah Lembur ({((num(previewItem.overtime_minutes) / 60) + num(previewItem.manual_overtime_hours)).toFixed(1)}h):
+                      </span>
+                      <span className="font-bold">
+                        +{money(num(previewItem.overtime_amount) + num(previewItem.manual_overtime_amount))}
+                      </span>
+                    </div>
+                  )}
+                  {(num(previewItem.overtime_bonus) > 0) && (
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Bonus Lembur ≥4h:</span>
+                      <span className="font-bold">+{money(previewItem.overtime_bonus)}</span>
+                    </div>
+                  )}
+                  {(num(previewItem.holiday_bonus) > 0 || num(previewItem.holiday_manual_amount) > 0) && (
+                    <div className="flex justify-between text-indigo-700">
+                      <span>Insentif Hadir Minggu:</span>
+                      <span className="font-bold">+{money(num(previewItem.holiday_bonus) + num(previewItem.holiday_manual_amount))}</span>
+                    </div>
+                  )}
+                  <div className="pt-1.5 border-t border-slate-200 flex justify-between font-bold text-slate-900">
+                    <span>Total Bruto:</span>
+                    <span>
+                      {money(
+                        num(previewItem.base_amount) +
+                        num(previewItem.meal_amount) +
+                        num(previewItem.overtime_amount) +
+                        num(previewItem.manual_overtime_amount) +
+                        num(previewItem.overtime_bonus) +
+                        num(previewItem.holiday_bonus) +
+                        num(previewItem.holiday_manual_amount)
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Potongan */}
+                <div className="rounded-lg border border-slate-200 p-3 space-y-1.5 bg-slate-50/50">
+                  <div className="font-bold uppercase tracking-wider text-rose-800 text-[11px] border-b border-slate-200 pb-1">
+                    Potongan (Kasbon & Hutang)
+                  </div>
+                  <div className="flex justify-between text-slate-700">
+                    <span>Cicilan Kasbon Kantor:</span>
+                    <span className="font-bold text-rose-600">
+                      -{money(previewItem.kasbon_perusahaan_amount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-700">
+                    <span>Tagihan Warung Luar:</span>
+                    <span className="font-bold text-amber-800">
+                      -{money(previewItem.kasbon_warung_amount)}
+                    </span>
+                  </div>
+                  {num(previewItem.kasbon_perusahaan_amount) === 0 && num(previewItem.kasbon_warung_amount) === 0 && num(previewItem.deduction_amount) > 0 && (
+                    <div className="flex justify-between text-slate-700">
+                      <span>Potongan Kasbon:</span>
+                      <span className="font-bold text-rose-600">
+                        -{money(previewItem.deduction_amount)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="pt-1.5 border-t border-slate-200 flex justify-between font-bold text-rose-700">
+                    <span>Total Potongan:</span>
+                    <span>-{money(previewItem.deduction_amount)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Bersih Take Home Pay */}
+              <div className="rounded-xl bg-slate-900 p-3.5 sm:p-4 text-white flex flex-wrap justify-between items-center gap-2">
+                <div>
+                  <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                    Total Gaji Bersih (Take Home Pay)
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    Status Bayar: <b>{paymentStatusText}</b>
+                  </div>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-emerald-300">
+                  {money(previewItem.net_amount)}
+                </div>
+              </div>
+
+              {/* Tanda Tangan */}
+              <div className="pt-3 grid grid-cols-2 text-center text-xs text-slate-600">
+                <div>
+                  <p>Mengetahui / Finance,</p>
+                  <div className="h-12 sm:h-14"></div>
+                  <p className="font-bold text-slate-900 underline">HRD / Payroll SMPT</p>
+                </div>
+                <div>
+                  <p>Penerima,</p>
+                  <div className="h-12 sm:h-14"></div>
+                  <p className="font-bold text-slate-900 underline">{previewItem.worker_name_snapshot}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons Modal */}
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-3">
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const itemToEdit = previewItem;
+                    setPreviewItem(null);
+                    openEditModal(itemToEdit);
+                  }}
+                  className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 transition shadow-2xs"
+                >
+                  ✏️ Koreksi Gaji Ini
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const text = generateWhatsAppText(selectedRun, previewItem, workerMap.get(previewItem.worker_id));
+                  const w = workerMap.get(previewItem.worker_id);
+                  const clean = normalizePhone(w?.phone);
+                  const appUrl = clean
+                    ? `whatsapp://send?phone=${clean}&text=${encodeURIComponent(text)}`
+                    : `whatsapp://send?text=${encodeURIComponent(text)}`;
+                  window.location.href = appUrl;
+                }}
+                className="rounded-xl border border-emerald-500 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition shadow-2xs"
+              >
+                💬 Buka WA App
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handlePrintSlip(previewItem)}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 shadow-sm transition"
+              >
+                🖨️ Cetak / Buka PDF
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL PRATINJAU SLIP BORONGAN IN-APP ================= */}
+      {previewOpWorker && selectedOpRun && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="relative w-full max-w-xl rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+              <div>
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Pratinjau Slip Upah Borongan
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 mt-0.5">
+                  Slip Borongan: {previewOpWorker.workerName}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewOpWorker(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Konten Slip */}
+            <div className="mt-4 rounded-xl border border-slate-300 bg-white p-4 sm:p-5 text-slate-900 space-y-3.5 min-w-0">
+              {/* Header Slip */}
+              <div className="border-b-2 border-slate-900 pb-3 flex flex-wrap justify-between items-start gap-2">
+                <div>
+                  <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900">
+                    CV. SMPT - Kreasi Dinamika
+                  </h2>
+                  <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mt-0.5">
+                    SLIP UPAH BORONGAN OPERATOR
+                  </p>
+                </div>
+                <div className="text-right text-xs">
+                  <div className="font-mono font-bold text-slate-800">{selectedOpRun.payroll_code}</div>
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase mt-1 ${
+                      paymentStatusText === "SUDAH DIBAYAR"
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                        : "bg-amber-100 text-amber-800 border border-amber-300"
+                    }`}
+                  >
+                    {paymentStatusText}
+                  </span>
+                </div>
+              </div>
+
+              {/* Meta Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Nama Operator:</span>
+                  <b className="font-bold text-slate-900 text-sm">{previewOpWorker.workerName}</b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">ID Operator:</span>
+                  <b className="font-bold text-slate-800">{previewOpWorker.workerCode}</b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Periode Kerja:</span>
+                  <b className="font-bold text-slate-800">
+                    {getPeriodDescription(selectedOpRun.period_start, selectedOpRun.period_end, "BORONGAN")}
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Bagian / Sistem:</span>
+                  <b className="font-bold text-slate-800">
+                    {previewOpWorker.department || "Produksi"} · BORONGAN
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Total Item Tugas:</span>
+                  <b className="font-bold text-slate-800">{previewOpWorker.items.length} Pekerjaan</b>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">NIK:</span>
+                  <b className="font-bold text-slate-800">{previewOpWorker.identityNo || "-"}</b>
+                </div>
+              </div>
+
+              {/* Tabel Borongan */}
+              <div className="space-y-2">
+                <div className="font-bold text-xs uppercase tracking-wider text-slate-700">
+                  Rincian Hasil Pengerjaan Borongan:
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden min-w-[280px]">
+                    <thead className="bg-slate-100 text-slate-700">
+                      <tr>
+                        <th className="p-2 text-left font-bold">Item Pekerjaan</th>
+                        <th className="p-2 text-right font-bold">Qty Sah</th>
+                        <th className="p-2 text-right font-bold">Tarif</th>
+                        <th className="p-2 text-right font-bold">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {previewOpWorker.items.map((it) => (
+                        <tr key={it.id}>
+                          <td className="p-2 font-medium text-slate-800">{it.work_item_name_snapshot}</td>
+                          <td className="p-2 text-right font-mono">{qty(it.qty_approved)} pcs</td>
+                          <td className="p-2 text-right font-mono">{money(it.operator_price_snapshot)}</td>
+                          <td className="p-2 text-right font-bold font-mono text-emerald-800">{money(it.operator_value)}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                        <td className="p-2 text-slate-900">TOTAL HASIL BORONGAN</td>
+                        <td className="p-2 text-right font-mono">{qty(previewOpWorker.totalQty)} pcs</td>
+                        <td className="p-2"></td>
+                        <td className="p-2 text-right font-mono text-emerald-900">{money(previewOpWorker.totalOperatorValue)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Net Box */}
+              <div className="rounded-xl bg-slate-900 p-3.5 sm:p-4 text-white flex flex-wrap justify-between items-center gap-2">
+                <div>
+                  <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                    Total Diterima (Net Pembayaran)
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    Status Bayar: <b>{paymentStatusText}</b>
+                  </div>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-emerald-300">
+                  {money(previewOpWorker.totalOperatorValue)}
+                </div>
+              </div>
+
+              {/* Signatures */}
+              <div className="pt-3 grid grid-cols-2 text-center text-xs text-slate-600">
+                <div>
+                  <p>Disetujui Oleh,</p>
+                  <div className="h-12 sm:h-14"></div>
+                  <p className="font-bold text-slate-900 underline">Supervisor / Finance</p>
+                </div>
+                <div>
+                  <p>Diterima Oleh,</p>
+                  <div className="h-12 sm:h-14"></div>
+                  <p className="font-bold text-slate-900 underline">{previewOpWorker.workerName}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons Modal */}
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = generateOperatorWhatsAppText(selectedOpRun, previewOpWorker);
+                  const clean = normalizePhone(previewOpWorker.phone);
+                  const appUrl = clean
+                    ? `whatsapp://send?phone=${clean}&text=${encodeURIComponent(text)}`
+                    : `whatsapp://send?text=${encodeURIComponent(text)}`;
+                  window.location.href = appUrl;
+                }}
+                className="rounded-xl border border-emerald-500 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition shadow-2xs"
+              >
+                💬 Buka WA App
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handlePrintOperatorSlip(previewOpWorker)}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 shadow-sm transition"
+              >
+                🖨️ Cetak / Buka PDF
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPreviewOpWorker(null)}
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>
