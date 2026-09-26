@@ -1051,7 +1051,7 @@ export function DashboardShell({
 
             {/* Right Header Controls: Search Palette, Wide Toggle, Fullscreen, Inbox, Profile */}
             <div className="flex items-center gap-2 shrink-0">
-              {/* Workspace Mode Indicator Toggle in Header */}
+              {/* Floating Workspace Mode Indicator Toggle in Header */}
               <button
                 type="button"
                 onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
@@ -1064,14 +1064,14 @@ export function DashboardShell({
                     ? "Mode Gudang & Logistik"
                     : "Mode SDM & Payroll"
                 }`}
-                className={`hidden sm:flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition shadow-2xs hover:scale-105 active:scale-95 ${
+                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-extrabold transition shadow-xs hover:shadow-md active:scale-95 ${
                   workspace === "REGULER"
-                    ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                    ? "border-indigo-200 bg-indigo-50/90 text-indigo-700 hover:bg-indigo-100"
                     : workspace === "HAJI"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    ? "border-emerald-200 bg-emerald-50/90 text-emerald-700 hover:bg-emerald-100"
                     : workspace === "GUDANG"
-                    ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
-                    : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                    ? "border-sky-200 bg-sky-50/90 text-sky-700 hover:bg-sky-100"
+                    : "border-amber-200 bg-amber-50/90 text-amber-700 hover:bg-amber-100"
                 }`}
               >
                 <span className="text-sm">
@@ -1083,7 +1083,7 @@ export function DashboardShell({
                     ? "📦"
                     : "👥"}
                 </span>
-                <span>
+                <span className="hidden sm:inline">
                   {workspace === "REGULER"
                     ? "Proyek Reguler"
                     : workspace === "HAJI"
@@ -1095,11 +1095,24 @@ export function DashboardShell({
                 <span className="text-[10px] opacity-60">⇄</span>
               </button>
 
-              {/* Command Palette Trigger Button */}
+              {/* Mobile Quick Search Button */}
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
-                className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-xs text-slate-500 shadow-xs hover:border-slate-300 hover:bg-white hover:text-slate-800 transition"
+                title="Cari modul (Ctrl+K)"
+                className="flex sm:hidden h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs hover:bg-slate-100 active:scale-95"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
+
+              {/* Desktop Command Palette Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-xs text-slate-500 shadow-xs hover:border-slate-300 hover:bg-white hover:text-slate-800 transition"
               >
                 <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="8" />
@@ -1556,62 +1569,103 @@ export function DashboardShell({
       ) : null}
 
       {/* ========================================================================= */}
-      {/* 5. MOBILE BOTTOM DOCK (NATIVE APP STYLE NAVIGATION)                        */}
+      {/* 5. FLOATING MOBILE BOTTOM NAVIGATION DOCK (MENGAMBANG)                    */}
       {/* ========================================================================= */}
-      <nav className="fixed bottom-0 inset-x-0 z-30 flex h-16 items-center justify-around border-t border-slate-200/80 bg-white/95 px-3 backdrop-blur-md shadow-lg lg:hidden">
+      <nav className="fixed bottom-3 inset-x-3 z-40 mx-auto flex h-14 max-w-sm items-center justify-around rounded-2xl border border-slate-200/90 bg-white/92 px-2 shadow-2xl backdrop-blur-xl ring-1 ring-slate-900/5 lg:hidden">
+        {/* Home */}
         <Link
           href="/dashboard"
-          className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-            pathname === "/dashboard" ? "text-blue-600" : "text-slate-500 hover:text-slate-900"
+          className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
+            pathname === "/dashboard" ? "text-blue-600 bg-blue-50/80" : "text-slate-500 hover:text-slate-900"
           }`}
         >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
           <span>Home</span>
         </Link>
 
-        <Link
-          href="/dashboard/spk"
-          className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-            pathname.startsWith("/dashboard/spk") ? "text-blue-600" : "text-slate-500 hover:text-slate-900"
-          }`}
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-          </svg>
-          <span>SPK</span>
-        </Link>
+        {/* Dynamic Context Shortcut based on active workspace */}
+        {workspace === "HAJI" && (
+          <Link
+            href="/dashboard/spk"
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
+              pathname.startsWith("/dashboard/spk") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+            </svg>
+            <span>SPK</span>
+          </Link>
+        )}
 
-        <Link
-          href="/dashboard/barangMasukGudang"
-          className={`relative flex flex-col items-center gap-1 text-[11px] font-semibold transition ${
-            pathname.includes("Gudang") ? "text-blue-600" : "text-slate-500 hover:text-slate-900"
-          }`}
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-            <line x1="12" y1="22.08" x2="12" y2="12" />
-          </svg>
-          <span>Gudang</span>
-          {badgeCounts.barangKeluarGudang ? (
-            <span className="absolute -top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
-              {badgeCounts.barangKeluarGudang}
-            </span>
-          ) : null}
-        </Link>
+        {workspace === "REGULER" && (
+          <Link
+            href="/dashboard/produksiReguler"
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
+              pathname.startsWith("/dashboard/produksiReguler") ? "text-indigo-700 bg-indigo-50/80" : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            <span className="text-sm leading-none">⚡</span>
+            <span>Setoran</span>
+          </Link>
+        )}
 
+        {workspace === "GUDANG" && (
+          <Link
+            href="/dashboard/barangMasukGudang"
+            className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
+              pathname.includes("barangMasukGudang") ? "text-sky-700 bg-sky-50/80" : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            </svg>
+            <span>Masuk</span>
+          </Link>
+        )}
+
+        {workspace === "SDM" && (
+          <Link
+            href="/dashboard/payroll"
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
+              pathname.startsWith("/dashboard/payroll") ? "text-amber-700 bg-amber-50/80" : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect width="18" height="12" x="3" y="6" rx="2" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span>Payroll</span>
+          </Link>
+        )}
+
+        {/* Floating Quick Workspace Switcher Button on Mobile */}
+        <button
+          type="button"
+          onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
+          title="Beralih Ruang Kerja"
+          className="flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-extrabold text-slate-700 active:scale-95 transition"
+        >
+          <span className="text-sm leading-none">
+            {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
+          </span>
+          <span className="text-[9px] font-black uppercase tracking-tight text-blue-600">
+            {workspace === "REGULER" ? "Reg" : workspace === "HAJI" ? "Haji" : workspace === "GUDANG" ? "Gdg" : "SDM"} ⇄
+          </span>
+        </button>
+
+        {/* Menu Hamburger Trigger */}
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="flex flex-col items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-900 transition"
+          className="flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-900 transition"
         >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="4" y1="12" x2="20" y2="12" />
             <line x1="4" y1="6" x2="20" y2="6" />
             <line x1="4" y1="18" x2="20" y2="18" />
