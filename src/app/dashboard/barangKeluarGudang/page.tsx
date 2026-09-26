@@ -236,7 +236,8 @@ export default async function Page({ searchParams }: Props) {
         </div>
       </div>
 
-      <SectionCard title={`Permintaan Menunggu Gudang (${pendingRows.length})`}>
+      <div id="antrean-permintaan-gudang" className="scroll-mt-6">
+        <SectionCard title={`Permintaan Menunggu Gudang (${pendingRows.length})`}>
         <div className="space-y-4">
           {pendingRows.length === 0 ? (
             <p className="text-sm text-slate-500">
@@ -381,6 +382,7 @@ export default async function Page({ searchParams }: Props) {
           })}
         </div>
       </SectionCard>
+      </div>
 
       {canWrite ? (
         <DirectIssueUnifiedForm
@@ -390,6 +392,18 @@ export default async function Page({ searchParams }: Props) {
           workers={workers.map((x) => ({ id: x.id, worker_code: x.worker_code, name: x.name }))}
           wipCuttingStocks={wipCuttingStocks}
           wipSablonStocks={wipSablonStocks}
+          pendingRequests={items.map((i) => ({
+            request_id: i.request_id,
+            request_code: requestMap.get(i.request_id)?.request_code || "",
+            project_id: requestMap.get(i.request_id)?.project_id || 0,
+            product_id: requestMap.get(i.request_id)?.product_id || null,
+            bom_requirement_id: i.bom_requirement_id,
+            cutting_component_id: i.cutting_component_id,
+            item_name_snapshot: i.item_name_snapshot,
+            requested_qty: i.requested_qty,
+            fulfilled_qty: i.fulfilled_qty,
+            unit_snapshot: i.unit_snapshot,
+          }))}
         />
       ) : null}
 

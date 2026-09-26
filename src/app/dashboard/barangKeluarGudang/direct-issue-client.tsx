@@ -25,6 +25,19 @@ export type WipStockItem = {
   quantity: number;
 };
 
+export type PendingReqOpt = {
+  request_id: number;
+  request_code: string;
+  project_id: number;
+  product_id: number | null;
+  bom_requirement_id: number | null;
+  cutting_component_id: number | null;
+  item_name_snapshot: string;
+  requested_qty: number | string;
+  fulfilled_qty: number | string;
+  unit_snapshot: string;
+};
+
 export function DirectIssueUnifiedForm({
   projects,
   products,
@@ -32,6 +45,7 @@ export function DirectIssueUnifiedForm({
   workers,
   wipCuttingStocks,
   wipSablonStocks,
+  pendingRequests = [],
 }: {
   projects: ProjectOpt[];
   products: ProductOpt[];
@@ -39,6 +53,7 @@ export function DirectIssueUnifiedForm({
   workers: WorkerOpt[];
   wipCuttingStocks: WipStockItem[];
   wipSablonStocks: WipStockItem[];
+  pendingRequests?: PendingReqOpt[];
 }) {
   const [itemType, setItemType] = useState<"BAHAN_ROLL" | "HASIL_CUTTING" | "HASIL_SABLON">("BAHAN_ROLL");
 
@@ -76,6 +91,25 @@ export function DirectIssueUnifiedForm({
   const selectedSablonItem = useMemo(() => {
     return wipSablonStocks.find((x) => x.component_id === selectedSablonComponentId);
   }, [wipSablonStocks, selectedSablonComponentId]);
+
+  const matchingSpvRequests = useMemo(() => {
+    if (!pendingRequests || pendingRequests.length === 0) return [];
+    if (itemType === "BAHAN_ROLL") {
+      return pendingRequests.filter((r) => {
+        if (selectedProjectId && r.project_id !== selectedProjectId) return false;
+        if (selectedProductId && r.product_id && r.product_id !== selectedProductId) return false;
+        if (selectedBomId && r.bom_requirement_id && r.bom_requirement_id !== selectedBomId) return false;
+        return true;
+      });
+    }
+    if (itemType === "HASIL_CUTTING") {
+      return pendingRequests.filter((r) => {
+        if (selectedCuttingComponentId && r.cutting_component_id && r.cutting_component_id !== selectedCuttingComponentId) return false;
+        return true;
+      });
+    }
+    return [];
+  }, [pendingRequests, itemType, selectedProjectId, selectedProductId, selectedBomId, selectedCuttingComponentId]);
 
   return (
     <SectionCard
@@ -234,6 +268,29 @@ export function DirectIssueUnifiedForm({
             <input name="notes" placeholder="Catatan pengeluaran roll / aksesoris" className={inputClass} />
           </Field>
 
+          {matchingSpvRequests.length > 0 ? (
+            <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5 max-w-2xl">
+                <span className="text-xl">⚠️</span>
+                <div>
+                  <b className="font-bold text-amber-950">
+                    Perhatian: Ada {matchingSpvRequests.length} Permintaan SPV yang Sedang Menunggu Bahan Ini!
+                  </b>
+                  <p className="text-amber-800 mt-0.5 leading-5">
+                    SPV telah membuat antrean no <b>{matchingSpvRequests[0].request_code}</b> ({matchingSpvRequests[0].item_name_snapshot}: butuh {formatNumber(matchingSpvRequests[0].requested_qty)} {matchingSpvRequests[0].unit_snapshot}).
+                    Untuk menghindari <b>pengeluaran dobel</b>, utamakan memproses antrean SPV di atas alih-alih pengeluaran manual langsung.
+                  </p>
+                </div>
+              </div>
+              <a
+                href="#antrean-permintaan-gudang"
+                className="rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition shadow-2xs whitespace-nowrap"
+              >
+                ➔ Penuhi Antrean SPV Di Atas
+              </a>
+            </div>
+          ) : null}
+
           <div className="sm:col-span-2 lg:col-span-3 flex justify-end pt-2">
             <button
               type="submit"
@@ -314,6 +371,29 @@ export function DirectIssueUnifiedForm({
               className={inputClass}
             />
           </Field>
+
+          {matchingSpvRequests.length > 0 ? (
+            <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5 max-w-2xl">
+                <span className="text-xl">⚠️</span>
+                <div>
+                  <b className="font-bold text-amber-950">
+                    Perhatian: Ada {matchingSpvRequests.length} Permintaan SPV yang Sedang Menunggu Komponen Ini!
+                  </b>
+                  <p className="text-amber-800 mt-0.5 leading-5">
+                    SPV telah membuat antrean no <b>{matchingSpvRequests[0].request_code}</b> ({matchingSpvRequests[0].item_name_snapshot}: butuh {formatNumber(matchingSpvRequests[0].requested_qty)} {matchingSpvRequests[0].unit_snapshot}).
+                    Untuk menghindari <b>pengeluaran dobel</b>, utamakan memproses antrean SPV di atas alih-alih pengeluaran manual.
+                  </p>
+                </div>
+              </div>
+              <a
+                href="#antrean-permintaan-gudang"
+                className="rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition shadow-2xs whitespace-nowrap"
+              >
+                ➔ Penuhi Antrean SPV Di Atas
+              </a>
+            </div>
+          ) : null}
 
           <div className="sm:col-span-2 lg:col-span-3 flex justify-end pt-2">
             <button

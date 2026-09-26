@@ -128,8 +128,24 @@ export default async function Page({ searchParams }: Props) {
         </SectionCard>
       ) : null}
 
-      <SectionCard title="Bahan Tersedia di Cutting">
-        <div className="space-y-3">
+      {/* Notifikasi Otomatisasi Konsumsi Bahan */}
+      <div className="mb-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/90 to-indigo-50/70 p-4 text-xs text-slate-700 shadow-xs flex items-center gap-3">
+        <span className="text-2xl">⚡</span>
+        <div>
+          <b className="text-blue-900 font-bold block text-sm">Konsumsi Bahan Kain Otomatis Aktif</b>
+          <p className="text-slate-600 mt-0.5">
+            Operator cutting <b>hanya perlu mengisi hasil potong harian</b> di bawah. Sistem otomatis memotong saldo kain di cutting mengikuti rasio kebutuhan BOM produk tanpa perlu input dobel.
+          </p>
+        </div>
+      </div>
+
+      {/* Opsi Koreksi Manual (Disembunyikan dalam Accordion) */}
+      <details className="mb-4 rounded-2xl border border-slate-200/90 bg-white p-4 text-xs text-slate-600 shadow-xs">
+        <summary className="cursor-pointer font-bold text-slate-600 hover:text-slate-900 list-none flex items-center justify-between">
+          <span>⚙️ Opsi Penyesuaian Manual: Sisa Bahan Kain di Cutting ({stock.length} item)</span>
+          <span className="text-blue-600 text-[11px] underline">Buka / Tutup</span>
+        </summary>
+        <div className="mt-4 space-y-3 border-t border-slate-100 pt-3">
           {stock.length === 0 ? <p className="text-sm text-slate-500">Belum ada bahan dari Gudang.</p> : null}
           {stock.map((x) => {
             const bom = x.bom_requirement_id ? bomMap.get(x.bom_requirement_id) : undefined;
@@ -138,7 +154,7 @@ export default async function Page({ searchParams }: Props) {
             const tracked = trackedKeys.has(key) || m?.lot_tracking_mode !== "NONE";
 
             return (
-              <div key={x.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
+              <div key={x.id} className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 shadow-2xs">
                 <div className="flex flex-wrap justify-between items-center gap-2">
                   <span className="font-bold text-slate-900">{m?.material_code} · {bom?.component_name || m?.name}</span>
                   <div className="flex gap-2">
@@ -159,7 +175,7 @@ export default async function Page({ searchParams }: Props) {
                     <Field label="Tanggal">
                       <input name="usage_date" type="date" required className={inputClass} />
                     </Field>
-                    <Field label="Qty Dipakai">
+                    <Field label="Qty Dipakai Manual">
                       <input name="quantity" type="number" min="0.0001" max={Number(x.quantity)} step="0.0001" required className={inputClass} />
                     </Field>
                     <Field label="Petugas">
@@ -169,7 +185,7 @@ export default async function Page({ searchParams }: Props) {
                       <input name="notes" className={inputClass} />
                     </Field>
                     <div className="flex items-end">
-                      <button className={primaryButtonClass}>Catat Pemakaian</button>
+                      <button className={primaryButtonClass}>Koreksi Manual</button>
                     </div>
                   </form>
                 ) : null}
@@ -177,7 +193,7 @@ export default async function Page({ searchParams }: Props) {
             );
           })}
         </div>
-      </SectionCard>
+      </details>
 
       {canWrite && activeLots.length > 0 ? (
         <SectionCard title="Pemakaian Roll/Lot — Cutting">

@@ -13,45 +13,36 @@ type WorkerItem = {
   department?: string | null;
 };
 
+import Link from "next/link";
+
 export function KasbonForm({ workers }: { workers: WorkerItem[] }) {
-  const [category, setCategory] = useState<"KASBON_PERUSAHAAN" | "KASBON_WARUNG">("KASBON_PERUSAHAAN");
   const [amount, setAmount] = useState<number>(0);
   const [installments, setInstallments] = useState<number>(1);
-  const [warungName, setWarungName] = useState<string>("Warung Bu Siti");
 
   const monthlyInstallment = installments > 0 ? Math.round(amount / installments) : amount;
 
   return (
     <form action={addCashAdvanceAction} className="space-y-4">
-      {/* Category selector */}
-      <div>
-        <label className="block text-xs font-semibold text-gray-700 mb-2">Kategori Kasbon</label>
-        <div className="grid grid-cols-2 gap-3 max-w-md">
-          <button
-            type="button"
-            onClick={() => setCategory("KASBON_PERUSAHAAN")}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition ${
-              category === "KASBON_PERUSAHAAN"
-                ? "border-blue-600 bg-blue-50 text-blue-700 shadow-xs"
-                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            🏢 Kasbon Perusahaan
-          </button>
-          <button
-            type="button"
-            onClick={() => setCategory("KASBON_WARUNG")}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition ${
-              category === "KASBON_WARUNG"
-                ? "border-amber-600 bg-amber-50 text-amber-800 shadow-xs"
-                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            🍜 Kasbon Warung Luar
-          </button>
+      {/* Banner Pencegahan Double Input */}
+      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🏢</span>
+          <div>
+            <b>Form Khusus: Kasbon Pinjaman Internal Perusahaan</b>
+            <p className="text-blue-700 mt-0.5">
+              Form ini khusus pinjaman dana kantor (dengan skema cicilan bulanan).
+            </p>
+          </div>
         </div>
-        <input type="hidden" name="category" value={category} />
+        <Link
+          href="/dashboard/warung"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 font-bold text-amber-900 hover:bg-amber-100 transition shadow-2xs text-[11px]"
+        >
+          🍜 Catat Bon Makan di Portal Warung ➔
+        </Link>
       </div>
+
+      <input type="hidden" name="category" value="KASBON_PERUSAHAAN" />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Pekerja">
@@ -87,48 +78,31 @@ export function KasbonForm({ workers }: { workers: WorkerItem[] }) {
           />
         </Field>
 
-        {category === "KASBON_PERUSAHAAN" ? (
-          <Field label="Jumlah Angsuran (Bulan)">
-            <select
-              name="installment_count"
-              value={installments}
-              onChange={(e) => setInstallments(Number(e.target.value))}
-              className={inputClass}
-            >
-              <option value="1">1 Bulan (Langsung Lunas)</option>
-              <option value="2">2 Bulan (2 Kali Potong)</option>
-              <option value="3">3 Bulan (3 Kali Potong)</option>
-              <option value="4">4 Bulan (4 Kali Potong)</option>
-              <option value="5">5 Bulan (5 Kali Potong)</option>
-              <option value="6">6 Bulan (6 Kali Potong)</option>
-              <option value="10">10 Bulan (10 Kali Potong)</option>
-              <option value="12">12 Bulan (1 Tahun)</option>
-            </select>
-          </Field>
-        ) : (
-          <Field label="Nama Warung Mitra">
-            <input
-              name="warung_name"
-              required
-              value={warungName}
-              onChange={(e) => setWarungName(e.target.value)}
-              placeholder="Contoh: Warung Bu Siti"
-              className={inputClass}
-            />
-          </Field>
-        )}
+        <Field label="Jumlah Angsuran (Bulan)">
+          <select
+            name="installment_count"
+            value={installments}
+            onChange={(e) => setInstallments(Number(e.target.value))}
+            className={inputClass}
+          >
+            <option value="1">1 Bulan (Langsung Lunas Bulan Ini)</option>
+            <option value="2">2 Bulan (2 Kali Potong Gaji)</option>
+            <option value="3">3 Bulan (3 Kali Potong Gaji)</option>
+            <option value="4">4 Bulan (4 Kali Potong Gaji)</option>
+            <option value="5">5 Bulan (5 Kali Potong Gaji)</option>
+            <option value="6">6 Bulan (6 Kali Potong Gaji)</option>
+            <option value="10">10 Bulan (10 Kali Potong Gaji)</option>
+            <option value="12">12 Bulan (1 Tahun)</option>
+          </select>
+        </Field>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3 items-end">
         <div className="sm:col-span-2">
-          <Field label={category === "KASBON_PERUSAHAAN" ? "Catatan / Keperluan Pinjaman" : "Rincian Makanan / Belanja"}>
+          <Field label="Catatan / Keperluan Pinjaman">
             <input
               name="notes"
-              placeholder={
-                category === "KASBON_PERUSAHAAN"
-                  ? "Contoh: Pinjaman renovasi rumah / pendidikan"
-                  : "Contoh: Nasi padang + es teh 3 porsi"
-              }
+              placeholder="Contoh: Pinjaman renovasi rumah / pendidikan / keperluan mendesak"
               className={inputClass}
             />
           </Field>
@@ -136,13 +110,13 @@ export function KasbonForm({ workers }: { workers: WorkerItem[] }) {
 
         <div className="flex items-center">
           <button type="submit" className={`${buttonClass} w-full sm:w-auto`}>
-            Simpan {category === "KASBON_PERUSAHAAN" ? "Kasbon Perusahaan" : "Hutang Warung"}
+            Simpan Kasbon Perusahaan
           </button>
         </div>
       </div>
 
       {/* Dynamic Info Box */}
-      {category === "KASBON_PERUSAHAAN" && amount > 0 && installments > 1 && (
+      {amount > 0 && installments > 1 && (
         <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs text-blue-900 flex items-center justify-between">
           <div>
             <b>Skema Angsuran:</b> Pinjaman {money(amount)} dicicil {installments} kali.
@@ -153,12 +127,6 @@ export function KasbonForm({ workers }: { workers: WorkerItem[] }) {
           <div className="text-right font-bold text-sm text-blue-800">
             {money(monthlyInstallment)}/bln
           </div>
-        </div>
-      )}
-
-      {category === "KASBON_WARUNG" && amount > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900">
-          <b>Pencatatan Warung Mitra:</b> Tagihan sebesar {money(amount)} di {warungName || "Warung Luar"} akan otomatis dipotong dari slip gaji pekerja pada payroll berikutnya tanpa perlu rekap manual lagi.
         </div>
       )}
     </form>

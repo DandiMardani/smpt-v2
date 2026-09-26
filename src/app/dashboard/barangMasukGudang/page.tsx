@@ -14,6 +14,7 @@ import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
 import { cancelPoReceipt, cancelReceipt, createReceipt, receivePoReceipt, updateReceipt } from "./actions";
+import { ManualReceiptForm } from "./manual-receipt-form";
 
 type Props = { searchParams: Promise<SearchParams> };
 type Material = {
@@ -157,96 +158,47 @@ export default async function Page({ searchParams }: Props) {
       </div>
 
       {canReceivePo ? (
-        <SectionCard
-          title={`Receive From PO (${openPoLines.length})`}
-          description="Partial receipt didukung. Untuk material ROLL, catat panjang aktual tiap roll (METER/YARD) dan nomor roll; jangan memakai panjang roll fixed."
-        >
-          <div className="space-y-3">
-            {openPoLines.length === 0 ? <p className="text-sm text-slate-500">Tidak ada PO issued/partial yang masih outstanding.</p> : null}
-            {openPoLines.map((line) => (
-              <div key={line.purchase_order_line_id} className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
-                <div className="mb-3 flex flex-wrap justify-between gap-3"><div><b className="text-slate-900 font-bold">{line.po_number} · {line.material_code} · {line.material_name}</b><p className="text-xs text-slate-500">Supplier {line.supplier_name} · order {formatNumber(line.ordered_quantity)} {line.purchase_unit} · tracking {line.lot_tracking_mode}</p></div><div className="text-right"><b className="text-blue-600 font-bold">Outstanding {formatNumber(line.outstanding_stock_quantity)} {line.stock_unit}</b><p className="text-xs text-slate-500">received {formatNumber(line.received_stock_quantity)} / {formatNumber(line.ordered_stock_quantity)}</p></div></div>
-                <form action={receivePoReceipt} className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                  <input type="hidden" name="purchase_order_line_id" value={line.purchase_order_line_id} />
-                  <input type="hidden" name="idempotency_key" value={randomUUID()} />
-                  <Field label="Tanggal"><input name="receipt_date" type="date" required className={inputClass} /></Field>
-                  <Field label="Qty Aktual"><input name="quantity" type="number" min="0.0001" step="0.0001" required className={inputClass} /></Field>
-                  <Field label="Unit Aktual"><select name="input_unit" defaultValue={line.lot_tracking_mode === "ROLL" ? line.stock_unit : line.purchase_unit} className={inputClass}>{Array.from(new Set([...units, line.purchase_unit, line.stock_unit].filter(Boolean))).map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>
-                  <Field label="Factor → Stock"><input name="conversion_factor" type="number" min="0.00000001" step="0.00000001" placeholder={String(line.conversion_factor)} className={inputClass} /></Field>
-                  <Field label="No Dokumen"><input name="document_no" className={inputClass} /></Field>
-                  {line.lot_tracking_mode !== "NONE" ? <Field label="Nomor Roll/Lot"><input name="roll_number" required className={inputClass} /></Field> : null}
-                  {line.lot_tracking_mode !== "NONE" ? <Field label="Supplier Lot"><input name="supplier_lot_no" className={inputClass} /></Field> : null}
-                  <Field label="Keterangan"><input name="notes" className={inputClass} /></Field>
-                  <div className="self-end"><button className={primaryButtonClass}>Terima PO</button></div>
-                </form>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
+        <div id="kartu-penerimaan-po" className="scroll-mt-6">
+          <SectionCard
+            title={`Receive From PO (${openPoLines.length})`}
+            description="Partial receipt didukung. Untuk material ROLL, catat panjang aktual tiap roll (METER/YARD) dan nomor roll; jangan memakai panjang roll fixed."
+          >
+            <div className="space-y-3">
+              {openPoLines.length === 0 ? <p className="text-sm text-slate-500">Tidak ada PO issued/partial yang masih outstanding.</p> : null}
+              {openPoLines.map((line) => (
+                <div key={line.purchase_order_line_id} className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
+                  <div className="mb-3 flex flex-wrap justify-between gap-3"><div><b className="text-slate-900 font-bold">{line.po_number} · {line.material_code} · {line.material_name}</b><p className="text-xs text-slate-500">Supplier {line.supplier_name} · order {formatNumber(line.ordered_quantity)} {line.purchase_unit} · tracking {line.lot_tracking_mode}</p></div><div className="text-right"><b className="text-blue-600 font-bold">Outstanding {formatNumber(line.outstanding_stock_quantity)} {line.stock_unit}</b><p className="text-xs text-slate-500">received {formatNumber(line.received_stock_quantity)} / {formatNumber(line.ordered_stock_quantity)}</p></div></div>
+                  <form action={receivePoReceipt} className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <input type="hidden" name="purchase_order_line_id" value={line.purchase_order_line_id} />
+                    <input type="hidden" name="idempotency_key" value={randomUUID()} />
+                    <Field label="Tanggal"><input name="receipt_date" type="date" required className={inputClass} /></Field>
+                    <Field label="Qty Aktual"><input name="quantity" type="number" min="0.0001" step="0.0001" required className={inputClass} /></Field>
+                    <Field label="Unit Aktual"><select name="input_unit" defaultValue={line.lot_tracking_mode === "ROLL" ? line.stock_unit : line.purchase_unit} className={inputClass}>{Array.from(new Set([...units, line.purchase_unit, line.stock_unit].filter(Boolean))).map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></Field>
+                    <Field label="Factor → Stock"><input name="conversion_factor" type="number" min="0.00000001" step="0.00000001" placeholder={String(line.conversion_factor)} className={inputClass} /></Field>
+                    <Field label="No Dokumen"><input name="document_no" className={inputClass} /></Field>
+                    {line.lot_tracking_mode !== "NONE" ? <Field label="Nomor Roll/Lot"><input name="roll_number" required className={inputClass} /></Field> : null}
+                    {line.lot_tracking_mode !== "NONE" ? <Field label="Supplier Lot"><input name="supplier_lot_no" className={inputClass} /></Field> : null}
+                    <Field label="Keterangan"><input name="notes" className={inputClass} /></Field>
+                    <div className="self-end"><button className={primaryButtonClass}>Terima PO</button></div>
+                  </form>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
       ) : null}
 
       {canWrite ? (
         <SectionCard
-          title="Catat Barang Masuk"
-          description="Kosongkan Satuan Transaksi jika sama dengan satuan stok. METER↔YARD dan satuan panjang/berat umum dikonversi otomatis. Faktor manual hanya untuk konversi khusus, contoh 1 ROLL = 50 METER."
+          title="Catat Barang Masuk Manual (Non-PO / Beli Tunai Langsung)"
+          description="Khusus pembelian langsung tanpa PO resmi. Jika bahan memiliki pesanan terbuka di kartu PO, penerimaan wajib melalui tombol Terima PO di atas."
         >
-          <form action={createReceipt} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Field label="Tanggal">
-              <input name="receipt_date" type="date" required className={inputClass} />
-            </Field>
-            <Field label="Bahan">
-              <select name="material_id" required className={inputClass}>
-                <option value="">Pilih bahan</option>
-                {materials.map((material) => (
-                  <option key={material.id} value={material.id}>
-                    {material.material_code} · {material.name} · stok {material.standard_unit}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Qty Diterima">
-              <input
-                name="quantity"
-                type="number"
-                min="0.0001"
-                step="0.0001"
-                required
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Satuan Transaksi">
-              <select name="input_unit" className={inputClass} defaultValue="">
-                <option value="">Sama dengan satuan stok</option>
-                {units.map((unit) => (
-                  <option key={unit} value={unit}>
-                    {unit}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Faktor → Satuan Stok">
-              <input
-                name="conversion_factor"
-                type="number"
-                min="0.00000001"
-                step="0.00000001"
-                className={inputClass}
-                placeholder="Opsional; contoh 50 untuk 1 ROLL = 50 METER"
-              />
-            </Field>
-            <Field label="Supplier">
-              <input name="supplier" className={inputClass} />
-            </Field>
-            <Field label="No Dokumen">
-              <input name="document_no" className={inputClass} />
-            </Field>
-            <Field label="Keterangan">
-              <input name="notes" className={inputClass} />
-            </Field>
-            <div>
-              <button className={primaryButtonClass}>Simpan</button>
-            </div>
-          </form>
+          <ManualReceiptForm
+            materials={materials}
+            openPoLines={openPoLines}
+            units={units}
+            action={createReceipt}
+          />
         </SectionCard>
       ) : null}
 

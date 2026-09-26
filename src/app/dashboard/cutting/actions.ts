@@ -89,24 +89,92 @@ export async function cancelUsage(f: FormData) {
   redirectWithMessage(PATH, "success", "Pemakaian dibatalkan dan stok dikembalikan.");
 }
 
+import { createClient } from "@/lib/supabase/server";
+
 export async function recordResult(f: FormData) {
   await requirePermission("cutting.write");
+  const compId = getId(f, "component_id");
+  const goodQty = getNumber(f, "good_qty", { min: 0 });
+  const rejectQty = getNumber(f, "reject_qty", { min: 0 });
+  const officer = getText(f, "officer");
+  const notes = getText(f, "notes") || null;
+
   try {
     const d = getOptionalDate(f, "result_date");
     if (!d) throw new Error("Tanggal wajib diisi.");
+
     await callRpc("record_cutting_result", {
       p_result_date: d,
-      p_cutting_component_id: getId(f, "component_id"),
-      p_good_qty: getNumber(f, "good_qty", { min: 0 }),
-      p_reject_qty: getNumber(f, "reject_qty", { min: 0 }),
-      p_officer: getText(f, "officer"),
-      p_notes: getText(f, "notes") || null,
+      p_cutting_component_id: compId,
+      p_good_qty: goodQty,
+      p_reject_qty: rejectQty,
+      p_officer: officer,
+      p_notes: notes,
     });
+
+    // Otomatisasi pemotongan bahan kain di cutting berdasarkan rasio kebutuhan BOM
+    if (goodQty > 0) {
+      try {
+        const s = await createClient();
+        const { data: comp } = await s
+          .from("cutting_components")
+          .select("project_id, product_id, qty_per_product")
+          .eq("id", compId)
+          .single();
+
+        if (comp?.product_id && Number(comp.qty_per_product) > 0) {
+          const { data: boms } = await s
+            .from("bom_requirements")
+            .select("id, material_id, qty_per_unit")
+            .eq("product_id", comp.product_id)
+            .eq("component_type", "BAHAN")
+            .eq("status", "AKTIF");
+
+          const { data: cutLoc } = await s
+            .from("stock_locations")
+            .select("id")
+            .eq("code", "CUTTING")
+            .maybeSingle();
+
+          const cutLocId = cutLoc?.id ?? 3;
+
+          if (boms && boms.length > 0) {
+            for (const b of boms) {
+              const neededQty = Number(((goodQty / Number(comp.qty_per_product)) * Number(b.qty_per_unit)).toFixed(4));
+              if (neededQty > 0) {
+                const { data: balance } = await s
+                  .from("stock_balances")
+                  .select("quantity")
+                  .eq("location_id", cutLocId)
+                  .eq("material_id", b.material_id)
+                  .eq("project_id", comp.project_id)
+                  .maybeSingle();
+
+                if (balance && Number(balance.quantity) > 0) {
+                  const consumeQty = Math.min(neededQty, Number(balance.quantity));
+                  await callRpc("record_cutting_material_usage", {
+                    p_usage_date: d,
+                    p_project_id: comp.project_id,
+                    p_product_id: comp.product_id,
+                    p_bom_requirement_id: b.id,
+                    p_quantity: consumeQty,
+                    p_officer: officer,
+                    p_notes: `Konsumsi otomatis dari hasil potong (${goodQty} pcs)`,
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (autoErr) {
+        console.warn("Auto-deduct cutting material skipped:", autoErr);
+      }
+    }
   } catch (e) {
     redirectWithMessage(PATH, "error", errorMessage(e, "Hasil Cutting gagal."));
   }
   refresh();
-  redirectWithMessage(PATH, "success", "Hasil Cutting tersimpan; hasil baik otomatis masuk Gudang Hasil.");
+  redirectWithMessage(PATH, "success", "Hasil Cutting tersimpan; hasil baik otomatis masuk Gudang Hasil dan bahan terpotong proporsional.");
 }
 
 export async function cancelResult(f: FormData) {
