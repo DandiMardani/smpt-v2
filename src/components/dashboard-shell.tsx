@@ -24,6 +24,7 @@ type Props = {
   menuEntries: MenuEntry[];
   hajiEntries?: MenuEntry[];
   regulerEntries?: MenuEntry[];
+  gudangEntries?: MenuEntry[];
   sdmEntries?: MenuEntry[];
   badgeCounts: Record<string, number>;
   userProfile: UserProfile;
@@ -138,6 +139,7 @@ export function DashboardShell({
   menuEntries,
   hajiEntries,
   regulerEntries,
+  gudangEntries,
   sdmEntries,
   badgeCounts,
   userProfile,
@@ -145,8 +147,8 @@ export function DashboardShell({
 }: Props) {
   const pathname = usePathname();
 
-  // Workspace Mode State: REGULER vs HAJI vs SDM
-  const [workspace, setWorkspace] = useState<"REGULER" | "HAJI" | "SDM">("REGULER");
+  // Workspace Mode State: REGULER vs HAJI vs GUDANG vs SDM
+  const [workspace, setWorkspace] = useState<"REGULER" | "HAJI" | "GUDANG" | "SDM">("REGULER");
 
   // State: Sidebar collapsed, Content width mode, Mobile drawer, Search Palette, Fullscreen
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -166,7 +168,12 @@ export function DashboardShell({
   useEffect(() => {
     try {
       const savedWorkspace = localStorage.getItem("smpt_workspace");
-      if (savedWorkspace === "HAJI" || savedWorkspace === "REGULER" || savedWorkspace === "SDM") {
+      if (
+        savedWorkspace === "HAJI" ||
+        savedWorkspace === "REGULER" ||
+        savedWorkspace === "GUDANG" ||
+        savedWorkspace === "SDM"
+      ) {
         setWorkspace(savedWorkspace);
       }
       const savedCollapsed = localStorage.getItem("smpt_sidebar_collapsed");
@@ -182,18 +189,22 @@ export function DashboardShell({
     }
   }, []);
 
-  const handleWorkspaceChange = useCallback((mode: "REGULER" | "HAJI" | "SDM") => {
+  const handleWorkspaceChange = useCallback((mode: "REGULER" | "HAJI" | "GUDANG" | "SDM") => {
     setWorkspace(mode);
     try {
       localStorage.setItem("smpt_workspace", mode);
     } catch {}
   }, []);
 
-  const getNextWorkspace = useCallback((current: "REGULER" | "HAJI" | "SDM"): "REGULER" | "HAJI" | "SDM" => {
-    if (current === "REGULER") return "HAJI";
-    if (current === "HAJI") return "SDM";
-    return "REGULER";
-  }, []);
+  const getNextWorkspace = useCallback(
+    (current: "REGULER" | "HAJI" | "GUDANG" | "SDM"): "REGULER" | "HAJI" | "GUDANG" | "SDM" => {
+      if (current === "REGULER") return "HAJI";
+      if (current === "HAJI") return "GUDANG";
+      if (current === "GUDANG") return "SDM";
+      return "REGULER";
+    },
+    []
+  );
 
   const effectiveMenuEntries: MenuEntry[] = useMemo(() => {
     if (workspace === "REGULER" && regulerEntries && regulerEntries.length > 0) {
@@ -202,11 +213,14 @@ export function DashboardShell({
     if (workspace === "HAJI" && hajiEntries && hajiEntries.length > 0) {
       return hajiEntries;
     }
+    if (workspace === "GUDANG" && gudangEntries && gudangEntries.length > 0) {
+      return gudangEntries;
+    }
     if (workspace === "SDM" && sdmEntries && sdmEntries.length > 0) {
       return sdmEntries;
     }
     return menuEntries;
-  }, [workspace, regulerEntries, hajiEntries, sdmEntries, menuEntries]);
+  }, [workspace, regulerEntries, hajiEntries, gudangEntries, sdmEntries, menuEntries]);
 
   // Save collapsed state
   const handleToggleSidebar = useCallback(() => {
@@ -485,12 +499,12 @@ export function DashboardShell({
 
         {/* Workspace Mode Switcher (Expanded) */}
         {!sidebarCollapsed ? (
-          <div className="border-b border-slate-100 bg-slate-50/70 p-2.5">
-            <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 p-1 text-[11px] font-bold">
+          <div className="border-b border-slate-100 bg-slate-50/70 p-2">
+            <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/70 p-1 text-[10px] font-bold">
               <button
                 type="button"
                 onClick={() => handleWorkspaceChange("REGULER")}
-                className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
                   workspace === "REGULER"
                     ? "bg-indigo-600 text-white shadow-xs font-extrabold"
                     : "text-slate-600 hover:text-slate-900"
@@ -502,7 +516,7 @@ export function DashboardShell({
               <button
                 type="button"
                 onClick={() => handleWorkspaceChange("HAJI")}
-                className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
                   workspace === "HAJI"
                     ? "bg-emerald-600 text-white shadow-xs font-extrabold"
                     : "text-slate-600 hover:text-slate-900"
@@ -513,8 +527,20 @@ export function DashboardShell({
               </button>
               <button
                 type="button"
+                onClick={() => handleWorkspaceChange("GUDANG")}
+                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                  workspace === "GUDANG"
+                    ? "bg-sky-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>📦</span>
+                <span>Gudang</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handleWorkspaceChange("SDM")}
-                className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
                   workspace === "SDM"
                     ? "bg-amber-600 text-white shadow-xs font-extrabold"
                     : "text-slate-600 hover:text-slate-900"
@@ -532,6 +558,8 @@ export function DashboardShell({
                     ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
                     : workspace === "HAJI"
                     ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : workspace === "GUDANG"
+                    ? "bg-sky-50 text-sky-700 border border-sky-200"
                     : "bg-amber-50 text-amber-700 border border-amber-200"
                 }`}
               >
@@ -539,6 +567,8 @@ export function DashboardShell({
                   ? "🎒 Proyek Umum"
                   : workspace === "HAJI"
                   ? "🕋 Proyek Haji"
+                  : workspace === "GUDANG"
+                  ? "📦 Gudang & Logistik"
                   : "👥 SDM & Payroll"}
               </span>
             </div>
@@ -555,10 +585,12 @@ export function DashboardShell({
                   ? "border-indigo-200 bg-indigo-50 text-indigo-700"
                   : workspace === "HAJI"
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : workspace === "GUDANG"
+                  ? "border-sky-200 bg-sky-50 text-sky-700"
                   : "border-amber-200 bg-amber-50 text-amber-700"
               }`}
             >
-              {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : "👥"}
+              {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
             </button>
           </div>
         )}
@@ -1024,21 +1056,41 @@ export function DashboardShell({
                 type="button"
                 onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
                 title={`Klik untuk beralih mode kerja. Saat ini: ${
-                  workspace === "REGULER" ? "Mode Proyek Reguler" : workspace === "HAJI" ? "Mode Proyek Haji" : "Mode SDM & Payroll"
+                  workspace === "REGULER"
+                    ? "Mode Proyek Reguler"
+                    : workspace === "HAJI"
+                    ? "Mode Proyek Haji"
+                    : workspace === "GUDANG"
+                    ? "Mode Gudang & Logistik"
+                    : "Mode SDM & Payroll"
                 }`}
                 className={`hidden sm:flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition shadow-2xs hover:scale-105 active:scale-95 ${
                   workspace === "REGULER"
                     ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
                     : workspace === "HAJI"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : workspace === "GUDANG"
+                    ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
                     : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
                 }`}
               >
                 <span className="text-sm">
-                  {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : "👥"}
+                  {workspace === "REGULER"
+                    ? "🎒"
+                    : workspace === "HAJI"
+                    ? "🕋"
+                    : workspace === "GUDANG"
+                    ? "📦"
+                    : "👥"}
                 </span>
                 <span>
-                  {workspace === "REGULER" ? "Proyek Reguler" : workspace === "HAJI" ? "Proyek Haji" : "SDM & Payroll"}
+                  {workspace === "REGULER"
+                    ? "Proyek Reguler"
+                    : workspace === "HAJI"
+                    ? "Proyek Haji"
+                    : workspace === "GUDANG"
+                    ? "Gudang & Logistik"
+                    : "SDM & Payroll"}
                 </span>
                 <span className="text-[10px] opacity-60">⇄</span>
               </button>
@@ -1364,11 +1416,11 @@ export function DashboardShell({
 
             {/* Workspace Mode Switcher in Drawer */}
             <div className="p-3 bg-slate-50 border-b border-slate-100">
-              <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 p-1 text-xs font-bold">
+              <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/70 p-1 text-[11px] font-bold">
                 <button
                   type="button"
                   onClick={() => handleWorkspaceChange("REGULER")}
-                  className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
                     workspace === "REGULER"
                       ? "bg-indigo-600 text-white shadow-xs font-extrabold"
                       : "text-slate-600 hover:text-slate-900"
@@ -1380,7 +1432,7 @@ export function DashboardShell({
                 <button
                   type="button"
                   onClick={() => handleWorkspaceChange("HAJI")}
-                  className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
                     workspace === "HAJI"
                       ? "bg-emerald-600 text-white shadow-xs font-extrabold"
                       : "text-slate-600 hover:text-slate-900"
@@ -1391,8 +1443,20 @@ export function DashboardShell({
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleWorkspaceChange("GUDANG")}
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                    workspace === "GUDANG"
+                      ? "bg-sky-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>📦</span>
+                  <span>Gudang</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleWorkspaceChange("SDM")}
-                  className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
                     workspace === "SDM"
                       ? "bg-amber-600 text-white shadow-xs font-extrabold"
                       : "text-slate-600 hover:text-slate-900"

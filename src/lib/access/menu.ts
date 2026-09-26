@@ -220,35 +220,20 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
   },
 ];
 
-export type WorkspaceMode = "HAJI" | "REGULER" | "SDM";
+export type WorkspaceMode = "HAJI" | "REGULER" | "GUDANG" | "SDM";
 
 export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Haji"),
   {
     type: "group",
     id: "masterData",
-    text: "Master Data Proyek",
+    text: "Master Data Haji",
     children: [
       item("masterProyek", "Master Proyek"),
       item("masterItem", "Item & Tarif Pekerjaan"),
       item("masterKebutuhan", "Kebutuhan Bahan & BOM"),
       item("masterProdukProyek", "Master Produk Proyek"),
-      item("masterBahan", "Master Bahan Baku"),
-      item("masterVendor", "Master Supplier / Vendor"),
-      item("masterLokasi", "Master Lokasi Gudang"),
       item("masterEmbarkasi", "Master Embarkasi"),
-    ],
-  },
-  {
-    type: "group",
-    id: "gudangMaterial",
-    text: "Gudang & Material",
-    children: [
-      item("barangMasukGudang", "Barang Masuk Gudang"),
-      item("barangKeluarGudang", "Barang Keluar Gudang"),
-      item("stokGudang", "Stok Gudang Material"),
-      item("bahan", "Log Bahan Baku"),
-      item("procurement", "Procurement / PO"),
     ],
   },
   {
@@ -271,35 +256,13 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
     id: "qcLogistik",
     text: "QC & Distribusi Embarkasi",
     children: [
-      {
-        type: "subgroup",
-        id: "qcSub",
-        text: "Quality Control",
-        children: [item("qc", "Quality Control")],
-      },
-      {
-        type: "subgroup",
-        id: "barangJadiSub",
-        text: "Barang Jadi & Set",
-        children: [
-          item("stokBarangJadi", "Stok Barang Jadi"),
-          item("transferBarangJadi", "Transfer Barang Jadi"),
-          item("barangLuar", "Penerimaan Barang Luar"),
-          item("masterSet", "Master Set"),
-          item("packingSet", "Packing Set"),
-          item("stokSet", "Stok Set"),
-        ],
-      },
-      {
-        type: "subgroup",
-        id: "distribusiSub",
-        text: "Distribusi Embarkasi",
-        children: [
-          item("targetEmbarkasi", "Target Embarkasi"),
-          item("pengirimanEmbarkasi", "Pengiriman & Tracking"),
-          item("rejectEmbarkasi", "Reject & Kekurangan"),
-        ],
-      },
+      item("qc", "Quality Control"),
+      item("masterSet", "Master Set"),
+      item("packingSet", "Packing Set"),
+      item("stokSet", "Stok Set"),
+      item("targetEmbarkasi", "Target Embarkasi"),
+      item("pengirimanEmbarkasi", "Pengiriman & Tracking"),
+      item("rejectEmbarkasi", "Reject & Kekurangan"),
     ],
   },
   {
@@ -324,20 +287,6 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     children: [
       item("masterProyek", "Master Proyek"),
       item("masterProdukProyek", "Produk & Spesifikasi"),
-      item("masterBahan", "Master Bahan Baku"),
-      item("masterVendor", "Master Supplier / Vendor"),
-      item("masterLokasi", "Master Lokasi Gudang"),
-    ],
-  },
-  {
-    type: "group",
-    id: "gudangMaterial",
-    text: "Gudang & Material",
-    children: [
-      item("barangMasukGudang", "Barang Masuk Gudang"),
-      item("barangKeluarGudang", "Barang Keluar Gudang"),
-      item("stokGudang", "Stok Gudang Material"),
-      item("procurement", "Procurement / PO"),
     ],
   },
   {
@@ -357,10 +306,7 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     id: "qcLogistik",
     text: "Logistik & Kirim Klien",
     children: [
-      item("stokBarangJadi", "Stok Barang Jadi"),
-      item("barangLuar", "Penerimaan Barang Jadi Luar"),
       item("pengirimanKlien", "🚚 Surat Jalan & Kirim Klien"),
-      item("transferBarangJadi", "Transfer Antar Gudang"),
     ],
   },
   {
@@ -371,6 +317,42 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
       item("kasKecil", "Kas Kecil"),
       item("keuangan", "Keuangan"),
       item("laporan", "Laporan"),
+    ],
+  },
+];
+
+export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
+  item("dashboard", "Dashboard Gudang"),
+  {
+    type: "group",
+    id: "masterData",
+    text: "Master Data Gudang",
+    children: [
+      item("masterBahan", "Master Bahan Baku"),
+      item("masterVendor", "Master Supplier / Vendor"),
+      item("masterLokasi", "Master Lokasi Gudang & Rak"),
+    ],
+  },
+  {
+    type: "group",
+    id: "gudangMaterial",
+    text: "Material & Bahan Mentah",
+    children: [
+      item("procurement", "Procurement / PO Supplier"),
+      item("barangMasukGudang", "Barang Masuk Gudang"),
+      item("barangKeluarGudang", "Barang Keluar Gudang"),
+      item("stokGudang", "Stok Gudang Material (Roll/Lot)"),
+      item("bahan", "Log Bahan Baku"),
+    ],
+  },
+  {
+    type: "group",
+    id: "qcLogistik",
+    text: "Gudang Barang Jadi",
+    children: [
+      item("stokBarangJadi", "Stok Barang Jadi (Gudang Pusat)"),
+      item("barangLuar", "Penerimaan Barang Jadi Luar"),
+      item("transferBarangJadi", "Transfer Antar Gudang"),
     ],
   },
 ];

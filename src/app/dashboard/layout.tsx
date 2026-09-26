@@ -4,6 +4,7 @@ import {
   filterMenuTree,
   SMPT_HAJI_MENU_TREE,
   SMPT_REGULER_MENU_TREE,
+  SMPT_GUDANG_MENU_TREE,
   SMPT_SDM_MENU_TREE,
 } from "@/lib/access/menu";
 import { createClient } from "@/lib/supabase/server";
@@ -22,6 +23,10 @@ export default async function DashboardLayout({
   );
   const regulerMenuEntries = filterMenuTree(
     SMPT_REGULER_MENU_TREE,
+    access.allowedMenuIds,
+  );
+  const gudangMenuEntries = filterMenuTree(
+    SMPT_GUDANG_MENU_TREE,
     access.allowedMenuIds,
   );
   const sdmMenuEntries = filterMenuTree(
@@ -54,6 +59,7 @@ export default async function DashboardLayout({
       menuEntries={hajiMenuEntries}
       hajiEntries={hajiMenuEntries}
       regulerEntries={regulerMenuEntries}
+      gudangEntries={gudangMenuEntries}
       sdmEntries={sdmMenuEntries}
       badgeCounts={{ barangKeluarGudang: pendingGudangCount }}
       userProfile={userProfile}
