@@ -1558,12 +1558,14 @@ export function PayrollSlipManager({
                   onClick={() => {
                     const text = generateWhatsAppText(selectedRun, activeItem, workerMap.get(activeItem.worker_id));
                     const clean = normalizePhone(waPhone);
-                    const url = clean ? `https://wa.me/${clean}?text=${encodeURIComponent(text)}` : `https://web.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-                    window.open(url, "_blank");
+                    const appUrl = clean
+                      ? `whatsapp://send?phone=${clean}&text=${encodeURIComponent(text)}`
+                      : `whatsapp://send?text=${encodeURIComponent(text)}`;
+                    window.location.href = appUrl;
                   }}
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs"
                 >
-                  💬 Buka WhatsApp
+                  💬 Buka WhatsApp App
                 </button>
               </div>
             </div>
@@ -1628,12 +1630,14 @@ export function PayrollSlipManager({
                   onClick={() => {
                     const text = generateOperatorWhatsAppText(selectedOpRun, activeOpWorker);
                     const clean = normalizePhone(waPhone);
-                    const url = clean ? `https://wa.me/${clean}?text=${encodeURIComponent(text)}` : `https://web.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-                    window.open(url, "_blank");
+                    const appUrl = clean
+                      ? `whatsapp://send?phone=${clean}&text=${encodeURIComponent(text)}`
+                      : `whatsapp://send?text=${encodeURIComponent(text)}`;
+                    window.location.href = appUrl;
                   }}
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs"
                 >
-                  💬 Buka WhatsApp
+                  💬 Buka WhatsApp App
                 </button>
               </div>
             </div>

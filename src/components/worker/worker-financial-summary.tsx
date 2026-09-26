@@ -272,6 +272,21 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
                 type="button"
                 onClick={() => {
                   const text = getOfficialWhatsAppText();
+                  const phone = normalizePhone(worker.phone);
+                  const appUrl = phone
+                    ? `whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`
+                    : `whatsapp://send?text=${encodeURIComponent(text)}`;
+                  window.location.href = appUrl;
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white transition ring-1 ring-emerald-400/40"
+              >
+                💬 Buka Aplikasi WA
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const text = getOfficialWhatsAppText();
                   navigator.clipboard.writeText(text).then(() => {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
@@ -914,14 +929,14 @@ Catatan: Dokumen resmi penggajian CV. SMPT V2.`;
                 onClick={() => {
                   const text = getOfficialWhatsAppText();
                   const phone = normalizePhone(worker.phone);
-                  const url = phone
-                    ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-                    : `https://web.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-                  window.open(url, "_blank");
+                  const appUrl = phone
+                    ? `whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`
+                    : `whatsapp://send?text=${encodeURIComponent(text)}`;
+                  window.location.href = appUrl;
                 }}
-                className="rounded-xl border border-emerald-500 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition"
+                className="rounded-xl border border-emerald-500 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition shadow-2xs"
               >
-                💬 Kirim ke WhatsApp
+                💬 Buka Aplikasi WhatsApp
               </button>
 
               <button
