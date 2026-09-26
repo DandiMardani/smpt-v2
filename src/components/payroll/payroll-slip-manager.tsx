@@ -662,9 +662,49 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
     <div className="space-y-4 min-w-0 max-w-full">
       {/* Selector Run Payroll */}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-xs min-w-0 max-w-full">
+        {/* Quick Run Switcher: HARIAN vs BULANAN */}
+        {runs.length > 1 ? (
+          <div className="flex items-center gap-1.5 mb-3.5 overflow-x-auto pb-1 no-scrollbar">
+            <span className="text-[11px] font-bold text-slate-400 shrink-0">Kategori:</span>
+            {runs.map((r) => {
+              const isSelected = r.id === selectedRun?.id;
+              const isHarian = r.payroll_type === "MINGGUAN";
+              const count = items.filter((it) => it.payroll_run_id === r.id).length;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedRunId(r.id);
+                    setFilterMySlipOnly(false);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shrink-0 shadow-2xs ${
+                    isSelected
+                      ? isHarian
+                        ? "bg-blue-600 text-white ring-2 ring-blue-300"
+                        : "bg-purple-600 text-white ring-2 ring-purple-300"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{isHarian ? "🌾 Karyawan HARIAN" : "🏢 Karyawan BULANAN"}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
+                      isSelected ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {count} Slip
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
           <div className="min-w-0">
-            <h3 className="font-bold text-slate-900 text-sm sm:text-base">Rincian Slip Gaji Karyawan (Harian & Bulanan)</h3>
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+              Rincian Slip Gaji: {selectedRun?.payroll_type === "MINGGUAN" ? "Karyawan Harian (Mingguan)" : "Karyawan Bulanan"}
+            </h3>
             <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
               Pilih finalisasi payroll untuk mencetak slip atau mengirimkan slip gaji via WhatsApp.
             </p>
@@ -685,7 +725,7 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                   const hasMySlip = currentWorkerId ? items.some((it) => it.payroll_run_id === r.id && it.worker_id === currentWorkerId) : false;
                   return (
                     <option key={r.id} value={r.id}>
-                      {r.payroll_code} • {r.payroll_type} ({r.period_start} s/d {r.period_end}) — {count} Penerima Upah{hasMySlip ? " ★" : ""}
+                      {r.payroll_code} • {r.payroll_type === "MINGGUAN" ? "HARIAN (Mingguan)" : "BULANAN"} ({r.period_start} s/d {r.period_end}) — {count} Slip{hasMySlip ? " ★" : ""}
                     </option>
                   );
                 })}
