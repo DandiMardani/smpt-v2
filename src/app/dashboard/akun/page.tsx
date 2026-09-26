@@ -1,14 +1,12 @@
 import {
   Card,
-  Field,
   Notice,
   PageShell,
-  buttonClass,
-  inputClass,
 } from "@/components/final/final-ui";
 import { getCurrentAccessContext } from "@/lib/access/current-user";
 import { param, type SearchParams } from "@/lib/final/final-utils";
 import { changeOwnPasswordAction } from "./actions";
+import { ChangePasswordForm } from "./change-password-form";
 
 type Props = { searchParams: Promise<SearchParams> };
 
@@ -42,33 +40,7 @@ export default async function Page({ searchParams }: Props) {
       </Card>
 
       <Card title="Ganti Password Saya">
-        <form action={changeOwnPasswordAction} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Password Baru">
-            <input
-              name="new_password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              className={inputClass}
-              placeholder="Minimal 8 karakter"
-            />
-          </Field>
-          <Field label="Konfirmasi Password">
-            <input
-              name="confirm_password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              className={inputClass}
-              placeholder="Ulangi password baru"
-            />
-          </Field>
-          <div className="flex items-end md:col-span-2">
-            <button className={buttonClass}>Simpan Password Baru</button>
-          </div>
-        </form>
+        <ChangePasswordForm action={changeOwnPasswordAction} />
       </Card>
     </PageShell>
   );

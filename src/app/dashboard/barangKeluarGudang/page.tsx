@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   Field,
   inputClass,
@@ -162,9 +163,34 @@ export default async function Page({ searchParams }: Props) {
 
       {/* Diagram Alur 1 Pintu Logistik Pabrik */}
       <div className="mb-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/90 to-indigo-50/70 p-4 text-xs text-slate-700 shadow-xs">
-        <div className="flex items-center gap-2 mb-2 font-bold text-blue-900 text-sm">
-          <span>🚪</span>
-          <span>Alur 1 Pintu Logistik & Pengeluaran Barang Pabrik</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 font-bold text-blue-900 text-sm">
+            <span>🚪</span>
+            <span>Alur 1 Pintu Logistik & Pengeluaran Barang Pabrik</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/dashboard/barangMasukGudang"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+            >
+              📥 1. Bahan Datang
+            </Link>
+            <Link
+              href="/dashboard/cutting"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+            >
+              ✂️ 2. Cutting (Input Potong)
+            </Link>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs">
+              🚪 3. Barang Keluar (Halaman Ini)
+            </span>
+            <Link
+              href="/dashboard/stokGudang"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+            >
+              📦 4. Pantau Stok
+            </Link>
+          </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-5 text-center">
           <div className="rounded-xl border border-blue-200/80 bg-white p-2.5 shadow-2xs">

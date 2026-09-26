@@ -1,12 +1,14 @@
 "use client";
 
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState, type FormEvent } from "react";
 
 export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
 
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get("access");
@@ -29,9 +31,8 @@ export default function LoginPage() {
 
     if (loading) return;
 
-    const formData = new FormData(event.currentTarget);
-    const rawInput = String(formData.get("email") ?? "").trim();
-    const password = String(formData.get("password") ?? "");
+    const rawInput = emailInput.trim();
+    const password = passwordInput;
 
     if (!rawInput || !password) {
       setError("Email atau ID Pekerja dan password wajib diisi.");
@@ -40,33 +41,25 @@ export default function LoginPage() {
 
     const email = rawInput.includes("@") ? rawInput.toLowerCase() : `${rawInput.toLowerCase()}@smpt.id`;
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      setError("Konfigurasi Supabase belum lengkap.");
-      return;
-    }
-
     setLoading(true);
     setError("");
 
     try {
-      const supabase = createBrowserClient(supabaseUrl, supabaseKey);
+      const supabase = createClient();
       const { error: loginError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (loginError) {
-        setError("Email atau password salah.");
+        setError("Email/ID Pekerja atau kata sandi salah. Silakan coba lagi.");
         return;
       }
 
       window.location.assign("/dashboard");
     } catch (loginFailure) {
       console.error("Login gagal:", loginFailure);
-      setError("Login gagal diproses. Coba lagi.");
+      setError("Login gagal diproses. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
@@ -111,6 +104,11 @@ export default function LoginPage() {
               autoComplete="username"
               required
               disabled={loading}
+              value={emailInput}
+              onChange={(e) => {
+                setEmailInput(e.target.value);
+                if (error) setError("");
+              }}
               className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 outline-none transition focus:border-[#0d6efd] focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 shadow-xs"
               placeholder="nama@email.com atau PKR-00012"
             />
@@ -131,6 +129,11 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 required
                 disabled={loading}
+                value={passwordInput}
+                onChange={(e) => {
+                  setPasswordInput(e.target.value);
+                  if (error) setError("");
+                }}
                 className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 pr-12 text-sm text-gray-900 outline-none transition focus:border-[#0d6efd] focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 shadow-xs"
                 placeholder="Masukkan kata sandi"
               />

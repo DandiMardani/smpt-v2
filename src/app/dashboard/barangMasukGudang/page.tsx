@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import Link from "next/link";
 import {
   dangerButtonClass,
   Field,
@@ -101,10 +102,59 @@ export default async function Page({ searchParams }: Props) {
     <MasterPageShell
       eyebrow="Gudang & Material"
       title="Barang Masuk Gudang"
-      description="Qty transaksi disimpan apa adanya, lalu stok otomatis dinormalisasi ke satuan standar Master Bahan."
+      description="Penerimaan Bahan Baku (Kain Roll / Aksesoris). Qty disimpan apa adanya, lalu stok otomatis dinormalisasi ke satuan standar Master Bahan."
     >
       <Notice success={param(query, "success")} error={param(query, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
+
+      {/* Alur Logistik Terpadu Pabrik */}
+      <div className="mb-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/90 to-indigo-50/70 p-4 text-xs text-slate-700 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 font-bold text-blue-900 text-sm">
+            <span>🔄</span>
+            <span>Alur Terpadu Logistik & Pengeluaran Pabrik</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs">
+              📥 1. Bahan Datang (Halaman Ini)
+            </span>
+            <Link
+              href="/dashboard/cutting"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+            >
+              ✂️ 2. Cutting (Input Potong)
+            </Link>
+            <Link
+              href="/dashboard/barangKeluarGudang"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+            >
+              🚪 3. Barang Keluar (1 Pintu)
+            </Link>
+            <Link
+              href="/dashboard/stokGudang"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+            >
+              📦 4. Pantau Stok
+            </Link>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-5 text-center">
+          <div className="rounded-xl border border-blue-300 bg-white p-2.5 shadow-2xs font-semibold text-blue-800">
+            <span className="block font-bold">1. Penerimaan Bahan</span>
+            <span className="text-[11px] text-slate-500">Roll Kain / Aksesoris Masuk</span>
+          </div>
+          <div className="flex items-center justify-center font-bold text-blue-400">➔</div>
+          <div className="rounded-xl border border-slate-200 bg-white/80 p-2.5 shadow-2xs">
+            <span className="block font-bold text-slate-700">2. Keluar ke Cutting</span>
+            <span className="text-[11px] text-slate-500">Kain dipotong di Cutting</span>
+          </div>
+          <div className="flex items-center justify-center font-bold text-blue-400">➔</div>
+          <div className="rounded-xl border border-slate-200 bg-white/80 p-2.5 shadow-2xs">
+            <span className="block font-bold text-slate-700">3. Gudang Potong & Sablon</span>
+            <span className="text-[11px] text-slate-500">Siap Jahit / Produksi (1 Pintu)</span>
+          </div>
+        </div>
+      </div>
 
       {canReceivePo ? (
         <SectionCard
