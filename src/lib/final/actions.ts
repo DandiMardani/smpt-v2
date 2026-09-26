@@ -192,6 +192,10 @@ export async function updatePayrollItemAction(f: FormData) {
     const kasbonPerusahaan = num(f, "kasbon_perusahaan_amount", true) ?? Number(item.kasbon_perusahaan_amount || 0);
     const kasbonWarung = num(f, "kasbon_warung_amount", true) ?? Number(item.kasbon_warung_amount || 0);
     const totalDeduction = num(f, "deduction_amount", true) ?? (kasbonPerusahaan + kasbonWarung);
+    const otMinRaw = num(f, "overtime_minutes", true);
+    const overtimeMinutes = otMinRaw !== null ? Math.round(otMinRaw) : (item.overtime_minutes ?? 0);
+    const manualOtHoursRaw = num(f, "manual_overtime_hours", true);
+    const manualOvertimeHours = manualOtHoursRaw !== null ? manualOtHoursRaw : Number(item.manual_overtime_hours || 0);
 
     await rpc("update_payroll_item_manual", {
       p_item_id: itemId,
@@ -204,6 +208,8 @@ export async function updatePayrollItemAction(f: FormData) {
       p_kasbon_perusahaan_amount: kasbonPerusahaan,
       p_kasbon_warung_amount: kasbonWarung,
       p_deduction_amount: totalDeduction,
+      p_overtime_minutes: overtimeMinutes,
+      p_manual_overtime_hours: manualOvertimeHours,
     });
   }, "Koreksi upah dan rincian payroll berhasil disimpan.");
 }

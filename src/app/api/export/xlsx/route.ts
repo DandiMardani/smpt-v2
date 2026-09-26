@@ -244,6 +244,232 @@ async function laporanWorkbook(
   ];
 }
 
+async function payrollSlipsWorkbook(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: URLSearchParams
+): Promise<{ sheets: XlsxSheet[]; filename: string }> {
+  const runId = positiveId(params.get("run_id"));
+
+  let runQuery = supabase.from("payroll_runs").select("*");
+  if (runId) {
+    runQuery = runQuery.eq("id", runId);
+  } else {
+    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+  }
+
+  const { data: runData, error: runError } = await runQuery.single();
+  if (runError || !runData) {
+    throw new Error("Data Payroll Run tidak ditemukan.");
+  }
+  const run = runData as {
+    id: number;
+    payroll_code: string;
+    payroll_type: string;
+    period_start: string;
+    period_end: string;
+    status: string;
+    total_gross: number;
+    total_deduction: number;
+    total_net: number;
+    notes?: string | null;
+  };
+
+  const [itemsRes, workersRes] = await Promise.all([
+    supabase
+      .from("payroll_run_items")
+      .select("*")
+      .eq("payroll_run_id", run.id)
+      .order("id", { ascending: true }),
+    supabase
+      .from("workers")
+      .select("id, worker_code, name, department, position, identity_no, phone, pay_system"),
+  ]);
+
+  if (itemsRes.error) throw itemsRes.error;
+  const items = itemsRes.data ?? [];
+  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
+
+  const columns = [
+    { key: "no", label: "No" },
+    { key: "worker_code", label: "Kode Pekerja" },
+    { key: "worker_name", label: "Nama Pekerja" },
+    { key: "department", label: "Bagian / Dept" },
+    { key: "position", label: "Jabatan" },
+    { key: "pay_system", label: "Sistem Upah" },
+    { key: "identity_no", label: "NIK / KTP" },
+    { key: "phone", label: "No. HP / WA" },
+    { key: "full_days", label: "Hadir Full (Hari)" },
+    { key: "half_days", label: "Hadir Half (Hari)" },
+    { key: "ot_hours", label: "Jam Lembur Sistem" },
+    { key: "manual_ot_hours", label: "Jam Lembur Manual" },
+    { key: "total_ot_hours", label: "Total Jam Lembur" },
+    { key: "base_amount", label: "Gaji / Upah Pokok (Rp)" },
+    { key: "meal_amount", label: "Uang Makan Minggu (Rp)" },
+    { key: "overtime_amount", label: "Upah Lembur Sistem (Rp)" },
+    { key: "manual_overtime_amount", label: "Upah Lembur Manual (Rp)" },
+    { key: "overtime_bonus", label: "Bonus Lembur 4H (Rp)" },
+    { key: "holiday_bonus", label: "Tambahan Minggu (Rp)" },
+    { key: "gross_amount", label: "Total Bruto (Rp)" },
+    { key: "kasbon_perusahaan", label: "Kasbon Kantor (Rp)" },
+    { key: "kasbon_warung", label: "Kasbon Warung (Rp)" },
+    { key: "deduction_amount", label: "Total Potongan (Rp)" },
+    { key: "net_amount", label: "Gaji Bersih / Net (Rp)" },
+  ];
+
+  let sumFull = 0;
+  let sumHalf = 0;
+  let sumOtHours = 0;
+  let sumManualOtHours = 0;
+  let sumTotalOtHours = 0;
+  let sumBase = 0;
+  let sumMeal = 0;
+  let sumOtAmount = 0;
+  let sumManualOtAmount = 0;
+  let sumOtBonus = 0;
+  let sumHolidayBonus = 0;
+  let sumGross = 0;
+  let sumKasbonP = 0;
+  let sumKasbonW = 0;
+  let sumDeduction = 0;
+  let sumNet = 0;
+
+  const rows: Array<Record<string, unknown>> = items.map((item: any, idx: number) => {
+    const w = workerMap.get(item.worker_id);
+    const full = Number(item.full_days || 0);
+    const half = Number(item.half_days || 0);
+    const otMin = Number(item.overtime_minutes || 0);
+    const otHours = Math.round((otMin / 60) * 10) / 10;
+    const manualOtHours = Number(item.manual_overtime_hours || 0);
+    const totalOtHours = Math.round((otHours + manualOtHours) * 10) / 10;
+
+    const base = Number(item.base_amount || 0);
+    const meal = Number(item.meal_amount || 0);
+    const otAmount = Number(item.overtime_amount || 0);
+    const manualOtAmount = Number(item.manual_overtime_amount || 0);
+    const otBonus = Number(item.overtime_bonus || 0);
+    const holidayBonus = Number(item.holiday_bonus || 0) + Number(item.holiday_manual_amount || 0);
+    const gross = Math.round((base + meal + otAmount + manualOtAmount + otBonus + holidayBonus) * 100) / 100;
+
+    const kasbonP = Number(item.kasbon_perusahaan_amount || 0);
+    const kasbonW = Number(item.kasbon_warung_amount || 0);
+    const deduction = Number(item.deduction_amount || (kasbonP + kasbonW));
+    const net = Number(item.net_amount || Math.max(0, gross - deduction));
+
+    sumFull += full;
+    sumHalf += half;
+    sumOtHours += otHours;
+    sumManualOtHours += manualOtHours;
+    sumTotalOtHours += totalOtHours;
+    sumBase += base;
+    sumMeal += meal;
+    sumOtAmount += otAmount;
+    sumManualOtAmount += manualOtAmount;
+    sumOtBonus += otBonus;
+    sumHolidayBonus += holidayBonus;
+    sumGross += gross;
+    sumKasbonP += kasbonP;
+    sumKasbonW += kasbonW;
+    sumDeduction += deduction;
+    sumNet += net;
+
+    return {
+      no: idx + 1,
+      worker_code: w?.worker_code || `PKR-${item.worker_id}`,
+      worker_name: item.worker_name_snapshot,
+      department: w?.department || "-",
+      position: w?.position || "-",
+      pay_system: item.pay_system_snapshot,
+      identity_no: w?.identity_no || "-",
+      phone: w?.phone || "-",
+      full_days: full,
+      half_days: half,
+      ot_hours: otHours,
+      manual_ot_hours: manualOtHours,
+      total_ot_hours: totalOtHours,
+      base_amount: base,
+      meal_amount: meal,
+      overtime_amount: otAmount,
+      manual_overtime_amount: manualOtAmount,
+      overtime_bonus: otBonus,
+      holiday_bonus: holidayBonus,
+      gross_amount: gross,
+      kasbon_perusahaan: kasbonP,
+      kasbon_warung: kasbonW,
+      deduction_amount: deduction,
+      net_amount: net,
+    };
+  });
+
+  // Tambahkan baris total rekap di akhir sheet 1
+  rows.push({
+    no: "TOTAL",
+    worker_code: "",
+    worker_name: `${items.length} Pekerja`,
+    department: "",
+    position: "",
+    pay_system: "",
+    identity_no: "",
+    phone: "",
+    full_days: sumFull,
+    half_days: sumHalf,
+    ot_hours: Math.round(sumOtHours * 10) / 10,
+    manual_ot_hours: Math.round(sumManualOtHours * 10) / 10,
+    total_ot_hours: Math.round(sumTotalOtHours * 10) / 10,
+    base_amount: Math.round(sumBase * 100) / 100,
+    meal_amount: Math.round(sumMeal * 100) / 100,
+    overtime_amount: Math.round(sumOtAmount * 100) / 100,
+    manual_overtime_amount: Math.round(sumManualOtAmount * 100) / 100,
+    overtime_bonus: Math.round(sumOtBonus * 100) / 100,
+    holiday_bonus: Math.round(sumHolidayBonus * 100) / 100,
+    gross_amount: Math.round(sumGross * 100) / 100,
+    kasbon_perusahaan: Math.round(sumKasbonP * 100) / 100,
+    kasbon_warung: Math.round(sumKasbonW * 100) / 100,
+    deduction_amount: Math.round(sumDeduction * 100) / 100,
+    net_amount: Math.round(sumNet * 100) / 100,
+  });
+
+  const summarySheet: XlsxSheet = {
+    name: "Ringkasan Payroll",
+    columns: [
+      { key: "field", label: "Parameter" },
+      { key: "value", label: "Nilai" },
+    ],
+    rows: [
+      { field: "Kode Payroll", value: run.payroll_code },
+      { field: "Jenis Payroll", value: run.payroll_type === "MINGGUAN" ? "Karyawan Harian (Mingguan)" : "Karyawan Bulanan" },
+      { field: "Periode Mulai", value: run.period_start },
+      { field: "Periode Selesai", value: run.period_end },
+      { field: "Status", value: run.status },
+      { field: "Total Pekerja", value: items.length },
+      { field: "Total Gaji / Upah Pokok", value: Math.round(sumBase * 100) / 100 },
+      { field: "Total Uang Makan", value: Math.round(sumMeal * 100) / 100 },
+      { field: "Total Upah Lembur (Sistem + Manual)", value: Math.round((sumOtAmount + sumManualOtAmount) * 100) / 100 },
+      { field: "Total Bonus Lembur 4H", value: Math.round(sumOtBonus * 100) / 100 },
+      { field: "Total Insentif Minggu", value: Math.round(sumHolidayBonus * 100) / 100 },
+      { field: "TOTAL PENDAPATAN BRUTO", value: Math.round(sumGross * 100) / 100 },
+      { field: "Total Potongan Kasbon Perusahaan", value: Math.round(sumKasbonP * 100) / 100 },
+      { field: "Total Potongan Kasbon Warung", value: Math.round(sumKasbonW * 100) / 100 },
+      { field: "TOTAL SELURUH POTONGAN", value: Math.round(sumDeduction * 100) / 100 },
+      { field: "TOTAL GAJI BERSIH (NET DIBAYARKAN)", value: Math.round(sumNet * 100) / 100 },
+      { field: "Catatan", value: run.notes || "-" },
+      { field: "Waktu Export", value: new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) },
+    ],
+  };
+
+  const mainSheet: XlsxSheet = {
+    name: "Rekap Slip Gaji",
+    columns,
+    rows,
+  };
+
+  const filename = `SMPT-Slip-Gaji-${run.payroll_code}-${run.payroll_type}-${run.period_start}-${run.period_end}.xlsx`;
+
+  return {
+    sheets: [mainSheet, summarySheet],
+    filename,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const params = request.nextUrl.searchParams;
@@ -259,8 +485,16 @@ export async function GET(request: NextRequest) {
 
     let title = "SMPT Export";
     let sheets: XlsxSheet[];
+    let customFilename: string | null = null;
 
-    if (key === "manager_dashboard" || key === "manager_section") {
+    if (key === "payroll_slips") {
+      if (!access.permissions.has("payroll.view") && !["MANAGER", "ADMIN"].includes(access.role)) {
+        return NextResponse.json({ error: "Tidak punya akses melihat payroll." }, { status: 403 });
+      }
+      const result = await payrollSlipsWorkbook(supabase, params);
+      sheets = result.sheets;
+      customFilename = result.filename;
+    } else if (key === "manager_dashboard" || key === "manager_section") {
       if (!["MANAGER", "ADMIN"].includes(access.role)) return NextResponse.json({ error: "Export Dashboard Manager hanya untuk MANAGER/ADMIN." }, { status: 403 });
       title = key === "manager_section" ? `Manager ${String(params.get("section") || "Detail")}` : "Manager Dashboard";
       sheets = await managerWorkbook(supabase, params, from, to, key === "manager_section" ? String(params.get("section") || "") : undefined);
@@ -278,7 +512,7 @@ export async function GET(request: NextRequest) {
     }
 
     const bytes = buildXlsx(sheets);
-    const filename = `SMPT-${fileSlug(title)}-${from}-${to}.xlsx`;
+    const filename = customFilename || `SMPT-${fileSlug(title)}-${from}-${to}.xlsx`;
     return new NextResponse(Buffer.from(bytes), {
       status: 200,
       headers: {
