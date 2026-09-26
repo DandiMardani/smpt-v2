@@ -38,6 +38,7 @@ type OperatorRun = {
 type OperatorItem = {
   id: number;
   run_id: number;
+  worker_id: number;
   worker_name_snapshot: string;
   work_item_name_snapshot: string;
   qty_approved: number | string;
@@ -124,6 +125,8 @@ export default async function Page({ searchParams }: Props) {
             <PayrollSlipManager
               runs={payrollRuns}
               items={payrollItems}
+              operatorRuns={operatorRuns}
+              operatorItems={operatorItems}
               workers={workers}
               currentWorkerId={currentWorkerId}
               canWrite={canWrite}

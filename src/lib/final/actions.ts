@@ -213,6 +213,80 @@ export async function updatePayrollItemAction(f: FormData) {
     });
   }, "Koreksi upah dan rincian payroll berhasil disimpan.");
 }
+
+export async function updateOperatorPayrollItemAction(f: FormData) {
+  const path = "/dashboard/payroll";
+  await mutate(path, "payroll.write", async () => {
+    const s = await createClient();
+    const itemId = id(f, "item_id");
+    const { data: item, error: fetchErr } = await s
+      .from("operator_payroll_items")
+      .select("*")
+      .eq("id", itemId)
+      .single();
+    if (fetchErr || !item) throw new Error("Item payroll operator tidak ditemukan.");
+
+    const qtyApproved = num(f, "qty_approved", true) ?? Number(item.qty_approved || 0);
+    const opPrice = num(f, "operator_price", true) ?? Number(item.operator_price_snapshot || 0);
+    const subPrice = num(f, "submission_price", true) ?? Number(item.submission_price_snapshot || 0);
+    const opVal = num(f, "operator_value", true) ?? Math.round(qtyApproved * opPrice * 100) / 100;
+    const subVal = num(f, "submission_value", true) ?? Math.round(qtyApproved * subPrice * 100) / 100;
+
+    const { error: updateErr } = await s
+      .from("operator_payroll_items")
+      .update({
+        qty_approved: qtyApproved,
+        operator_price_snapshot: opPrice,
+        submission_price_snapshot: subPrice,
+        operator_value: opVal,
+        submission_value: subVal,
+      })
+      .eq("id", itemId);
+    if (updateErr) throw updateErr;
+
+    // Recalculate run totals
+    const { data: runItems, error: rItemsErr } = await s
+      .from("operator_payroll_items")
+      .select("operator_value, submission_value")
+      .eq("run_id", item.run_id);
+    if (!rItemsErr && runItems) {
+      const totOp = runItems.reduce((acc, x) => acc + Number(x.operator_value || 0), 0);
+      const totSub = runItems.reduce((acc, x) => acc + Number(x.submission_value || 0), 0);
+      await s.from("operator_payroll_runs").update({
+        total_operator_value: Math.round(totOp * 100) / 100,
+        total_submission_value: Math.round(totSub * 100) / 100,
+      }).eq("id", item.run_id);
+    }
+  }, "Koreksi payroll operator borongan berhasil disimpan.");
+}
+
+export async function togglePayrollPaymentStatusAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/payroll";
+  await mutate(returnPath, "payroll.write", async () => {
+    const s = await createClient();
+    const runType = t(f, "run_type"); // 'GENERAL' or 'OPERATOR'
+    const runId = id(f, "run_id");
+    const targetStatus = t(f, "payment_status") || "SUDAH_DIBAYAR"; // 'SUDAH_DIBAYAR' or 'BELUM_DIBAYAR'
+
+    if (runType === "OPERATOR") {
+      const { data: run, error: rErr } = await s.from("operator_payroll_runs").select("*").eq("id", runId).single();
+      if (rErr || !run) throw new Error("Run operator tidak ditemukan.");
+      let notes = run.notes || "";
+      notes = notes.replace(/\[STATUS:\s*(SUDAH_DIBAYAR|BELUM_DIBAYAR)\]/gi, "").trim();
+      const newNotes = `[STATUS: ${targetStatus}] ${notes}`.trim();
+      const { error } = await s.from("operator_payroll_runs").update({ notes: newNotes }).eq("id", runId);
+      if (error) throw error;
+    } else {
+      const { data: run, error: rErr } = await s.from("payroll_runs").select("*").eq("id", runId).single();
+      if (rErr || !run) throw new Error("Run payroll tidak ditemukan.");
+      const cfg = typeof run.config_snapshot === "object" && run.config_snapshot !== null ? { ...run.config_snapshot } : {};
+      cfg.payment_status = targetStatus;
+      cfg.payment_updated_at = new Date().toISOString();
+      const { error } = await s.from("payroll_runs").update({ config_snapshot: cfg }).eq("id", runId);
+      if (error) throw error;
+    }
+  }, `Status pembayaran payroll berhasil diubah.`);
+}
 export async function savePayrollShiftSettingsAction(f: FormData) {
   const returnPath = t(f, "return_path") || "/dashboard/payroll";
   await mutate(returnPath, "payroll.write", async () => {

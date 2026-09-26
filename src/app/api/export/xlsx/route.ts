@@ -272,7 +272,12 @@ async function payrollSlipsWorkbook(
     total_deduction: number;
     total_net: number;
     notes?: string | null;
+    config_snapshot?: any;
   };
+
+  const cfg = run.config_snapshot || {};
+  const isPaid = cfg.payment_status === "SUDAH_DIBAYAR" || run.status === "PAID";
+  const runPaymentStatus = isPaid ? "SUDAH DIBAYAR" : "BELUM DIBAYAR";
 
   const [itemsRes, workersRes] = await Promise.all([
     supabase
@@ -314,6 +319,7 @@ async function payrollSlipsWorkbook(
     { key: "kasbon_warung", label: "Kasbon Warung (Rp)" },
     { key: "deduction_amount", label: "Total Potongan (Rp)" },
     { key: "net_amount", label: "Gaji Bersih / Net (Rp)" },
+    { key: "payment_status", label: "Status Pembayaran" },
   ];
 
   let sumFull = 0;
@@ -397,6 +403,7 @@ async function payrollSlipsWorkbook(
       kasbon_warung: kasbonW,
       deduction_amount: deduction,
       net_amount: net,
+      payment_status: runPaymentStatus,
     };
   });
 
@@ -426,6 +433,7 @@ async function payrollSlipsWorkbook(
     kasbon_warung: Math.round(sumKasbonW * 100) / 100,
     deduction_amount: Math.round(sumDeduction * 100) / 100,
     net_amount: Math.round(sumNet * 100) / 100,
+    payment_status: runPaymentStatus,
   });
 
   const summarySheet: XlsxSheet = {
@@ -439,7 +447,8 @@ async function payrollSlipsWorkbook(
       { field: "Jenis Payroll", value: run.payroll_type === "MINGGUAN" ? "Karyawan Harian (Mingguan)" : "Karyawan Bulanan" },
       { field: "Periode Mulai", value: run.period_start },
       { field: "Periode Selesai", value: run.period_end },
-      { field: "Status", value: run.status },
+      { field: "Status Payout", value: run.status },
+      { field: "Status Pembayaran", value: runPaymentStatus },
       { field: "Total Pekerja", value: items.length },
       { field: "Total Gaji / Upah Pokok", value: Math.round(sumBase * 100) / 100 },
       { field: "Total Uang Makan", value: Math.round(sumMeal * 100) / 100 },
@@ -470,6 +479,142 @@ async function payrollSlipsWorkbook(
   };
 }
 
+async function operatorPayrollSlipsWorkbook(
+  supabase: any,
+  params: URLSearchParams,
+): Promise<{ sheets: XlsxSheet[]; filename: string }> {
+  const runId = positiveId(params.get("run_id"));
+
+  let runQuery = supabase.from("operator_payroll_runs").select("*");
+  if (runId) {
+    runQuery = runQuery.eq("id", runId);
+  } else {
+    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+  }
+
+  const { data: runData, error: runError } = await runQuery;
+  if (runError || !runData || runData.length === 0) {
+    throw new Error("Data Payroll Operator tidak ditemukan.");
+  }
+  const run = runData[0];
+
+  const [itemsRes, workersRes] = await Promise.all([
+    supabase
+      .from("operator_payroll_items")
+      .select("*")
+      .eq("run_id", run.id)
+      .order("id", { ascending: true }),
+    supabase
+      .from("workers")
+      .select("id, worker_code, name, department, position, identity_no, phone, pay_system"),
+  ]);
+
+  if (itemsRes.error) throw itemsRes.error;
+  const items = itemsRes.data ?? [];
+  const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
+
+  const notesStr = String(run.notes || "");
+  const isPaid = /\[STATUS:\s*SUDAH_DIBAYAR\]/i.test(notesStr) || run.status === "PAID";
+  const paymentStatus = isPaid ? "SUDAH DIBAYAR" : "BELUM DIBAYAR";
+
+  const columns = [
+    { key: "no", label: "No" },
+    { key: "worker_code", label: "Kode Pekerja" },
+    { key: "worker_name", label: "Nama Pekerja" },
+    { key: "department", label: "Bagian / Dept" },
+    { key: "pay_system", label: "Sistem Upah" },
+    { key: "work_item_name", label: "Item Pekerjaan" },
+    { key: "qty_approved", label: "Qty Sah (Approved)" },
+    { key: "operator_price", label: "Tarif Borongan (Rp)" },
+    { key: "operator_value", label: "Total Upah Borongan (Rp)" },
+    { key: "submission_price", label: "Tarif Pengajuan (Rp)" },
+    { key: "submission_value", label: "Nilai Pengajuan (Rp)" },
+    { key: "payment_status", label: "Status Pembayaran" },
+  ];
+
+  let sumQty = 0;
+  let sumOpVal = 0;
+  let sumSubVal = 0;
+
+  const rows: Array<Record<string, unknown>> = items.map((item: any, idx: number) => {
+    const w = workerMap.get(item.worker_id);
+    const qty = Number(item.qty_approved || 0);
+    const opPrice = Number(item.operator_price_snapshot || 0);
+    const opVal = Number(item.operator_value || (qty * opPrice));
+    const subPrice = Number(item.submission_price_snapshot || 0);
+    const subVal = Number(item.submission_value || (qty * subPrice));
+
+    sumQty += qty;
+    sumOpVal += opVal;
+    sumSubVal += subVal;
+
+    return {
+      no: idx + 1,
+      worker_code: w?.worker_code || `PKR-${item.worker_id}`,
+      worker_name: item.worker_name_snapshot,
+      department: w?.department || "PRODUKSI",
+      pay_system: "BORONGAN",
+      work_item_name: item.work_item_name_snapshot,
+      qty_approved: qty,
+      operator_price: opPrice,
+      operator_value: opVal,
+      submission_price: subPrice,
+      submission_value: subVal,
+      payment_status: paymentStatus,
+    };
+  });
+
+  rows.push({
+    no: "TOTAL",
+    worker_code: "",
+    worker_name: `${items.length} Item Pekerjaan`,
+    department: "",
+    pay_system: "",
+    work_item_name: "",
+    qty_approved: Math.round(sumQty * 100) / 100,
+    operator_price: "",
+    operator_value: Math.round(sumOpVal * 100) / 100,
+    submission_price: "",
+    submission_value: Math.round(sumSubVal * 100) / 100,
+    payment_status: paymentStatus,
+  });
+
+  const summarySheet: XlsxSheet = {
+    name: "Ringkasan Payroll Operator",
+    columns: [
+      { key: "field", label: "Parameter" },
+      { key: "value", label: "Nilai" },
+    ],
+    rows: [
+      { field: "Kode Payroll", value: run.payroll_code },
+      { field: "Jenis Payroll", value: "Payroll Operator Borongan" },
+      { field: "Periode Mulai", value: run.period_start },
+      { field: "Periode Selesai", value: run.period_end },
+      { field: "Status Run", value: run.status },
+      { field: "Status Pembayaran", value: paymentStatus },
+      { field: "Total Baris Pekerjaan", value: items.length },
+      { field: "Total Qty Sah", value: Math.round(sumQty * 100) / 100 },
+      { field: "TOTAL UPAH BORONGAN (OPERATOR)", value: Math.round(sumOpVal * 100) / 100 },
+      { field: "TOTAL NILAI PENGAJUAN", value: Math.round(sumSubVal * 100) / 100 },
+      { field: "Catatan", value: run.notes || "-" },
+      { field: "Waktu Export", value: new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) },
+    ],
+  };
+
+  const mainSheet: XlsxSheet = {
+    name: "Rekap Slip Borongan",
+    columns,
+    rows,
+  };
+
+  const filename = `SMPT-Slip-Borongan-${run.payroll_code}-${run.period_start}-${run.period_end}.xlsx`;
+
+  return {
+    sheets: [mainSheet, summarySheet],
+    filename,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const params = request.nextUrl.searchParams;
@@ -487,11 +632,14 @@ export async function GET(request: NextRequest) {
     let sheets: XlsxSheet[];
     let customFilename: string | null = null;
 
-    if (key === "payroll_slips") {
+    if (key === "payroll_slips" || key === "operator_payroll_slips") {
       if (!access.permissions.has("payroll.view") && !["MANAGER", "ADMIN"].includes(access.role)) {
         return NextResponse.json({ error: "Tidak punya akses melihat payroll." }, { status: 403 });
       }
-      const result = await payrollSlipsWorkbook(supabase, params);
+      const isOperator = key === "operator_payroll_slips" || params.get("run_type") === "operator";
+      const result = isOperator
+        ? await operatorPayrollSlipsWorkbook(supabase, params)
+        : await payrollSlipsWorkbook(supabase, params);
       sheets = result.sheets;
       customFilename = result.filename;
     } else if (key === "manager_dashboard" || key === "manager_section") {
