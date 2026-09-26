@@ -193,51 +193,18 @@ export async function updatePayrollItemAction(f: FormData) {
     const kasbonWarung = num(f, "kasbon_warung_amount", true) ?? Number(item.kasbon_warung_amount || 0);
     const totalDeduction = num(f, "deduction_amount", true) ?? (kasbonPerusahaan + kasbonWarung);
 
-    const newGross = baseAmount + mealAmount + overtimeAmount + manualOt + bonus + holidayBonus;
-    const newNet = Math.max(0, newGross - totalDeduction);
-
-    const { error: updateErr } = await s
-      .from("payroll_run_items")
-      .update({
-        base_amount: baseAmount,
-        meal_amount: mealAmount,
-        overtime_amount: overtimeAmount,
-        manual_overtime_amount: manualOt,
-        overtime_bonus: bonus,
-        holiday_bonus: holidayBonus,
-        kasbon_perusahaan_amount: kasbonPerusahaan,
-        kasbon_warung_amount: kasbonWarung,
-        deduction_amount: totalDeduction,
-        net_amount: newNet,
-      })
-      .eq("id", itemId);
-    if (updateErr) throw updateErr;
-
-    // Sinkronkan total run di tabel payroll_runs
-    const { data: allRunItems } = await s
-      .from("payroll_run_items")
-      .select("base_amount, meal_amount, overtime_amount, manual_overtime_amount, overtime_bonus, holiday_bonus, deduction_amount, net_amount")
-      .eq("payroll_run_id", item.payroll_run_id);
-
-    if (allRunItems) {
-      let runGross = 0;
-      let runDeduction = 0;
-      let runNet = 0;
-      for (const it of allRunItems) {
-        const itemGross = Number(it.base_amount || 0) + Number(it.meal_amount || 0) + Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0) + Number(it.overtime_bonus || 0) + Number(it.holiday_bonus || 0);
-        runGross += itemGross;
-        runDeduction += Number(it.deduction_amount || 0);
-        runNet += Number(it.net_amount || 0);
-      }
-      await s
-        .from("payroll_runs")
-        .update({
-          total_gross: runGross,
-          total_deduction: runDeduction,
-          total_net: runNet,
-        })
-        .eq("id", item.payroll_run_id);
-    }
+    await rpc("update_payroll_item_manual", {
+      p_item_id: itemId,
+      p_base_amount: baseAmount,
+      p_meal_amount: mealAmount,
+      p_overtime_amount: overtimeAmount,
+      p_manual_overtime_amount: manualOt,
+      p_overtime_bonus: bonus,
+      p_holiday_bonus: holidayBonus,
+      p_kasbon_perusahaan_amount: kasbonPerusahaan,
+      p_kasbon_warung_amount: kasbonWarung,
+      p_deduction_amount: totalDeduction,
+    });
   }, "Koreksi upah dan rincian payroll berhasil disimpan.");
 }
 export async function savePayrollShiftSettingsAction(f: FormData) {

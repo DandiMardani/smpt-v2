@@ -310,6 +310,7 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
   const [editOt, setEditOt] = useState<number>(0);
   const [editManualOt, setEditManualOt] = useState<number>(0);
   const [editBonus, setEditBonus] = useState<number>(0);
+  const [editHoliday, setEditHoliday] = useState<number>(0);
   const [editKasbonPerusahaan, setEditKasbonPerusahaan] = useState<number>(0);
   const [editKasbonWarung, setEditKasbonWarung] = useState<number>(0);
 
@@ -319,12 +320,13 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
     setEditMeal(num(item.meal_amount));
     setEditOt(num(item.overtime_amount));
     setEditManualOt(num(item.manual_overtime_amount));
-    setEditBonus(num(item.overtime_bonus) + num(item.holiday_bonus));
+    setEditBonus(num(item.overtime_bonus));
+    setEditHoliday(num(item.holiday_bonus));
     setEditKasbonPerusahaan(num(item.kasbon_perusahaan_amount));
     setEditKasbonWarung(num(item.kasbon_warung_amount));
   };
 
-  const calcGross = editBase + editMeal + editOt + editManualOt + editBonus;
+  const calcGross = editBase + editMeal + editOt + editManualOt + editBonus + editHoliday;
   const calcDeduction = editKasbonPerusahaan + editKasbonWarung;
   const calcNet = Math.max(0, calcGross - calcDeduction);
 
@@ -1095,84 +1097,159 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
 
       {/* Modal Koreksi Payroll (Khusus Admin untuk sesuaikan Uang Makan & Lembur yang lupa finger) */}
       {editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs">
-          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="font-extrabold text-slate-900 text-base">
-                  ✏️ Koreksi Payroll: {editingItem.worker_name_snapshot}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {selectedRun?.payroll_code} • Sistem Upah: <b>{editingItem.pay_system_snapshot}</b>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-black text-slate-900 text-base sm:text-lg">
+                    ✏️ Koreksi Payroll: {editingItem.worker_name_snapshot}
+                  </h3>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                      editingItem.pay_system_snapshot === "BULANAN"
+                        ? "bg-purple-100 text-purple-800 border border-purple-200"
+                        : "bg-blue-100 text-blue-800 border border-blue-200"
+                    }`}
+                  >
+                    {editingItem.pay_system_snapshot}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {selectedRun?.payroll_code} • Periode: {selectedRun?.period_start} s/d {selectedRun?.period_end}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingItem(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
               >
                 ✕
               </button>
             </div>
 
-            <form action={updatePayrollItemAction} className="mt-4 space-y-3.5 text-xs">
+            <form action={updatePayrollItemAction} className="mt-4 space-y-4 text-xs">
               <input type="hidden" name="item_id" value={editingItem.id} />
 
+              {/* 1. UPAP / GAJI POKOK */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Gaji / Upah Pokok (Rp)</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-800">
+                    {editingItem.pay_system_snapshot === "BULANAN"
+                      ? "Gaji Pokok Bulanan (Rp)"
+                      : "Upah Pokok Harian (Rp)"}
+                  </label>
+                  {editingItem.pay_system_snapshot === "HARIAN" ? (
+                    <span className="text-[11px] text-slate-500 font-semibold">
+                      {editingItem.full_days} Hari Kerja @ {money(editingItem.daily_wage_snapshot)}
+                    </span>
+                  ) : null}
+                </div>
                 <input
                   name="base_amount"
                   type="number"
                   step="any"
                   value={editBase}
                   onChange={(e) => setEditBase(Number(e.target.value) || 0)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
                 />
               </div>
 
-              {/* Uang Makan dengan tombol 1-klik jika sudah diambil mingguan */}
-              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-amber-950">Uang Makan (Rp)</label>
-                  <button
-                    type="button"
-                    onClick={() => setEditMeal(0)}
-                    className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100 shadow-2xs transition"
-                  >
-                    ⚡ Set Rp 0 (Sudah Diambil Mingguan)
-                  </button>
+              {/* 2. KHUSUS BULANAN: UANG MAKAN */}
+              {editingItem.pay_system_snapshot === "BULANAN" ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-amber-950">Uang Makan Minggu (Rp)</label>
+                    <button
+                      type="button"
+                      onClick={() => setEditMeal(0)}
+                      className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100 shadow-2xs transition"
+                    >
+                      ⚡ Set Rp 0 (Sudah Diambil Mingguan)
+                    </button>
+                  </div>
+                  <input
+                    name="meal_amount"
+                    type="number"
+                    step="any"
+                    value={editMeal}
+                    onChange={(e) => setEditMeal(Number(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-amber-300 bg-white px-3.5 py-2 font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-amber-900 leading-tight">
+                    💡 <b>Catatan:</b> Jika uang makan Minggu sudah dicairkan mingguan sebelum gajian bulanan, klik tombol di atas untuk set ke <b>Rp 0</b> agar tidak dobel bayar.
+                  </p>
                 </div>
-                <input
-                  name="meal_amount"
-                  type="number"
-                  step="any"
-                  value={editMeal}
-                  onChange={(e) => setEditMeal(Number(e.target.value) || 0)}
-                  className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
-                />
-                <p className="text-[10px] text-amber-900 leading-tight">
-                  💡 <b>Penting:</b> Jika uang makan hari Minggu telah dicairkan/diambil per minggu sebelum tanggal ini, klik tombol di atas untuk mengubahnya menjadi <b>Rp 0</b> agar tidak dibayar ganda di slip bulanan.
-                </p>
-              </div>
+              ) : null}
 
-              {/* Lembur Terhitung & Lembur Manual */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Upah Lembur Sistem (Rp)
-                  </label>
+              {/* 3. KHUSUS HARIAN: INSENTIF HADIR MINGGU */}
+              {editingItem.pay_system_snapshot === "HARIAN" ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-amber-950">Tambahan Hadir Minggu (Rp)</label>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditHoliday(20000)}
+                        className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100 shadow-2xs transition"
+                      >
+                        ⚡ Rp 20.000
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditHoliday(0)}
+                        className="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition"
+                      >
+                        Rp 0
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    name="holiday_bonus"
+                    type="number"
+                    step="any"
+                    value={editHoliday}
+                    onChange={(e) => setEditHoliday(Number(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-amber-300 bg-white px-3.5 py-2 font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-amber-900 leading-tight">
+                    Hari Minggu masuk jam 08:00–17:00 adalah jam shift normal pekerja harian dengan insentif tetap <b>Rp 20.000</b>.
+                  </p>
+                </div>
+              ) : (
+                <input type="hidden" name="holiday_bonus" value={editHoliday} />
+              )}
+
+              {/* 4. LEMBUR SISTEM & LEMBUR MANUAL (Bisa diedit bebas oleh Admin) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-800">
+                      Upah Lembur Sistem (Rp)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setEditOt(0)}
+                      className="text-[10px] font-semibold text-rose-600 hover:underline"
+                    >
+                      Nol-kan
+                    </button>
+                  </div>
                   <input
                     name="overtime_amount"
                     type="number"
                     step="any"
                     value={editOt}
                     onChange={(e) => setEditOt(Number(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
                   />
-                  <span className="text-[10px] text-slate-400">Dari scan jam absensi</span>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Scan Absensi: {(num(editingItem.overtime_minutes) / 60).toFixed(1)} Jam
+                  </span>
                 </div>
-                <div>
-                  <label className="block font-bold text-blue-700 mb-1">
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-2.5">
+                  <label className="block font-bold text-blue-900 mb-1">
                     + Koreksi Lembur Manual (Rp)
                   </label>
                   <input
@@ -1182,69 +1259,107 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                     value={editManualOt}
                     onChange={(e) => setEditManualOt(Number(e.target.value) || 0)}
                     placeholder="Jika lupa finger..."
-                    className="w-full rounded-xl border border-blue-300 bg-white px-3 py-2 font-semibold text-blue-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                    className="w-full rounded-lg border border-blue-300 bg-white px-3 py-1.5 font-bold text-blue-900 shadow-2xs focus:border-blue-500 focus:outline-none"
                   />
-                  <span className="text-[10px] text-blue-600 font-medium">Bisa isi jika lupa absen</span>
+                  <span className="text-[10px] text-blue-700 mt-1 block">
+                    Tambahan lembur jika lupa absen
+                  </span>
                 </div>
               </div>
 
+              {/* 5. BONUS LEMBUR 4 JAM */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Bonus Lembur Hari Biasa ≥ 4 Jam / Libur (Rp)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-800">
+                    Bonus Lembur &ge; 4 Jam (Rp)
+                  </label>
+                  <div className="flex gap-1.5">
+                    {editingItem.pay_system_snapshot === "HARIAN" ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditBonus(5000)}
+                        className="rounded-md border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100"
+                      >
+                        ⚡ +Rp 5.000
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEditBonus(17500)}
+                        className="rounded-md border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100"
+                      >
+                        ⚡ +Rp 17.500
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEditBonus(0)}
+                      className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100"
+                    >
+                      Rp 0
+                    </button>
+                  </div>
+                </div>
                 <input
                   name="overtime_bonus"
                   type="number"
                   step="any"
                   value={editBonus}
                   onChange={(e) => setEditBonus(Number(e.target.value) || 0)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
                 />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Berlaku jika lembur hari kerja biasa &ge; 4 jam (lewat jam 17:00 / 15:00) atau lembur Minggu lewat jam 17:00 &ge; 4 jam (pulang &ge; 21:00).
+                </p>
               </div>
 
-              {/* Potongan Kasbon */}
-              <div className="grid grid-cols-2 gap-2.5">
+              {/* 6. POTONGAN KASBON */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-rose-700 mb-1">Potongan Kasbon Kantor (Rp)</label>
+                  <label className="block font-bold text-rose-700 mb-1">
+                    Potongan Kasbon Kantor (Rp)
+                  </label>
                   <input
                     name="kasbon_perusahaan_amount"
                     type="number"
                     step="any"
                     value={editKasbonPerusahaan}
                     onChange={(e) => setEditKasbonPerusahaan(Number(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 font-semibold text-rose-700 shadow-2xs focus:border-rose-500 focus:outline-none"
+                    className="w-full rounded-xl border border-rose-200 bg-white px-3.5 py-2 font-bold text-rose-700 shadow-2xs focus:border-rose-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-amber-700 mb-1">Potongan Kasbon Warung (Rp)</label>
+                  <label className="block font-bold text-amber-700 mb-1">
+                    Potongan Warung Luar (Rp)
+                  </label>
                   <input
                     name="kasbon_warung_amount"
                     type="number"
                     step="any"
                     value={editKasbonWarung}
                     onChange={(e) => setEditKasbonWarung(Number(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 font-semibold text-amber-700 shadow-2xs focus:border-amber-500 focus:outline-none"
+                    className="w-full rounded-xl border border-amber-200 bg-white px-3.5 py-2 font-bold text-amber-700 shadow-2xs focus:border-amber-500 focus:outline-none"
                   />
                 </div>
               </div>
 
-              {/* Live Preview Box */}
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 space-y-1 text-emerald-950 font-medium">
+              {/* 7. LIVE SUMMARY PREVIEW */}
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5 space-y-1.5 text-emerald-950 font-medium shadow-2xs">
                 <div className="flex justify-between text-[11px]">
                   <span>Total Upah Bruto Baru:</span>
                   <span className="font-bold">{money(calcGross)}</span>
                 </div>
                 <div className="flex justify-between text-[11px] text-rose-700">
-                  <span>Total Potongan:</span>
+                  <span>Total Potongan Kasbon & Warung:</span>
                   <span className="font-bold">-{money(calcDeduction)}</span>
                 </div>
-                <div className="flex justify-between text-xs font-black text-emerald-800 border-t border-emerald-200/80 pt-1 mt-1">
+                <div className="flex justify-between text-xs sm:text-sm font-black text-emerald-800 border-t border-emerald-200/90 pt-1.5 mt-1">
                   <span>Perkiraan Gaji Bersih (Net):</span>
                   <span>{money(calcNet)}</span>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setEditingItem(null)}
@@ -1254,7 +1369,7 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700 shadow-xs transition"
+                  className="rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 shadow-xs transition"
                 >
                   💾 Simpan Koreksi Gaji
                 </button>
