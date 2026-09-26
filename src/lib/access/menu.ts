@@ -148,7 +148,6 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("sablon", "Sablon"),
       item("permintaanProduksi", "Permintaan Barang"),
       item("spk", "Surat Perintah Kerja"),
-      item("setoran", "Gaji & Pekerjaan Saya"),
       item("produksi", "Siap Produksi"),
       item("borongan", "Setoran Borongan"),
       item("hasilProduksi", "Hasil Produksi"),
@@ -196,8 +195,9 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
     id: "sdmPayroll",
     text: "SDM & Payroll",
     children: [
-      item("absensi", "Absensi"),
+      item("setoran", "Gaji & Pekerjaan Saya"),
       item("payroll", "Payroll & Slip Gaji"),
+      item("absensi", "Absensi"),
       item("kasbon", "Kasbon"),
       item("warung", "Kasbon Warung Luar"),
     ],
