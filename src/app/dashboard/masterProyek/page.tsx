@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import {
   EmptyState,
   Field,
@@ -70,7 +71,12 @@ export default async function MasterProyekPage({ searchParams }: Props) {
     ].every((permission) => access.permissionCodes.includes(permission));
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
-  const categoryParam = (param(params, "category") || "").toUpperCase();
+  const cookieStore = await cookies();
+  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+  const rawCategory = param(params, "category");
+  const categoryParam = rawCategory
+    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
+    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
   const page = positivePage(param(params, "page", "1"));
   const { from, to } = pageRange(page);
 
@@ -141,11 +147,32 @@ export default async function MasterProyekPage({ searchParams }: Props) {
     ),
   );
 
+  const pageEyebrow =
+    categoryParam === "HAJI"
+      ? "Master Data Haji"
+      : categoryParam === "REGULER"
+      ? "Master Data Reguler"
+      : "Master Data";
+
+  const pageTitle =
+    categoryParam === "HAJI"
+      ? "Master Proyek (Haji & Embarkasi)"
+      : categoryParam === "REGULER"
+      ? "Master Proyek (Pesanan Reguler)"
+      : "Master Proyek";
+
+  const pageDesc =
+    categoryParam === "HAJI"
+      ? "Data induk proyek khusus Haji & Distribusi Embarkasi Kemenag. Hanya menampilkan proyek Haji sesuai ruang kerja aktif."
+      : categoryParam === "REGULER"
+      ? "Data induk proyek khusus Pesanan Reguler, Seminar, Sekolah & Maklon. Hanya menampilkan proyek Reguler sesuai ruang kerja aktif."
+      : "Data induk proyek terpadu (Haji & Embarkasi vs Pesanan Reguler). Dilengkapi filter kategori, audit, dan repeat order.";
+
   return (
     <MasterPageShell
-      eyebrow="Master Data"
-      title="Master Proyek"
-      description="Data induk proyek terpadu (Haji & Embarkasi vs Pesanan Reguler). Dilengkapi filter kategori, audit, dan repeat order."
+      eyebrow={pageEyebrow}
+      title={pageTitle}
+      description={pageDesc}
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
@@ -204,21 +231,17 @@ export default async function MasterProyekPage({ searchParams }: Props) {
       ) : null}
 
       <SectionCard
-        title="Daftar Proyek"
-        description={`${count ?? 0} proyek ditemukan${categoryParam ? ` (Kategori: ${categoryParam})` : ""}`}
+        title={
+          categoryParam === "HAJI"
+            ? "Daftar Proyek Haji & Embarkasi"
+            : categoryParam === "REGULER"
+            ? "Daftar Proyek Reguler / Umum"
+            : "Daftar Semua Proyek"
+        }
+        description={`${count ?? 0} proyek ditemukan${categoryParam ? ` (Ruang Kerja: ${categoryParam})` : " (Semua Kategori)"}`}
       >
         {/* Kategori Filter Tabs */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <Link
-            href={`/dashboard/masterProyek${q ? `?q=${encodeURIComponent(q)}` : ""}`}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
-              !categoryParam
-                ? "bg-slate-900 text-white shadow-sm ring-1 ring-slate-900"
-                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-            }`}
-          >
-            <span>🌐</span> Semua Kategori
-          </Link>
           <Link
             href={`/dashboard/masterProyek?category=HAJI${q ? `&q=${encodeURIComponent(q)}` : ""}`}
             className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
@@ -238,6 +261,16 @@ export default async function MasterProyekPage({ searchParams }: Props) {
             }`}
           >
             <span>🎒</span> Proyek Reguler / Umum
+          </Link>
+          <Link
+            href={`/dashboard/masterProyek?category=ALL${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+              !categoryParam
+                ? "bg-slate-900 text-white shadow-sm ring-1 ring-slate-900"
+                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+            }`}
+          >
+            <span>🌐</span> Semua Kategori (Campuran)
           </Link>
         </div>
 

@@ -41,12 +41,14 @@ export function MasterKebutuhanFilter({
   initialProjectId,
   initialProductId,
   initialQ,
+  initialCategory,
 }: {
   projects: ProjectRef[];
   products: ProductRef[];
   initialProjectId: number;
   initialProductId: number;
   initialQ: string;
+  initialCategory?: string;
 }) {
   const router = useRouter();
   const [selectedProjectId, setSelectedProjectId] = useState<number>(initialProjectId || 0);
@@ -60,18 +62,19 @@ export function MasterKebutuhanFilter({
 
   const itemPekerjaanHref =
     selectedProjectId && selectedProductId
-      ? `/dashboard/masterItem?project=${selectedProjectId}&product=${selectedProductId}`
+      ? `/dashboard/masterItem?project=${selectedProjectId}&product=${selectedProductId}${initialCategory ? `&category=${initialCategory}` : ""}`
       : "/dashboard/masterItem";
 
   const routingHref =
     selectedProjectId && selectedProductId
-      ? `/dashboard/masterItem/routing?project=${selectedProjectId}&product=${selectedProductId}`
+      ? `/dashboard/masterItem/routing?project=${selectedProjectId}&product=${selectedProductId}${initialCategory ? `&category=${initialCategory}` : ""}`
       : "/dashboard/masterItem/routing";
 
   function handleProjectChange(projectId: number) {
     setSelectedProjectId(projectId);
     setSelectedProductId(0);
     const params = new URLSearchParams();
+    if (initialCategory) params.set("category", initialCategory);
     if (projectId) params.set("project", String(projectId));
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
     router.push(params.toString() ? `/dashboard/masterKebutuhan?${params.toString()}` : "/dashboard/masterKebutuhan");
@@ -83,6 +86,7 @@ export function MasterKebutuhanFilter({
     const projId = p?.project_id || selectedProjectId;
     if (projId && !selectedProjectId) setSelectedProjectId(projId);
     const params = new URLSearchParams();
+    if (initialCategory) params.set("category", initialCategory);
     if (projId) params.set("project", String(projId));
     if (productId > 0) params.set("product", String(productId));
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
@@ -92,6 +96,7 @@ export function MasterKebutuhanFilter({
   function handleFilterSubmit(e: React.FormEvent) {
     e.preventDefault();
     const params = new URLSearchParams();
+    if (initialCategory) params.set("category", initialCategory);
     if (selectedProjectId) params.set("project", String(selectedProjectId));
     if (selectedProductId) params.set("product", String(selectedProductId));
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
@@ -102,7 +107,8 @@ export function MasterKebutuhanFilter({
     setSelectedProjectId(0);
     setSelectedProductId(0);
     setSearchQuery("");
-    router.push("/dashboard/masterKebutuhan");
+    const resetUrl = initialCategory ? `/dashboard/masterKebutuhan?category=${initialCategory}` : "/dashboard/masterKebutuhan";
+    router.push(resetUrl);
   }
 
   return (

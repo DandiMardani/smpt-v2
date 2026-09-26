@@ -15,6 +15,8 @@ import {
 import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
+import { resolveProjectCategory } from "@/lib/project-category";
 import {
   cleanSearch,
   formatNumber,
@@ -79,6 +81,12 @@ export default async function MasterItemPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("master_item.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
+  const cookieStore = await cookies();
+  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+  const rawCategory = param(params, "category");
+  const categoryParam = rawCategory
+    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
+    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
   let selectedProject = Number(param(params, "project")) || 0;
   const selectedProduct = Number(param(params, "product")) || 0;
 
@@ -92,7 +100,10 @@ export default async function MasterItemPage({ searchParams }: Props) {
   if (projectResult.error) throw new Error(`Referensi proyek gagal dimuat: ${projectResult.error.message}`);
   if (productResult.error) throw new Error(`Referensi Produk gagal dimuat: ${productResult.error.message}`);
 
-  const projects = (projectResult.data ?? []) as ProjectRef[];
+  const rawProjects = (projectResult.data ?? []) as ProjectRef[];
+  const projects = categoryParam
+    ? rawProjects.filter((p) => resolveProjectCategory(p) === categoryParam)
+    : rawProjects;
   const products = (productResult.data ?? []) as ProductRef[];
   const projectMap = new Map(projects.map((item) => [item.id, item]));
   const productMap = new Map(products.map((item) => [item.id, item]));
@@ -100,6 +111,11 @@ export default async function MasterItemPage({ searchParams }: Props) {
   const currentProduct = selectedProduct ? productMap.get(selectedProduct) : undefined;
   if (currentProduct && !selectedProject) {
     selectedProject = currentProduct.project_id;
+  }
+  if (selectedProject && !projectMap.has(selectedProject)) {
+    selectedProject = projects[0]?.id || 0;
+  } else if (!selectedProject && projects.length > 0) {
+    selectedProject = projects[0]?.id || 0;
   }
   const currentProject = selectedProject ? projectMap.get(selectedProject) : undefined;
 
@@ -191,10 +207,24 @@ export default async function MasterItemPage({ searchParams }: Props) {
       ? `/dashboard/masterKebutuhan?project=${selectedProject}&product=${selectedProduct}`
       : "/dashboard/masterKebutuhan";
 
+  const pageEyebrow =
+    categoryParam === "HAJI"
+      ? "Master Data Haji"
+      : categoryParam === "REGULER"
+      ? "Master Data Reguler"
+      : "Master Data";
+
+  const pageTitle =
+    categoryParam === "HAJI"
+      ? "Item & Tarif Pekerjaan (Proyek Haji)"
+      : categoryParam === "REGULER"
+      ? "Item & Tarif Pekerjaan (Proyek Reguler)"
+      : "Master Item Pekerjaan & Modal Upah";
+
   return (
     <MasterPageShell
-      eyebrow="Master Data"
-      title="Master Item Pekerjaan & Modal Upah"
+      eyebrow={pageEyebrow}
+      title={pageTitle}
       description="Kalkulasi modal upah operator dan harga pengajuan borongan baik secara global per Project maupun rincian per Produk."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
@@ -207,6 +237,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
         initialProjectId={selectedProject}
         initialProductId={selectedProduct}
         initialQ={q}
+        initialCategory={categoryParam}
       />
 
       {/* SCENARIO 1: SPECIFIC PRODUCT SELECTED -> TAMPILKAN RINCIAN MODAL PRODUK & DAFTAR ITEM */}

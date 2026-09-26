@@ -159,6 +159,8 @@ export function DashboardShell({
   const [userDropdownOpen, setUserDropdownOpen] = useState<boolean>(false);
   const [sidebarFilter, setSidebarFilter] = useState<string>("");
   const [activeFlyoutGroup, setActiveFlyoutGroup] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [mobileOpenGroups, setMobileOpenGroups] = useState<Record<string, boolean>>({});
 
   const userDropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +177,9 @@ export function DashboardShell({
         savedWorkspace === "SDM"
       ) {
         setWorkspace(savedWorkspace);
+        document.cookie = `smpt_workspace=${savedWorkspace}; path=/; max-age=31536000; SameSite=Lax`;
+      } else {
+        document.cookie = `smpt_workspace=REGULER; path=/; max-age=31536000; SameSite=Lax`;
       }
       const savedCollapsed = localStorage.getItem("smpt_sidebar_collapsed");
       if (savedCollapsed !== null) {
@@ -193,8 +198,14 @@ export function DashboardShell({
     setWorkspace(mode);
     try {
       localStorage.setItem("smpt_workspace", mode);
+      document.cookie = `smpt_workspace=${mode}; path=/; max-age=31536000; SameSite=Lax`;
     } catch {}
   }, []);
+
+  const isLinkActive = useCallback((href: string) => {
+    const [hrefPath] = href.split("?");
+    return pathname === hrefPath;
+  }, [pathname]);
 
   const getNextWorkspace = useCallback(
     (current: "REGULER" | "HAJI" | "GUDANG" | "SDM"): "REGULER" | "HAJI" | "GUDANG" | "SDM" => {
@@ -655,7 +666,7 @@ export function DashboardShell({
             <nav className="space-y-1.5">
               {filteredSidebarEntries.map((entry) => {
                 if (entry.type === "item") {
-                  const active = pathname === entry.href;
+                  const active = isLinkActive(entry.href);
                   return (
                     <Link
                       key={entry.id}
@@ -682,14 +693,18 @@ export function DashboardShell({
                 // Group item
                 const hasActiveChild = entry.children.some((child) =>
                   child.type === "item"
-                    ? child.href === pathname
-                    : child.children.some((sub) => sub.href === pathname)
+                    ? isLinkActive(child.href)
+                    : child.children.some((sub) => isLinkActive(sub.href))
                 );
 
                 return (
                   <details
                     key={entry.id}
-                    open={hasActiveChild || Boolean(sidebarFilter) || undefined}
+                    open={Boolean(sidebarFilter) || (openGroups[entry.id] ?? true)}
+                    onToggle={(e) => {
+                      const isOpen = e.currentTarget.open;
+                      setOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
+                    }}
                     className="group/group rounded-xl transition"
                   >
                     <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 hover:text-slate-800 transition [&::-webkit-details-marker]:hidden">
@@ -706,7 +721,7 @@ export function DashboardShell({
                       >
                         <path
                           fillRule="evenodd"
-                          d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                          d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 01-1.06-.02z"
                           clipRule="evenodd"
                         />
                       </svg>
@@ -715,7 +730,7 @@ export function DashboardShell({
                     <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-4">
                       {entry.children.map((child) => {
                         if (child.type === "item") {
-                          const active = pathname === child.href;
+                          const active = isLinkActive(child.href);
                           const count = badgeCounts[child.id] ?? 0;
                           return (
                             <Link
@@ -767,7 +782,7 @@ export function DashboardShell({
                             </summary>
                             <div className="mt-0.5 space-y-0.5 pl-2">
                               {child.children.map((subItem) => {
-                                const active = pathname === subItem.href;
+                                const active = isLinkActive(subItem.href);
                                 const count = badgeCounts[subItem.id] ?? 0;
                                 return (
                                   <Link
@@ -808,7 +823,7 @@ export function DashboardShell({
             <nav className="flex flex-col items-center space-y-2">
               {effectiveMenuEntries.map((entry) => {
                 if (entry.type === "item") {
-                  const active = pathname === entry.href;
+                  const active = isLinkActive(entry.href);
                   return (
                     <Link
                       key={entry.id}
@@ -833,8 +848,8 @@ export function DashboardShell({
                 // Group icon with flyout
                 const hasActive = entry.children.some((child) =>
                   child.type === "item"
-                    ? child.href === pathname
-                    : child.children.some((sub) => sub.href === pathname)
+                    ? isLinkActive(child.href)
+                    : child.children.some((sub) => isLinkActive(sub.href))
                 );
                 const isFlyoutOpen = activeFlyoutGroup === entry.id;
 
@@ -888,7 +903,7 @@ export function DashboardShell({
                         </div>
                         <div className="max-h-80 overflow-y-auto space-y-1">
                           {flatGroupLinks.map((link) => {
-                            const isLinkActive = pathname === link.href;
+                            const isItemActive = isLinkActive(link.href);
                             const count = badgeCounts[link.id] ?? 0;
                             return (
                               <Link
@@ -896,7 +911,7 @@ export function DashboardShell({
                                 href={link.href}
                                 onClick={() => setActiveFlyoutGroup(null)}
                                 className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                                  isLinkActive
+                                  isItemActive
                                     ? "bg-blue-600 text-white font-bold"
                                     : "text-slate-700 hover:bg-slate-100"
                                 }`}
@@ -905,7 +920,7 @@ export function DashboardShell({
                                 {count > 0 ? (
                                   <span
                                     className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold ${
-                                      isLinkActive
+                                      isItemActive
                                         ? "bg-white text-blue-700"
                                         : "bg-amber-100 text-amber-900 border border-amber-300"
                                     }`}
@@ -1486,7 +1501,7 @@ export function DashboardShell({
               <nav className="space-y-1.5">
                 {effectiveMenuEntries.map((entry) => {
                   if (entry.type === "item") {
-                    const active = pathname === entry.href;
+                    const active = isLinkActive(entry.href);
                     return (
                       <Link
                         key={entry.id}
@@ -1505,7 +1520,15 @@ export function DashboardShell({
                   }
 
                   return (
-                    <details key={entry.id} className="group rounded-xl">
+                    <details
+                      key={entry.id}
+                      open={mobileOpenGroups[entry.id] ?? true}
+                      onToggle={(e) => {
+                        const isOpen = e.currentTarget.open;
+                        setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
+                      }}
+                      className="group rounded-xl"
+                    >
                       <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
                         <span>{entry.text}</span>
                         <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition" viewBox="0 0 20 20" fill="currentColor">
@@ -1515,7 +1538,7 @@ export function DashboardShell({
                       <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-3">
                         {entry.children.map((child) => {
                           if (child.type === "item") {
-                            const active = pathname === child.href;
+                            const active = isLinkActive(child.href);
                             return (
                               <Link
                                 key={child.id}
@@ -1538,7 +1561,7 @@ export function DashboardShell({
                                   href={sub.href}
                                   onClick={() => setMobileOpen(false)}
                                   className={`flex items-center justify-between rounded-lg px-2 py-1 text-xs ${
-                                    pathname === sub.href ? "bg-blue-600 text-white font-bold" : "text-slate-600 hover:bg-slate-100"
+                                    isLinkActive(sub.href) ? "bg-blue-600 text-white font-bold" : "text-slate-600 hover:bg-slate-100"
                                   }`}
                                 >
                                   <span>{sub.text}</span>
@@ -1588,6 +1611,7 @@ export function DashboardShell({
 
         {/* Dynamic Context Shortcut based on active workspace */}
         {workspace === "HAJI" && (
+          <>
           <Link
             href="/dashboard/spk"
             className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
@@ -1601,18 +1625,39 @@ export function DashboardShell({
             </svg>
             <span>SPK</span>
           </Link>
-        )}
-
-        {workspace === "REGULER" && (
           <Link
-            href="/dashboard/produksiReguler"
-            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
-              pathname.startsWith("/dashboard/produksiReguler") ? "text-indigo-700 bg-indigo-50/80" : "text-slate-500 hover:text-slate-900"
+            href="/dashboard/qc"
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+              pathname.startsWith("/dashboard/qc") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
             }`}
           >
-            <span className="text-sm leading-none">⚡</span>
-            <span>Setoran</span>
+            <span className="text-sm leading-none">🔍</span>
+            <span>QC</span>
           </Link>
+        </>
+      )}
+
+        {workspace === "REGULER" && (
+          <>
+            <Link
+              href="/dashboard/produksiReguler"
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+                pathname.startsWith("/dashboard/produksiReguler") ? "text-indigo-700 bg-indigo-50/80" : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              <span className="text-sm leading-none">⚡</span>
+              <span>Setoran</span>
+            </Link>
+            <Link
+              href="/dashboard/qc"
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+                pathname.startsWith("/dashboard/qc") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              <span className="text-sm leading-none">🔍</span>
+              <span>QC</span>
+            </Link>
+          </>
         )}
 
         {workspace === "GUDANG" && (

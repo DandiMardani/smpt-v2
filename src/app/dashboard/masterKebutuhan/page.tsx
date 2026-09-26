@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import {
   EmptyState,
   Field,
@@ -15,6 +16,7 @@ import {
 import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { resolveProjectCategory } from "@/lib/project-category";
 import {
   cleanSearch,
   formatNumber,
@@ -87,6 +89,12 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("master_kebutuhan.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
+  const cookieStore = await cookies();
+  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+  const rawCategory = param(params, "category");
+  const categoryParam = rawCategory
+    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
+    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
   let selectedProject = Number(param(params, "project")) || 0;
   const selectedProduct = Number(param(params, "product")) || 0;
 
@@ -103,7 +111,10 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
   if (productResult.error) throw new Error(`Referensi Produk gagal dimuat: ${productResult.error.message}`);
   if (materialResult.error) throw new Error(`Referensi bahan gagal dimuat: ${materialResult.error.message}`);
 
-  const projects = (projectResult.data ?? []) as ProjectRef[];
+  const rawProjects = (projectResult.data ?? []) as ProjectRef[];
+  const projects = categoryParam
+    ? rawProjects.filter((p) => resolveProjectCategory(p) === categoryParam)
+    : rawProjects;
   const products = (productResult.data ?? []) as ProductRef[];
   const materials = (materialResult.data ?? []) as MaterialRef[];
   const projectMap = new Map(projects.map((item) => [item.id, item]));
@@ -113,6 +124,11 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
   const currentProduct = selectedProduct ? productMap.get(selectedProduct) : undefined;
   if (currentProduct && !selectedProject) {
     selectedProject = currentProduct.project_id;
+  }
+  if (selectedProject && !projectMap.has(selectedProject)) {
+    selectedProject = projects[0]?.id || 0;
+  } else if (!selectedProject && projects.length > 0) {
+    selectedProject = projects[0]?.id || 0;
   }
   const currentProject = selectedProject ? projectMap.get(selectedProject) : undefined;
 
@@ -236,20 +252,34 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
 
   const itemPekerjaanHref =
     selectedProject && selectedProduct
-      ? `/dashboard/masterItem?project=${selectedProject}&product=${selectedProduct}`
+      ? `/dashboard/masterItem?project=${selectedProject}&product=${selectedProduct}${categoryParam ? `&category=${categoryParam}` : ""}`
       : selectedProject
-      ? `/dashboard/masterItem?project=${selectedProject}`
-      : "/dashboard/masterItem";
+      ? `/dashboard/masterItem?project=${selectedProject}${categoryParam ? `&category=${categoryParam}` : ""}`
+      : `/dashboard/masterItem${categoryParam ? `?category=${categoryParam}` : ""}`;
 
   const routingHref =
     selectedProject && selectedProduct
-      ? `/dashboard/masterItem/routing?project=${selectedProject}&product=${selectedProduct}`
-      : "/dashboard/masterItem/routing";
+      ? `/dashboard/masterItem/routing?project=${selectedProject}&product=${selectedProduct}${categoryParam ? `&category=${categoryParam}` : ""}`
+      : `/dashboard/masterItem/routing${categoryParam ? `?category=${categoryParam}` : ""}`;
+
+  const pageEyebrow =
+    categoryParam === "HAJI"
+      ? "Master Data Haji"
+      : categoryParam === "REGULER"
+      ? "Master Data Reguler"
+      : "Master Data";
+
+  const pageTitle =
+    categoryParam === "HAJI"
+      ? "Kebutuhan Bahan (BOM) & HPP - Proyek Haji"
+      : categoryParam === "REGULER"
+      ? "Kebutuhan Bahan (BOM) & HPP - Proyek Reguler"
+      : "Master Kebutuhan Bahan (BOM) & HPP Produksi";
 
   return (
     <MasterPageShell
-      eyebrow="Master Data"
-      title="Master Kebutuhan Bahan (BOM) & HPP Produksi"
+      eyebrow={pageEyebrow}
+      title={pageTitle}
       description="Kalkulasi modal belanja bahan baku, ongkos tukang operator (dari Item Pekerjaan), serta Grand Total Modal HPP Produksi baik secara Global se-Proyek maupun rincian per Produk."
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
@@ -262,6 +292,7 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
         initialProjectId={selectedProject}
         initialProductId={selectedProduct}
         initialQ={q}
+        initialCategory={categoryParam}
       />
 
       {/* SCENARIO 1: SPECIFIC PRODUCT SELECTED -> RINCIAN MODAL BAHAN, ONGKOS TUKANG, HPP PER PRODUK */}
@@ -289,7 +320,7 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
 
             <div className="flex flex-wrap items-center gap-2">
               <Link
-                href={`/dashboard/masterKebutuhan?project=${selectedProject}`}
+                href={`/dashboard/masterKebutuhan?project=${selectedProject}${categoryParam ? `&category=${categoryParam}` : ""}`}
                 className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
               >
                 📊 Lihat Modal Global Proyek

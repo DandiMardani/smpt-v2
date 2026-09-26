@@ -20,7 +20,8 @@ import {
   type SearchParams,
   totalPages,
 } from "@/lib/master/page-utils";
-import { formatProjectOption } from "@/lib/project-category";
+import { cookies } from "next/headers";
+import { formatProjectOption, resolveProjectCategory } from "@/lib/project-category";
 import { createProjectProduct } from "./actions";
 import { ProductUnifiedClient } from "./product-unified-client";
 
@@ -50,31 +51,26 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("master_produk_proyek.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
+  const cookieStore = await cookies();
+  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+  const rawCategory = param(params, "category");
+  const categoryParam = rawCategory
+    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
+    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
   const selectedProject = Number(param(params, "project")) || 0;
   const page = positivePage(param(params, "page", "1"));
   const { from, to } = pageRange(page, 20);
 
   const supabase = await createClient();
 
-  let query = supabase
-    .from("project_products")
-    .select("id, product_code, project_id, name, target_production, unit, status, notes", { count: "exact" })
-    .order("project_id", { ascending: true })
-    .order("name", { ascending: true });
-
-  if (selectedProject > 0) query = query.eq("project_id", selectedProject);
-  if (q) query = query.or(`product_code.ilike.%${q}%,name.ilike.%${q}%`);
-
   const [
     projectResult,
-    productResult,
     materialResult,
     bomResult,
     cutResult,
     itemResult,
   ] = await Promise.all([
     supabase.rpc("master_reference_projects"),
-    query.range(from, to),
     supabase.from("materials").select("id, material_code, name, standard_unit").order("name").limit(1000),
     supabase.from("bom_requirements").select("id, project_id, product_id, material_id, component_name, qty_per_unit, unit").eq("status", "AKTIF").limit(3000),
     supabase.from("cutting_components").select("id, project_id, product_id, component_code, name, qty_per_product, unit, color").eq("status", "AKTIF").limit(3000),
@@ -82,9 +78,34 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
   ]);
 
   if (projectResult.error) throw new Error(`Referensi proyek gagal dimuat: ${projectResult.error.message}`);
+
+  const rawProjects = (projectResult.data ?? []) as ProjectRef[];
+  const projects = categoryParam
+    ? rawProjects.filter((p) => resolveProjectCategory(p) === categoryParam)
+    : rawProjects;
+  const scopedProjectIds = projects.map((p) => p.id);
+
+  let query = supabase
+    .from("project_products")
+    .select("id, product_code, project_id, name, target_production, unit, status, notes", { count: "exact" })
+    .order("project_id", { ascending: true })
+    .order("name", { ascending: true });
+
+  if (selectedProject > 0) {
+    query = query.eq("project_id", selectedProject);
+  } else if (categoryParam) {
+    if (scopedProjectIds.length > 0) {
+      query = query.in("project_id", scopedProjectIds);
+    } else {
+      query = query.eq("project_id", -1);
+    }
+  }
+
+  if (q) query = query.or(`product_code.ilike.%${q}%,name.ilike.%${q}%`);
+
+  const productResult = await query.range(from, to);
   if (productResult.error) throw new Error(`Produk gagal dimuat: ${productResult.error.message}`);
 
-  const projects = (projectResult.data ?? []) as ProjectRef[];
   const rows = (productResult.data ?? []) as ProductRow[];
   const materials = (materialResult.data ?? []) as any[];
   const boms = (bomResult.data ?? []) as any[];
@@ -93,11 +114,32 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
   const count = productResult.count ?? 0;
   const pages = totalPages(count, 20);
 
+  const pageEyebrow =
+    categoryParam === "HAJI"
+      ? "Master Data Haji"
+      : categoryParam === "REGULER"
+      ? "Master Data Reguler"
+      : "Master Data Terpadu";
+
+  const pageTitle =
+    categoryParam === "HAJI"
+      ? "Master Produk Proyek Haji"
+      : categoryParam === "REGULER"
+      ? "Master Produk Proyek Reguler"
+      : "Master Produk & Spesifikasi Terpadu";
+
+  const pageDesc =
+    categoryParam === "HAJI"
+      ? "Katalog produk tas Haji beserta Kebutuhan Bahan (BOM), Komponen Potong (Cutting), dan Ongkos Jahit Operator."
+      : categoryParam === "REGULER"
+      ? "Katalog produk tas pesanan umum/reguler beserta BOM, cutting, dan tarif pekerjaan terpadu."
+      : "Kelola produk tas beserta Kebutuhan Bahan (BOM), Komponen Potong (Cutting), dan Ongkos Jahit Operator langsung di 1 halaman terpusat.";
+
   return (
     <MasterPageShell
-      eyebrow="Master Data Terpadu"
-      title="Master Produk & Spesifikasi Terpadu"
-      description="Kelola produk tas beserta Kebutuhan Bahan (BOM), Komponen Potong (Cutting), dan Ongkos Jahit Operator langsung di 1 halaman terpusat."
+      eyebrow={pageEyebrow}
+      title={pageTitle}
+      description={pageDesc}
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}

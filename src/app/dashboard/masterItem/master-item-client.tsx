@@ -34,12 +34,14 @@ export function MasterItemFilter({
   initialProjectId,
   initialProductId,
   initialQ,
+  initialCategory,
 }: {
   projects: ProjectRef[];
   products: ProductRef[];
   initialProjectId: number;
   initialProductId: number;
   initialQ: string;
+  initialCategory?: string;
 }) {
   const router = useRouter();
   const [selectedProjectId, setSelectedProjectId] = useState<number>(initialProjectId || 0);
@@ -53,18 +55,19 @@ export function MasterItemFilter({
 
   const routingHref =
     selectedProjectId && selectedProductId
-      ? `/dashboard/masterItem/routing?project=${selectedProjectId}&product=${selectedProductId}`
+      ? `/dashboard/masterItem/routing?project=${selectedProjectId}&product=${selectedProductId}${initialCategory ? `&category=${initialCategory}` : ""}`
       : "/dashboard/masterItem/routing";
 
   const kebutuhanHref =
     selectedProjectId && selectedProductId
-      ? `/dashboard/masterKebutuhan?project=${selectedProjectId}&product=${selectedProductId}`
+      ? `/dashboard/masterKebutuhan?project=${selectedProjectId}&product=${selectedProductId}${initialCategory ? `&category=${initialCategory}` : ""}`
       : "/dashboard/masterKebutuhan";
 
   function handleProjectChange(projectId: number) {
     setSelectedProjectId(projectId);
     setSelectedProductId(0);
     const params = new URLSearchParams();
+    if (initialCategory) params.set("category", initialCategory);
     if (projectId) params.set("project", String(projectId));
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
     router.push(params.toString() ? `/dashboard/masterItem?${params.toString()}` : "/dashboard/masterItem");
@@ -76,6 +79,7 @@ export function MasterItemFilter({
     const projId = p?.project_id || selectedProjectId;
     if (projId && !selectedProjectId) setSelectedProjectId(projId);
     const params = new URLSearchParams();
+    if (initialCategory) params.set("category", initialCategory);
     if (projId) params.set("project", String(projId));
     if (productId > 0) params.set("product", String(productId));
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
@@ -85,6 +89,7 @@ export function MasterItemFilter({
   function handleFilterSubmit(e: React.FormEvent) {
     e.preventDefault();
     const params = new URLSearchParams();
+    if (initialCategory) params.set("category", initialCategory);
     if (selectedProjectId) params.set("project", String(selectedProjectId));
     if (selectedProductId) params.set("product", String(selectedProductId));
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
@@ -95,7 +100,8 @@ export function MasterItemFilter({
     setSelectedProjectId(0);
     setSelectedProductId(0);
     setSearchQuery("");
-    router.push("/dashboard/masterItem");
+    const resetUrl = initialCategory ? `/dashboard/masterItem?category=${initialCategory}` : "/dashboard/masterItem";
+    router.push(resetUrl);
   }
 
   return (

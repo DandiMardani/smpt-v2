@@ -84,12 +84,12 @@ function hrefFor(menuId: string): string {
   return menuId === "dashboard" ? "/dashboard" : `/dashboard/${menuId}`;
 }
 
-function item(id: string, text: string): MenuLeaf {
+function item(id: string, text: string, customHref?: string): MenuLeaf {
   return {
     type: "item",
     id,
     text,
-    href: hrefFor(id),
+    href: customHref || hrefFor(id),
   };
 }
 
@@ -229,10 +229,10 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
     id: "masterData",
     text: "Master Data Haji",
     children: [
-      item("masterProyek", "Master Proyek"),
-      item("masterItem", "Item & Tarif Pekerjaan"),
-      item("masterKebutuhan", "Kebutuhan Bahan & BOM"),
-      item("masterProdukProyek", "Master Produk Proyek"),
+      item("masterProyek", "Master Proyek", "/dashboard/masterProyek?category=HAJI"),
+      item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=HAJI"),
+      item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=HAJI"),
+      item("masterProdukProyek", "Master Produk Proyek", "/dashboard/masterProdukProyek?category=HAJI"),
       item("masterEmbarkasi", "Master Embarkasi"),
     ],
   },
@@ -244,7 +244,7 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
       item("cutting", "Cutting"),
       item("sablon", "Sablon"),
       item("permintaanProduksi", "Permintaan Bahan SPV"),
-      item("spk", "Surat Perintah Kerja (SPK)"),
+      item("spk", "Surat Perintah Kerja (SPK)", "/dashboard/spk?category=HAJI"),
       item("produksi", "Siap Produksi"),
       item("borongan", "Setoran Borongan"),
       item("hasilProduksi", "Hasil Produksi & Checker"),
@@ -256,7 +256,7 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
     id: "qcLogistik",
     text: "QC & Distribusi Embarkasi",
     children: [
-      item("qc", "Quality Control"),
+      item("qc", "Quality Control", "/dashboard/qc?category=HAJI"),
       item("masterSet", "Master Set"),
       item("packingSet", "Packing Set"),
       item("stokSet", "Stok Set"),
@@ -285,10 +285,10 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     id: "masterData",
     text: "Master Data Proyek",
     children: [
-      item("masterProyek", "Master Proyek"),
-      item("masterProdukProyek", "Produk & Spesifikasi"),
-      item("masterItem", "Item & Tarif Pekerjaan"),
-      item("masterKebutuhan", "Kebutuhan Bahan & BOM"),
+      item("masterProyek", "Master Proyek", "/dashboard/masterProyek?category=REGULER"),
+      item("masterProdukProyek", "Produk & Spesifikasi", "/dashboard/masterProdukProyek?category=REGULER"),
+      item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=REGULER"),
+      item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=REGULER"),
     ],
   },
   {
@@ -299,6 +299,7 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
       item("cutting", "Cutting / Potong"),
       item("sablon", "Sablon"),
       item("produksiReguler", "⚡ Setoran Jahit Cepat"),
+      item("qc", "🔍 Quality Control (QC)", "/dashboard/qc?category=REGULER"),
       item("hasilProduksi", "Rekap Hasil Produksi"),
       item("manufaktur", "Subkon & Maklon Luar"),
     ],
@@ -308,7 +309,7 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     id: "qcLogistik",
     text: "QC, Packing & Kirim Klien",
     children: [
-      item("qc", "🔍 Quality Control (QC)"),
+      item("qc", "🔍 Quality Control (QC)", "/dashboard/qc?category=REGULER"),
       item("pengirimanKlien", "🚚 Surat Jalan & Kirim Klien"),
     ],
   },

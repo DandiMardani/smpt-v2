@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { cookies } from "next/headers";
 import { Flow, Notice, PageShell, ReadOnly } from "@/components/final/final-ui";
 import { SpkManager, type SpkOrder } from "@/components/spk/spk-manager";
 import { requirePermission } from "@/lib/access/current-user";
@@ -12,6 +14,12 @@ export default async function Page({ searchParams }: Props) {
   const access = await requirePermission("spk.view");
   const canWrite = access.permissionCodes.includes("spk.write");
   const q = await searchParams;
+  const cookieStore = await cookies();
+  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+  const rawCategory = param(q, "category");
+  const categoryParam = rawCategory
+    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
+    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
   const s = await createClient();
 
   const [pr, ppr, wr, ir, or, oir, checkerRes] = await Promise.all([
@@ -27,8 +35,14 @@ export default async function Page({ searchParams }: Props) {
   const err = [pr.error, ppr.error, wr.error, ir.error, or.error, oir.error, checkerRes.error].find(Boolean);
   if (err) throw new Error(err.message);
 
-  const activeProjects = (pr.data ?? [])
+  const allProjectsRaw = (pr.data ?? []) as any[];
+  const projectCategoryMap = new Map<number, "HAJI" | "REGULER">(
+    allProjectsRaw.map((p) => [p.id, resolveProjectCategory(p)])
+  );
+
+  const activeProjects = allProjectsRaw
     .filter((x: any) => !["SELESAI", "NONAKTIF", "BATAL", "DIBATALKAN"].includes(String(x.status ?? "").trim().toUpperCase()))
+    .filter((x: any) => !categoryParam || resolveProjectCategory(x) === categoryParam)
     .map((x: any) => {
       const cat = resolveProjectCategory(x);
       return {
@@ -89,7 +103,11 @@ export default async function Page({ searchParams }: Props) {
   const rawOrders = (or.data ?? []) as any[];
   const rawItems = (oir.data ?? []) as any[];
 
-  const orders: SpkOrder[] = rawOrders.map((o) => ({
+  const filteredRawOrders = categoryParam
+    ? rawOrders.filter((o) => projectCategoryMap.get(o.project_id) === categoryParam)
+    : rawOrders;
+
+  const orders: SpkOrder[] = filteredRawOrders.map((o) => ({
     id: o.id,
     spk_code: o.spk_code,
     order_date: o.order_date,
@@ -116,14 +134,64 @@ export default async function Page({ searchParams }: Props) {
       })),
   }));
 
+  const pageEyebrow =
+    categoryParam === "HAJI"
+      ? "Produksi Haji"
+      : categoryParam === "REGULER"
+      ? "Produksi Reguler"
+      : "Produksi";
+
+  const pageTitle =
+    categoryParam === "HAJI"
+      ? "Surat Perintah Kerja (SPK) - Proyek Haji"
+      : categoryParam === "REGULER"
+      ? "Surat Perintah Kerja (SPK) - Proyek Reguler"
+      : "Surat Perintah Kerja (SPK)";
+
   return (
     <PageShell
-      eyebrow="Produksi"
-      title="Surat Perintah Kerja (SPK)"
+      eyebrow={pageEyebrow}
+      title={pageTitle}
       description="Kelola penugasan kerja borongan operator jahit. Alur terpadu satu langkah: pilih proyek, produk, operator, centang item pekerjaan, dan terbitkan langsung atau simpan draft."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
+
+      {/* Category Tabs */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 mb-4">
+        <Link
+          href="/dashboard/spk?category=ALL"
+          className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all ${
+            categoryParam === ""
+              ? "bg-slate-800 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          🌐 Semua Kategori (Campuran)
+        </Link>
+        <Link
+          href="/dashboard/spk?category=HAJI"
+          className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 ${
+            categoryParam === "HAJI"
+              ? "bg-emerald-600 text-white shadow-xs"
+              : "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+          }`}
+        >
+          <span>🕋</span>
+          <span>Proyek Haji</span>
+        </Link>
+        <Link
+          href="/dashboard/spk?category=REGULER"
+          className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 ${
+            categoryParam === "REGULER"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100"
+          }`}
+        >
+          <span>🎒</span>
+          <span>Proyek Reguler</span>
+        </Link>
+      </div>
 
       <Flow>
         Alur SPK: Supervisor membuat SPK untuk 1 Proyek + 1 Produk + 1 Operator Borongan. Centang item pekerjaan yang diserahkan dan isi Qty Penugasan. Klik <b>Simpan & Terbitkan</b> untuk langsung mengaktifkan SPK agar operator dapat mulai menyetor hasil kerja di Pekerjaan Saya.
