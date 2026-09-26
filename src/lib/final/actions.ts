@@ -214,6 +214,84 @@ export async function updatePayrollItemAction(f: FormData) {
   }, "Koreksi upah dan rincian payroll berhasil disimpan.");
 }
 
+export async function syncPayrollAdvancesAction(f: FormData) {
+  const path = "/dashboard/payroll";
+  await mutate(path, "payroll.write", async () => {
+    const s = await createClient();
+    const runId = id(f, "run_id");
+
+    const { error: rpcErr } = await s.rpc("smpt_sync_payroll_run_advances", { p_run_id: runId });
+    if (rpcErr) {
+      const { data: runItems, error: itemsErr } = await s
+        .from("payroll_run_items")
+        .select("id, worker_id, base_amount, meal_amount, overtime_amount, manual_overtime_amount, overtime_bonus, holiday_bonus")
+        .eq("payroll_run_id", runId);
+
+      if (itemsErr || !runItems) throw new Error(itemsErr?.message || "Gagal memuat rincian payroll.");
+
+      const workerIds = runItems.map((i) => i.worker_id);
+      const { data: advances } = await s
+        .from("cash_advances")
+        .select("id, worker_id, amount, paid_amount, category, installment_amount")
+        .in("worker_id", workerIds)
+        .eq("status", "AKTIF");
+
+      const advList = advances ?? [];
+      let totalRunGross = 0;
+      let totalRunDeduction = 0;
+      let totalRunNet = 0;
+
+      for (const it of runItems) {
+        const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
+        const kasbonP = workerAdvs
+          .filter((a) => a.category === "KASBON_PERUSAHAAN")
+          .reduce((sum, a) => {
+            const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
+            const inst = Number(a.installment_amount || 0);
+            return sum + (inst > 0 ? Math.min(inst, rem) : rem);
+          }, 0);
+
+        const kasbonW = workerAdvs
+          .filter((a) => a.category === "KASBON_WARUNG")
+          .reduce((sum, a) => sum + Math.max(0, Number(a.amount) - Number(a.paid_amount)), 0);
+
+        const gross =
+          Number(it.base_amount || 0) +
+          Number(it.meal_amount || 0) +
+          Number(it.overtime_amount || 0) +
+          Number(it.manual_overtime_amount || 0) +
+          Number(it.overtime_bonus || 0) +
+          Number(it.holiday_bonus || 0);
+        const deduction = kasbonP + kasbonW;
+        const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
+
+        totalRunGross += gross;
+        totalRunDeduction += deduction;
+        totalRunNet += net;
+
+        await s
+          .from("payroll_run_items")
+          .update({
+            kasbon_perusahaan_amount: kasbonP,
+            kasbon_warung_amount: kasbonW,
+            deduction_amount: deduction,
+            net_amount: net,
+          })
+          .eq("id", it.id);
+      }
+
+      await s
+        .from("payroll_runs")
+        .update({
+          total_gross: totalRunGross,
+          total_deduction: totalRunDeduction,
+          total_net: totalRunNet,
+        })
+        .eq("id", runId);
+    }
+  }, "Berhasil menyinkronkan saldo kasbon kantor & warung terbaru ke slip gaji periode ini.");
+}
+
 export async function updateOperatorPayrollItemAction(f: FormData) {
   const path = "/dashboard/payroll";
   await mutate(path, "payroll.write", async () => {

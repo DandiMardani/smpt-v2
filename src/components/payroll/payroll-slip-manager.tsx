@@ -6,6 +6,7 @@ import {
   updatePayrollItemAction,
   updateOperatorPayrollItemAction,
   togglePayrollPaymentStatusAction,
+  syncPayrollAdvancesAction,
 } from "@/lib/final/actions";
 
 export type PayrollRunRow = {
@@ -89,6 +90,16 @@ type Props = {
   operatorRuns?: OperatorRunRow[];
   operatorItems?: OperatorItemRow[];
   workers: WorkerInfo[];
+  activeAdvances?: Array<{
+    id: number;
+    worker_id: number;
+    amount: number | string;
+    paid_amount: number | string;
+    category: string;
+    warung_name?: string | null;
+    installment_amount?: number | string;
+    status: string;
+  }>;
   currentWorkerId?: number | null;
   canWrite?: boolean;
 };
@@ -235,9 +246,31 @@ export function PayrollSlipManager({
   operatorRuns = [],
   operatorItems = [],
   workers,
+  activeAdvances = [],
   currentWorkerId,
   canWrite = false,
 }: Props) {
+  // Peta saldo kasbon aktif terkini per pekerja (Kasbon Kantor & Bon Warung)
+  const activeAdvancesByWorker = useMemo(() => {
+    const map = new Map<number, { kasbonP: number; kasbonW: number; warungNames: string[] }>();
+    for (const a of activeAdvances) {
+      if (a.status !== "AKTIF") continue;
+      const cur = map.get(a.worker_id) || { kasbonP: 0, kasbonW: 0, warungNames: [] };
+      const rem = Math.max(0, num(a.amount) - num(a.paid_amount));
+      if (a.category === "KASBON_PERUSAHAAN") {
+        const inst = num(a.installment_amount);
+        cur.kasbonP += inst > 0 ? Math.min(inst, rem) : rem;
+      } else if (a.category === "KASBON_WARUNG") {
+        cur.kasbonW += rem;
+        if (a.warung_name && !cur.warungNames.includes(a.warung_name)) {
+          cur.warungNames.push(a.warung_name);
+        }
+      }
+      map.set(a.worker_id, cur);
+    }
+    return map;
+  }, [activeAdvances]);
+
   // Mode Kategori Tab: HARIAN (Mingguan) | BULANAN | BORONGAN
   const defaultCategory = useMemo<"HARIAN" | "BULANAN" | "BORONGAN">(() => {
     if (currentWorkerId) {
@@ -1046,9 +1079,23 @@ export function PayrollSlipManager({
               Daftar Penerima Upah ({runItems.length} Pekerja)
               {filterMySlipOnly ? " · Difilter: Hanya Slip Saya" : ""}
             </h4>
-            <span className="text-xs text-slate-500">
-              Periode: <b>{selectedRun?.period_start} s/d {selectedRun?.period_end}</b>
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-500">
+                Periode: <b>{selectedRun?.period_start} s/d {selectedRun?.period_end}</b>
+              </span>
+              {canWrite && selectedRun ? (
+                <form action={syncPayrollAdvancesAction}>
+                  <input type="hidden" name="run_id" value={selectedRun.id} />
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 border border-amber-300 hover:bg-amber-100 shadow-2xs transition cursor-pointer"
+                    title="Tarik & sinkronkan ulang tagihan Kasbon Kantor & Bon Warung terbaru dari database ke periode ini"
+                  >
+                    <span>🔄</span> Sinkronkan Kasbon & Warung
+                  </button>
+                </form>
+              ) : null}
+            </div>
           </div>
 
           {runItems.length === 0 ? (
@@ -1140,9 +1187,22 @@ export function PayrollSlipManager({
                         <span className="font-bold text-rose-600 truncate block">
                           {num(item.deduction_amount) > 0 ? `-${money(item.deduction_amount)}` : "-"}
                         </span>
-                        <span className="text-[10px] text-slate-500 block">
-                          {num(item.kasbon_perusahaan_amount) > 0 ? `Kantor ${money(item.kasbon_perusahaan_amount)}` : "Lunas"}
-                        </span>
+                        <div className="text-[10px] text-slate-500 space-y-0.5">
+                          {num(item.kasbon_perusahaan_amount) > 0 ? (
+                            <span className="block text-rose-600 font-medium">Kantor {money(item.kasbon_perusahaan_amount)}</span>
+                          ) : null}
+                          {num(item.kasbon_warung_amount) > 0 ? (
+                            <span className="block text-amber-700 font-semibold">Warung {money(item.kasbon_warung_amount)}</span>
+                          ) : null}
+                          {num(item.kasbon_perusahaan_amount) === 0 && num(item.kasbon_warung_amount) === 0 ? (
+                            <span>Bebas Kasbon</span>
+                          ) : null}
+                          {num(item.kasbon_warung_amount) === 0 && (activeAdvancesByWorker.get(item.worker_id)?.kasbonW || 0) > 0 ? (
+                            <span className="inline-block mt-0.5 rounded bg-amber-100 text-amber-800 px-1 py-0.2 text-[9px] font-bold border border-amber-300">
+                              ⚠️ Bon Warung {money(activeAdvancesByWorker.get(item.worker_id)?.kasbonW || 0)}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -1366,7 +1426,14 @@ export function PayrollSlipManager({
               {/* 5. Potongan Kasbon */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-rose-700 mb-1">Kasbon Kantor (Rp)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-rose-700">Kasbon Kantor (Rp)</label>
+                    {editingItem && (activeAdvancesByWorker.get(editingItem.worker_id)?.kasbonP || 0) > 0 ? (
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                        Cicilan: {money(activeAdvancesByWorker.get(editingItem.worker_id)?.kasbonP || 0)}
+                      </span>
+                    ) : null}
+                  </div>
                   <input
                     name="kasbon_perusahaan_amount"
                     type="number"
@@ -1377,15 +1444,53 @@ export function PayrollSlipManager({
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-amber-700 mb-1">Kasbon Warung (Rp)</label>
-                  <input
-                    name="kasbon_warung_amount"
-                    type="number"
-                    step="any"
-                    value={editKasbonWarung}
-                    onChange={(e) => setEditKasbonWarung(Number(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-amber-200 bg-white px-3.5 py-2 font-bold text-amber-700 shadow-2xs focus:border-amber-500 focus:outline-none"
-                  />
+                  {(() => {
+                    const wDebt = editingItem ? (activeAdvancesByWorker.get(editingItem.worker_id)?.kasbonW || 0) : 0;
+                    const wNames = editingItem ? activeAdvancesByWorker.get(editingItem.worker_id)?.warungNames.join(", ") : "";
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-bold text-amber-700">Kasbon Warung (Rp)</label>
+                          {wDebt > 0 ? (
+                            <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                              Ada Bon: {money(wDebt)}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-semibold">
+                              Portal: Rp 0
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          name="kasbon_warung_amount"
+                          type="number"
+                          step="any"
+                          value={editKasbonWarung}
+                          onChange={(e) => setEditKasbonWarung(Number(e.target.value) || 0)}
+                          className="w-full rounded-xl border border-amber-200 bg-white px-3.5 py-2 font-bold text-amber-700 shadow-2xs focus:border-amber-500 focus:outline-none"
+                        />
+                        {wDebt > 0 ? (
+                          <div className="mt-1.5 flex items-center justify-between rounded-lg bg-amber-50 p-2 border border-amber-200 text-[11px] text-amber-900">
+                            <span>
+                              Tagihan di Portal: <b>{money(wDebt)}</b>
+                              {wNames ? ` (${wNames})` : ""}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setEditKasbonWarung(wDebt)}
+                              className="ml-2 shrink-0 rounded-md bg-amber-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-amber-700 shadow-2xs transition cursor-pointer"
+                            >
+                              ⚡ Terapkan
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-[10.5px] text-slate-500 leading-tight">
+                            💡 Kasbon warung dicatat dari menu <b>Portal Warung Luar</b>. Jika belum diinput untuk pekerja ini, saldo tercatat Rp 0 atau Anda dapat mengisinya manual di sini.
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

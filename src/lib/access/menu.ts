@@ -306,8 +306,9 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
   {
     type: "group",
     id: "qcLogistik",
-    text: "Logistik & Kirim Klien",
+    text: "QC, Packing & Kirim Klien",
     children: [
+      item("qc", "🔍 Quality Control (QC)"),
       item("pengirimanKlien", "🚚 Surat Jalan & Kirim Klien"),
     ],
   },

@@ -54,7 +54,16 @@ export default async function Page({ searchParams }: Props) {
   const q = await searchParams;
   const supabase = await createClient();
 
-  const [payrollRunResult, payrollItemResult, operatorRunResult, operatorItemResult, workersResult, workerIdResult, settingsResult] = await Promise.all([
+  const [
+    payrollRunResult,
+    payrollItemResult,
+    operatorRunResult,
+    operatorItemResult,
+    workersResult,
+    workerIdResult,
+    settingsResult,
+    advancesResult,
+  ] = await Promise.all([
     supabase.from("payroll_runs").select("*").order("period_end", { ascending: false }).limit(100),
     supabase.from("payroll_run_items").select("*").limit(2000),
     supabase.from("operator_payroll_runs").select("*").order("period_end", { ascending: false }).limit(100),
@@ -62,6 +71,11 @@ export default async function Page({ searchParams }: Props) {
     supabase.from("workers").select("id, worker_code, name, phone, department, position, identity_no, pay_system"),
     supabase.rpc("smpt_current_worker_id"),
     supabase.from("payroll_settings").select("key, value_numeric, value_text"),
+    supabase
+      .from("cash_advances")
+      .select("id, worker_id, amount, paid_amount, category, warung_name, installment_amount, status")
+      .eq("status", "AKTIF")
+      .limit(2000),
   ]);
   const error = [payrollRunResult.error, payrollItemResult.error, operatorRunResult.error, operatorItemResult.error, workersResult.error].find(Boolean);
   if (error) throw new Error(error.message);
@@ -72,6 +86,7 @@ export default async function Page({ searchParams }: Props) {
   const operatorRuns = (operatorRunResult.data ?? []) as OperatorRun[];
   const operatorItems = (operatorItemResult.data ?? []) as OperatorItem[];
   const currentWorkerId = (workerIdResult.data as number | null) ?? null;
+  const activeAdvances = (advancesResult.data ?? []) as any[];
   const operatorRunMap = new Map(operatorRuns.map((run) => [run.id, run]));
 
   const settingsRows = (settingsResult.data ?? []) as Array<{ key: string; value_numeric: number | null; value_text: string | null }>;
@@ -128,6 +143,7 @@ export default async function Page({ searchParams }: Props) {
               operatorRuns={operatorRuns}
               operatorItems={operatorItems}
               workers={workers}
+              activeAdvances={activeAdvances}
               currentWorkerId={currentWorkerId}
               canWrite={canWrite}
             />
