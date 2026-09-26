@@ -337,7 +337,6 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
       item("barangMasukGudang", "Barang Masuk Gudang"),
       item("barangKeluarGudang", "Barang Keluar Gudang"),
       item("stokGudang", "Stok Gudang Material"),
-      item("barangLuar", "Pembelian Barang Jadi"),
       item("procurement", "Procurement / PO"),
     ],
   },
@@ -359,6 +358,7 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     text: "Logistik & Kirim Klien",
     children: [
       item("stokBarangJadi", "Stok Barang Jadi"),
+      item("barangLuar", "Penerimaan Barang Jadi Luar"),
       item("pengirimanKlien", "🚚 Surat Jalan & Kirim Klien"),
       item("transferBarangJadi", "Transfer Antar Gudang"),
     ],
