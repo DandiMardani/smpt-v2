@@ -50,6 +50,7 @@ export type WorkerInfo = {
   department?: string | null;
   position?: string | null;
   identity_no?: string | null;
+  pay_system?: string | null;
 };
 
 type Props = {
@@ -282,13 +283,23 @@ function renderSlipCanvas(run: PayrollRunRow, item: PayrollItemRow, worker?: Wor
 }
 
 export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Props) {
-  const [selectedRunId, setSelectedRunId] = useState<number>(runs[0]?.id ?? 0);
+  // Cari run yang berisi slip pekerja login atau gunakan run terbaru
+  const initialRunId = useMemo(() => {
+    if (!runs.length) return 0;
+    if (currentWorkerId) {
+      const match = items.find((it) => it.worker_id === currentWorkerId);
+      if (match) return match.payroll_run_id;
+    }
+    return runs[0].id;
+  }, [runs, items, currentWorkerId]);
+
+  const [selectedRunId, setSelectedRunId] = useState<number>(initialRunId);
   const [activeItem, setActiveItem] = useState<PayrollItemRow | null>(null);
   const [waPhone, setWaPhone] = useState("");
   const [waModalOpen, setWaModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [filterMySlipOnly, setFilterMySlipOnly] = useState<boolean>(Boolean(currentWorkerId));
+  const [filterMySlipOnly, setFilterMySlipOnly] = useState<boolean>(false);
   const printFrameRef = useRef<HTMLIFrameElement>(null);
 
   const workerMap = useMemo(() => {
@@ -301,15 +312,23 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Pr
     return runs.find((r) => r.id === selectedRunId) || runs[0] || null;
   }, [runs, selectedRunId]);
 
+  const allRunItems = useMemo(() => {
+    if (!selectedRun) return [];
+    return items.filter((it) => it.payroll_run_id === selectedRun.id);
+  }, [items, selectedRun]);
+
+  const myItemInSelectedRun = useMemo(() => {
+    if (!currentWorkerId) return null;
+    return allRunItems.find((it) => it.worker_id === currentWorkerId) || null;
+  }, [allRunItems, currentWorkerId]);
+
   const runItems = useMemo(() => {
     if (!selectedRun) return [];
-    let list = items.filter((it) => it.payroll_run_id === selectedRun.id);
     if (filterMySlipOnly && currentWorkerId) {
-      const filtered = list.filter((it) => it.worker_id === currentWorkerId);
-      if (filtered.length > 0) return filtered;
+      return allRunItems.filter((it) => it.worker_id === currentWorkerId);
     }
-    return list;
-  }, [items, selectedRun, filterMySlipOnly, currentWorkerId]);
+    return allRunItems;
+  }, [allRunItems, filterMySlipOnly, currentWorkerId, selectedRun]);
 
   const openSlip = (item: PayrollItemRow) => {
     setActiveItem(item);
@@ -572,28 +591,53 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Pr
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={selectedRun?.id ?? 0}
-              onChange={(e) => setSelectedRunId(Number(e.target.value))}
+              onChange={(e) => {
+                setSelectedRunId(Number(e.target.value));
+                setFilterMySlipOnly(false);
+              }}
               className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 shadow-xs focus:border-blue-500 focus:outline-none"
             >
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.payroll_code} • {r.payroll_type} ({r.period_start} s/d {r.period_end})
-                </option>
-              ))}
+              {runs.map((r) => {
+                const count = items.filter((it) => it.payroll_run_id === r.id).length;
+                const hasMySlip = currentWorkerId ? items.some((it) => it.payroll_run_id === r.id && it.worker_id === currentWorkerId) : false;
+                return (
+                  <option key={r.id} value={r.id}>
+                    {r.payroll_code} • {r.payroll_type} ({r.period_start} s/d {r.period_end}) — {count} Penerima Upah{hasMySlip ? " ★ (Slip Saya Ada)" : ""}
+                  </option>
+                );
+              })}
             </select>
 
             {currentWorkerId ? (
-              <button
-                type="button"
-                onClick={() => setFilterMySlipOnly(!filterMySlipOnly)}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition shadow-xs ${
-                  filterMySlipOnly
-                    ? "border-blue-600 bg-blue-600 text-white"
-                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {filterMySlipOnly ? "✓ Hanya Slip Saya" : "Lihat Slip Saya Saja"}
-              </button>
+              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-0.5 text-xs font-bold shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setFilterMySlipOnly(false)}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    !filterMySlipOnly
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  👥 Semua ({allRunItems.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterMySlipOnly(true)}
+                  className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 transition ${
+                    filterMySlipOnly
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>👤 Slip Saya</span>
+                  {myItemInSelectedRun ? (
+                    <span className="rounded-full bg-emerald-500 text-white px-1.5 py-0.2 text-[10px] font-bold">Ada</span>
+                  ) : (
+                    <span className="text-slate-400 text-[10px]">(-)</span>
+                  )}
+                </button>
+              </div>
             ) : null}
 
             {runItems.length > 0 ? (
@@ -632,12 +676,59 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Pr
 
       {/* Tabel Pekerja dalam Run */}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-        <h4 className="font-bold text-slate-900 text-sm mb-3">Daftar Penerima Upah ({runItems.length} Pekerja)</h4>
+        <h4 className="font-bold text-slate-900 text-sm mb-3">
+          Daftar Penerima Upah ({runItems.length} Pekerja)
+          {filterMySlipOnly ? " · Difilter: Hanya Slip Saya" : ""}
+        </h4>
 
         {runItems.length === 0 ? (
-          <div className="py-8 text-center text-xs text-slate-400">
-            Tidak ada data detail pekerja pada run payroll ini.
-          </div>
+          filterMySlipOnly && currentWorkerId ? (
+            <div className="py-8 px-4 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center text-xl mb-2">
+                📋
+              </div>
+              <div className="font-bold text-slate-800 text-sm">
+                Nama Anda ({workerMap.get(currentWorkerId)?.name || "Pekerja"}) Belum Terdaftar di Run Ini
+              </div>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+                Run <b>{selectedRun?.payroll_code}</b> bertipe <b>{selectedRun?.payroll_type}</b> ({selectedRun?.period_start} s/d {selectedRun?.period_end}).
+                {workerMap.get(currentWorkerId)?.pay_system === "BULANAN" && selectedRun?.payroll_type === "MINGGUAN" ? (
+                  <span>
+                    {" "}Karena Anda adalah karyawan dengan sistem upah <b>BULANAN</b>, slip Anda berada pada Run bertipe <b>BULANAN</b>. Silakan ganti pilihan Run di dropdown atas ke <b>BULANAN</b>.
+                  </span>
+                ) : (
+                  <span>
+                    {" "}Silakan klik tombol di bawah untuk melihat slip dari seluruh pekerja yang terdaftar pada run ini.
+                  </span>
+                )}
+              </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFilterMySlipOnly(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs"
+                >
+                  Tampilkan Semua Penerima Upah ({allRunItems.length} Orang)
+                </button>
+                {runs.find((r) => r.payroll_type === "BULANAN") && selectedRun?.payroll_type !== "BULANAN" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const bulananRun = runs.find((r) => r.payroll_type === "BULANAN");
+                      if (bulananRun) setSelectedRunId(bulananRun.id);
+                    }}
+                    className="rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-xs"
+                  >
+                    Buka Run BULANAN →
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-xs text-slate-400">
+              Tidak ada data detail pekerja pada run payroll ini.
+            </div>
+          )
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs">

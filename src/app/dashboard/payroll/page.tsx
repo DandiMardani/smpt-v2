@@ -16,6 +16,7 @@ import {
 } from "@/components/final/final-ui";
 import { PayrollSlipManager, type WorkerInfo, type PayrollRunRow, type PayrollItemRow } from "@/components/payroll/payroll-slip-manager";
 import PayrollSettingsModal, { type PayrollSettingsMap } from "@/components/payroll/payroll-settings-modal";
+import PayrollFinalizeForm from "@/components/payroll/payroll-finalize-form";
 import { requireAnyPermission } from "@/lib/access/current-user";
 import { finalizeOperatorPayrollAction, finalizePayrollAction } from "@/lib/final/actions";
 import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
@@ -56,7 +57,7 @@ export default async function Page({ searchParams }: Props) {
     supabase.from("payroll_run_items").select("*").limit(2000),
     supabase.from("operator_payroll_runs").select("*").order("period_end", { ascending: false }).limit(100),
     supabase.from("operator_payroll_items").select("*").order("id", { ascending: false }).limit(3000),
-    supabase.from("workers").select("id, worker_code, name, phone, department, position, identity_no"),
+    supabase.from("workers").select("id, worker_code, name, phone, department, position, identity_no, pay_system"),
     supabase.rpc("smpt_current_worker_id"),
     supabase.from("payroll_settings").select("key, value_numeric, value_text"),
   ]);
@@ -100,13 +101,7 @@ export default async function Page({ searchParams }: Props) {
       {canWrite ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card title="Finalisasi Payroll Umum">
-            <form action={finalizePayrollAction} className="grid gap-3">
-              <Field label="Jenis"><select name="payroll_type" className={inputClass}><option value="MINGGUAN">MINGGUAN / HARIAN</option><option value="BULANAN">BULANAN</option></select></Field>
-              <Field label="Periode Mulai"><input name="period_start" type="date" required className={inputClass} /></Field>
-              <Field label="Periode Selesai"><input name="period_end" type="date" required className={inputClass} /></Field>
-              <Field label="Catatan"><input name="notes" className={inputClass} /></Field>
-              <button className={buttonClass}>Finalisasi</button>
-            </form>
+            <PayrollFinalizeForm />
           </Card>
           <Card title="Finalisasi Payroll Operator / Pengajuan">
             <form action={finalizeOperatorPayrollAction} className="grid gap-3">

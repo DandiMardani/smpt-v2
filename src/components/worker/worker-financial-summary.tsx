@@ -26,6 +26,19 @@ type LoanItem = {
   notes?: string | null;
 };
 
+export type SalaryBreakdown = {
+  baseAmount: number;
+  overtimeWage: number;
+  bonus4h: number;
+  sundayMealOrBonus: number;
+  regularMeal: number;
+  totalGross: number;
+  otHourlyRate?: number;
+  count4h?: number;
+  sundayCount?: number;
+  otMinutes?: number;
+};
+
 export function WorkerFinancialSummary({
   worker,
   warungDebts,
@@ -33,6 +46,7 @@ export function WorkerFinancialSummary({
   workedDays,
   overtimeHours,
   estimatedGross,
+  breakdown,
 }: {
   worker: {
     id: number;
@@ -46,6 +60,7 @@ export function WorkerFinancialSummary({
   workedDays: number;
   overtimeHours: number;
   estimatedGross: number;
+  breakdown?: SalaryBreakdown;
 }) {
   const [showDetail, setShowDetail] = useState(false);
 
@@ -84,20 +99,54 @@ export function WorkerFinancialSummary({
           onClick={() => setShowDetail(!showDetail)}
           className="rounded-xl border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 shadow-2xs transition"
         >
-          {showDetail ? "▲ Sembunyikan Rincian" : "▼ Lihat Rincian Kasbon"}
+          {showDetail ? "▲ Sembunyikan Rincian" : "▼ Lihat Rincian Upah & Kasbon"}
         </button>
       </div>
 
       {/* 4 Primary Cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Gaji Terkumpul */}
-        <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs">
-          <div className="text-[11px] font-semibold text-gray-500">Estimasi Upah Terkumpul:</div>
-          <div className="mt-1 text-xl font-black text-blue-700">{money(estimatedGross)}</div>
-          <div className="mt-1 text-[11px] text-gray-500">
-            {workedDays > 0 ? `${workedDays} Hari Kerja` : "Gaji Pokok"}
-            {overtimeHours > 0 ? ` · Lembur ${overtimeHours} jam` : ""}
+        <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-gray-500">Estimasi Upah Terkumpul:</div>
+            <div className="mt-1 text-xl font-black text-blue-700">{money(estimatedGross)}</div>
+            <div className="mt-1 text-[11px] text-gray-500">
+              {workedDays > 0 ? `${workedDays} Hari Kerja` : "Gaji Pokok"}
+              {overtimeHours > 0 ? ` · Lembur ${overtimeHours} jam` : ""}
+            </div>
           </div>
+          {breakdown && (breakdown.overtimeWage > 0 || breakdown.bonus4h > 0 || breakdown.sundayMealOrBonus > 0 || breakdown.regularMeal > 0) ? (
+            <div className="mt-2.5 pt-2 border-t border-slate-100 text-[10px] text-slate-500 space-y-0.5">
+              <div className="flex justify-between">
+                <span>Pokok:</span>
+                <span className="font-semibold text-slate-700">{money(breakdown.baseAmount)}</span>
+              </div>
+              {breakdown.overtimeWage > 0 ? (
+                <div className="flex justify-between text-blue-600 font-semibold">
+                  <span>Lembur ({overtimeHours}h):</span>
+                  <span>+{money(breakdown.overtimeWage)}</span>
+                </div>
+              ) : null}
+              {breakdown.bonus4h > 0 ? (
+                <div className="flex justify-between text-emerald-600 font-semibold">
+                  <span>Bonus 4H ({breakdown.count4h || 1}x):</span>
+                  <span>+{money(breakdown.bonus4h)}</span>
+                </div>
+              ) : null}
+              {breakdown.sundayMealOrBonus > 0 ? (
+                <div className="flex justify-between text-indigo-600 font-semibold">
+                  <span>Makan Minggu ({breakdown.sundayCount || 1}x):</span>
+                  <span>+{money(breakdown.sundayMealOrBonus)}</span>
+                </div>
+              ) : null}
+              {breakdown.regularMeal > 0 ? (
+                <div className="flex justify-between text-amber-600 font-semibold">
+                  <span>Makan Reguler:</span>
+                  <span>+{money(breakdown.regularMeal)}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Card 2: Hutang Warung */}
@@ -197,9 +246,84 @@ export function WorkerFinancialSummary({
         </div>
       </div>
 
-      {/* Rincian Kasbon Detail Accordion */}
+      {/* Rincian Kasbon & Upah Detail Accordion */}
       {showDetail && (
         <div className="space-y-4 pt-2 border-t border-gray-200/80">
+          {/* Detail Komponen Upah & Lembur */}
+          {breakdown ? (
+            <div className="rounded-xl bg-white border border-blue-200 p-4">
+              <h3 className="font-bold text-sm text-blue-950 mb-3 flex items-center gap-1.5">
+                <span>💰</span> Rincian Komponen Upah, Lembur & Tunjangan Berjalan
+              </h3>
+              <div className="divide-y divide-gray-100 text-xs">
+                <div className="py-2 flex justify-between items-center">
+                  <div>
+                    <div className="font-bold text-gray-800">Gaji / Upah Pokok</div>
+                    <div className="text-[11px] text-gray-500">
+                      {worker.pay_system === "BULANAN" ? "Gaji pokok bulanan tetap" : `${workedDays} hari kerja`}
+                    </div>
+                  </div>
+                  <div className="font-extrabold text-gray-900">{money(breakdown.baseAmount)}</div>
+                </div>
+
+                {breakdown.overtimeWage > 0 ? (
+                  <div className="py-2 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-blue-700">Upah Lembur ({overtimeHours} Jam)</div>
+                      <div className="text-[11px] text-gray-500">
+                        {worker.pay_system === "BULANAN"
+                          ? `Rumus Bulanan: Jam lembur × (Gaji ÷ 190)`
+                          : `Rumus Harian: Jam lembur × (Upah ÷ 8)`}
+                      </div>
+                    </div>
+                    <div className="font-extrabold text-blue-700">+{money(breakdown.overtimeWage)}</div>
+                  </div>
+                ) : null}
+
+                {breakdown.bonus4h > 0 ? (
+                  <div className="py-2 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-emerald-700">Bonus Lembur ≥ 4 Jam ({breakdown.count4h || 1} Hari)</div>
+                      <div className="text-[11px] text-gray-500">
+                        {worker.pay_system === "BULANAN" ? "Tambahan Rp 17.500 per hari" : "Tambahan Rp 5.000 per hari"}
+                      </div>
+                    </div>
+                    <div className="font-extrabold text-emerald-700">+{money(breakdown.bonus4h)}</div>
+                  </div>
+                ) : null}
+
+                {breakdown.sundayMealOrBonus > 0 ? (
+                  <div className="py-2 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-indigo-700">
+                        {worker.pay_system === "BULANAN" ? "Uang Makan Lembur Hari Minggu" : "Insentif Kehadiran Hari Minggu"} ({breakdown.sundayCount || 1} Hari)
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        {worker.pay_system === "BULANAN" ? "Uang makan Rp 50.000 per hari Minggu" : "Tambahan Rp 20.000 per hari Minggu"}
+                      </div>
+                    </div>
+                    <div className="font-extrabold text-indigo-700">+{money(breakdown.sundayMealOrBonus)}</div>
+                  </div>
+                ) : null}
+
+                {breakdown.regularMeal > 0 ? (
+                  <div className="py-2 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-amber-700">Uang Makan Reguler</div>
+                      <div className="text-[11px] text-gray-500">Berdasarkan rekap hari kerja aktif</div>
+                    </div>
+                    <div className="font-extrabold text-amber-700">+{money(breakdown.regularMeal)}</div>
+                  </div>
+                ) : null}
+
+                <div className="py-2.5 flex justify-between items-center font-bold text-sm bg-blue-50/50 px-2 rounded-lg mt-1">
+                  <div className="text-blue-900">Total Upah Bruto Terkumpul</div>
+                  <div className="text-blue-900">{money(breakdown.totalGross)}</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* Detail Hutang Warung */}
           <div className="rounded-xl bg-white border border-amber-200 p-4">
             <h3 className="font-bold text-sm text-amber-950 mb-2 flex items-center gap-1.5">

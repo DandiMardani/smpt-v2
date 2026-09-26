@@ -11,15 +11,21 @@ export default async function Page() {
   const now = new Date();
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
 
-  const [wr, or, ir, cr] = await Promise.all([
+  const [wr, or, ir, cr, setRes] = await Promise.all([
     s.rpc("smpt_current_worker_id"),
     s.from("production_orders").select("*").order("order_date", { ascending: false }).limit(100),
     s.from("production_order_items").select("*").limit(500),
     s.from("production_checks").select("*").eq("status", "AKTIF").limit(1000),
+    s.from("payroll_settings").select("key, value_numeric, value_text"),
   ]);
 
   const e = [wr.error, or.error, ir.error, cr.error].find(Boolean);
   if (e) throw new Error(e.message);
+
+  const settingsMap: Record<string, any> = {};
+  (setRes.data ?? []).forEach((row: any) => {
+    settingsMap[row.key] = row.value_numeric ?? row.value_text;
+  });
 
   const workerId = wr.data;
   let workerData: any = null;
@@ -28,13 +34,14 @@ export default async function Page() {
   let workedDays = 0;
   let overtimeHours = 0;
   let estimatedGross = 0;
+  let breakdown: any = undefined;
 
   if (workerId) {
     const [rpcProfRes, wRes, advRes, attRes] = await Promise.all([
       s.rpc("smpt_get_my_worker_profile"),
       s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department").eq("id", workerId).maybeSingle(),
       s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
-      s.from("attendance_records").select("id,day_class,attendance_status,overtime_minutes,manual_overtime_hours").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth),
+      s.from("attendance_records").select("id,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth),
     ]);
 
     if (rpcProfRes.data && rpcProfRes.data.length > 0) {
@@ -51,13 +58,29 @@ export default async function Page() {
     let fullDays = 0;
     let halfDays = 0;
     let otMins = 0;
+    let count4h = 0;
+    let sundayCount = 0;
 
     for (const a of attList) {
       if (a.attendance_status === "HADIR") {
         if (a.day_class === "FULL_DAY") fullDays += 1;
         else if (a.day_class === "HALF_DAY") halfDays += 1;
       }
-      otMins += Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+      const dayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+      otMins += dayOt;
+      if (dayOt >= 240) count4h += 1;
+
+      // Check if Sunday
+      if (a.attendance_date) {
+        const parts = String(a.attendance_date).slice(0, 10).split("-");
+        const y = parseInt(parts[0], 10);
+        const m = (parseInt(parts[1], 10) || 1) - 1;
+        const d = parseInt(parts[2], 10);
+        const dow = new Date(y, m, d).getDay();
+        if (dow === 0 && (a.attendance_status === "HADIR" || dayOt > 0)) {
+          sundayCount += 1;
+        }
+      }
     }
 
     workedDays = fullDays + (halfDays * 0.5);
@@ -65,11 +88,49 @@ export default async function Page() {
 
     if (workerData) {
       if (workerData.pay_system === "BULANAN") {
-        estimatedGross = n(workerData.monthly_salary);
+        const baseAmount = n(workerData.monthly_salary);
+        const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
+        const otHourlyRate = baseAmount / Math.max(1, otDiv);
+        const overtimeWage = Math.round((otMins / 60) * otHourlyRate);
+        const bonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
+        const sundayMealOrBonus = sundayCount * Number(settingsMap.BULANAN_SUNDAY_MEAL || 50000);
+        const regularMeal = Math.round(fullDays * Number(settingsMap.MEAL_FULL || 50000) + halfDays * Number(settingsMap.MEAL_HALF || 25000));
+        estimatedGross = baseAmount + overtimeWage + bonus4h + sundayMealOrBonus + regularMeal;
+
+        breakdown = {
+          baseAmount,
+          overtimeWage,
+          bonus4h,
+          sundayMealOrBonus,
+          regularMeal,
+          totalGross: estimatedGross,
+          otHourlyRate: Math.round(otHourlyRate),
+          count4h,
+          sundayCount,
+          otMinutes: otMins,
+        };
       } else {
         const dailyWage = n(workerData.daily_wage);
-        const otWage = (otMins / 60) * (dailyWage / 7);
-        estimatedGross = (fullDays * dailyWage) + (halfDays * dailyWage * 0.5) + otWage;
+        const baseAmount = Math.round((fullDays * dailyWage) + (halfDays * dailyWage * 0.5));
+        const otDiv = Number(settingsMap.OT_DIVISOR_HARIAN || 8);
+        const otHourlyRate = dailyWage / Math.max(1, otDiv);
+        const overtimeWage = Math.round((otMins / 60) * otHourlyRate);
+        const bonus4h = count4h * Number(settingsMap.OT_BONUS_HARIAN_4H || 5000);
+        const sundayMealOrBonus = sundayCount * Number(settingsMap.HARIAN_HOLIDAY_BONUS_FULL || 20000);
+        estimatedGross = baseAmount + overtimeWage + bonus4h + sundayMealOrBonus;
+
+        breakdown = {
+          baseAmount,
+          overtimeWage,
+          bonus4h,
+          sundayMealOrBonus,
+          regularMeal: 0,
+          totalGross: estimatedGross,
+          otHourlyRate: Math.round(otHourlyRate),
+          count4h,
+          sundayCount,
+          otMinutes: otMins,
+        };
       }
     }
   }
@@ -98,6 +159,7 @@ export default async function Page() {
           workedDays={workedDays}
           overtimeHours={overtimeHours}
           estimatedGross={estimatedGross}
+          breakdown={breakdown}
         />
       ) : (
         <Card title="Status Akun Pekerja">
