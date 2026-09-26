@@ -58,6 +58,7 @@ type Props = {
   items: PayrollItemRow[];
   workers: WorkerInfo[];
   currentWorkerId?: number | null;
+  canWrite?: boolean;
 };
 
 function num(val: unknown): number {
@@ -282,7 +283,7 @@ function renderSlipCanvas(run: PayrollRunRow, item: PayrollItemRow, worker?: Wor
   return canvas;
 }
 
-export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Props) {
+export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canWrite = false }: Props) {
   // Cari run yang berisi slip pekerja login atau gunakan run terbaru
   const initialRunId = useMemo(() => {
     if (!runs.length) return 0;
@@ -301,6 +302,31 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Pr
   const [isSharing, setIsSharing] = useState(false);
   const [filterMySlipOnly, setFilterMySlipOnly] = useState<boolean>(false);
   const printFrameRef = useRef<HTMLIFrameElement>(null);
+
+  // State untuk Modal Koreksi Payroll (Khusus Admin)
+  const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null);
+  const [editBase, setEditBase] = useState<number>(0);
+  const [editMeal, setEditMeal] = useState<number>(0);
+  const [editOt, setEditOt] = useState<number>(0);
+  const [editManualOt, setEditManualOt] = useState<number>(0);
+  const [editBonus, setEditBonus] = useState<number>(0);
+  const [editKasbonPerusahaan, setEditKasbonPerusahaan] = useState<number>(0);
+  const [editKasbonWarung, setEditKasbonWarung] = useState<number>(0);
+
+  const openEditModal = (item: PayrollItemRow) => {
+    setEditingItem(item);
+    setEditBase(num(item.base_amount));
+    setEditMeal(num(item.meal_amount));
+    setEditOt(num(item.overtime_amount));
+    setEditManualOt(num(item.manual_overtime_amount));
+    setEditBonus(num(item.overtime_bonus) + num(item.holiday_bonus));
+    setEditKasbonPerusahaan(num(item.kasbon_perusahaan_amount));
+    setEditKasbonWarung(num(item.kasbon_warung_amount));
+  };
+
+  const calcGross = editBase + editMeal + editOt + editManualOt + editBonus;
+  const calcDeduction = editKasbonPerusahaan + editKasbonWarung;
+  const calcNet = Math.max(0, calcGross - calcDeduction);
 
   const workerMap = useMemo(() => {
     const map = new Map<number, WorkerInfo>();
@@ -800,6 +826,16 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Pr
                       </td>
                       <td className="px-3.5 py-2.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          {canWrite ? (
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(item)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 shadow-2xs transition"
+                              title="Koreksi Gaji Pokok, Uang Makan, atau Lembur"
+                            >
+                              ✏️ Koreksi
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => openSlip(item)}
@@ -1056,6 +1092,177 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId }: Pr
           </div>
         </div>
       ) : null}
+
+      {/* Modal Koreksi Payroll (Khusus Admin untuk sesuaikan Uang Makan & Lembur yang lupa finger) */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">
+                  ✏️ Koreksi Payroll: {editingItem.worker_name_snapshot}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {selectedRun?.payroll_code} • Sistem Upah: <b>{editingItem.pay_system_snapshot}</b>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form action={updatePayrollItemAction} className="mt-4 space-y-3.5 text-xs">
+              <input type="hidden" name="item_id" value={editingItem.id} />
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Gaji / Upah Pokok (Rp)</label>
+                <input
+                  name="base_amount"
+                  type="number"
+                  step="any"
+                  value={editBase}
+                  onChange={(e) => setEditBase(Number(e.target.value) || 0)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Uang Makan dengan tombol 1-klik jika sudah diambil mingguan */}
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-amber-950">Uang Makan (Rp)</label>
+                  <button
+                    type="button"
+                    onClick={() => setEditMeal(0)}
+                    className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100 shadow-2xs transition"
+                  >
+                    ⚡ Set Rp 0 (Sudah Diambil Mingguan)
+                  </button>
+                </div>
+                <input
+                  name="meal_amount"
+                  type="number"
+                  step="any"
+                  value={editMeal}
+                  onChange={(e) => setEditMeal(Number(e.target.value) || 0)}
+                  className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-amber-900 leading-tight">
+                  💡 <b>Penting:</b> Jika uang makan hari Minggu telah dicairkan/diambil per minggu sebelum tanggal ini, klik tombol di atas untuk mengubahnya menjadi <b>Rp 0</b> agar tidak dibayar ganda di slip bulanan.
+                </p>
+              </div>
+
+              {/* Lembur Terhitung & Lembur Manual */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Upah Lembur Sistem (Rp)
+                  </label>
+                  <input
+                    name="overtime_amount"
+                    type="number"
+                    step="any"
+                    value={editOt}
+                    onChange={(e) => setEditOt(Number(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-slate-400">Dari scan jam absensi</span>
+                </div>
+                <div>
+                  <label className="block font-bold text-blue-700 mb-1">
+                    + Koreksi Lembur Manual (Rp)
+                  </label>
+                  <input
+                    name="manual_overtime_amount"
+                    type="number"
+                    step="any"
+                    value={editManualOt}
+                    onChange={(e) => setEditManualOt(Number(e.target.value) || 0)}
+                    placeholder="Jika lupa finger..."
+                    className="w-full rounded-xl border border-blue-300 bg-white px-3 py-2 font-semibold text-blue-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-blue-600 font-medium">Bisa isi jika lupa absen</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Bonus Lembur Hari Biasa ≥ 4 Jam / Libur (Rp)
+                </label>
+                <input
+                  name="overtime_bonus"
+                  type="number"
+                  step="any"
+                  value={editBonus}
+                  onChange={(e) => setEditBonus(Number(e.target.value) || 0)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Potongan Kasbon */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-rose-700 mb-1">Potongan Kasbon Kantor (Rp)</label>
+                  <input
+                    name="kasbon_perusahaan_amount"
+                    type="number"
+                    step="any"
+                    value={editKasbonPerusahaan}
+                    onChange={(e) => setEditKasbonPerusahaan(Number(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 font-semibold text-rose-700 shadow-2xs focus:border-rose-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-amber-700 mb-1">Potongan Kasbon Warung (Rp)</label>
+                  <input
+                    name="kasbon_warung_amount"
+                    type="number"
+                    step="any"
+                    value={editKasbonWarung}
+                    onChange={(e) => setEditKasbonWarung(Number(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 font-semibold text-amber-700 shadow-2xs focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Live Preview Box */}
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 space-y-1 text-emerald-950 font-medium">
+                <div className="flex justify-between text-[11px]">
+                  <span>Total Upah Bruto Baru:</span>
+                  <span className="font-bold">{money(calcGross)}</span>
+                </div>
+                <div className="flex justify-between text-[11px] text-rose-700">
+                  <span>Total Potongan:</span>
+                  <span className="font-bold">-{money(calcDeduction)}</span>
+                </div>
+                <div className="flex justify-between text-xs font-black text-emerald-800 border-t border-emerald-200/80 pt-1 mt-1">
+                  <span>Perkiraan Gaji Bersih (Net):</span>
+                  <span>{money(calcNet)}</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700 shadow-xs transition"
+                >
+                  💾 Simpan Koreksi Gaji
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

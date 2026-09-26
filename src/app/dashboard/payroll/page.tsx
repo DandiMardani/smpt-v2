@@ -121,7 +121,7 @@ export default async function Page({ searchParams }: Props) {
       </div>
 
       {/* Slip Gaji & WhatsApp Manager */}
-      <PayrollSlipManager runs={payrollRuns} items={payrollItems} workers={workers} currentWorkerId={currentWorkerId} />
+      <PayrollSlipManager runs={payrollRuns} items={payrollItems} workers={workers} currentWorkerId={currentWorkerId} canWrite={canWrite} />
 
       <Card title="Riwayat Finalisasi Payroll Umum">
         <TableWrap>

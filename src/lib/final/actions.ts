@@ -171,7 +171,75 @@ export async function unverifyAttendanceAction(f: FormData) {
 }
 export async function finalizePayrollAction(f:FormData){await mutate("/dashboard/payroll","payroll.write",async()=>{await rpc("finalize_general_payroll",{p_type:t(f,"payroll_type"),p_start:date(f,"period_start"),p_end:date(f,"period_end"),p_notes:t(f,"notes")||null})},"Payroll difinalisasi dari absensi terverifikasi.")}
 export async function finalizeOperatorPayrollAction(f:FormData){await mutate("/dashboard/payroll","payroll.write",async()=>{await rpc("finalize_operator_payroll",{p_start:date(f,"period_start"),p_end:date(f,"period_end"),p_notes:t(f,"notes")||null})},"Payroll Operator difinalisasi dari Qty Sah Checker + hasil manual HARIAN; Nilai Operator HARIAN tetap 0 dan Nilai Pengajuan terpisah.")}
-export async function updatePayrollItemAction(f:FormData){const path="/dashboard/payroll";await mutate(path,"payroll.write",async()=>{const s=await createClient();const itemId=id(f,"item_id");const manualOt=num(f,"manual_overtime_amount",true)??0;const {data:item,error:fetchErr}=await s.from("payroll_run_items").select("*").eq("id",itemId).single();if(fetchErr||!item)throw new Error("Item payroll tidak ditemukan.");const baseGross=Number(item.base_amount||0)+Number(item.meal_amount||0)+Number(item.overtime_amount||0)+Number(item.overtime_bonus||0)+Number(item.holiday_bonus||0)+Number(item.holiday_manual_amount||0);const newGross=baseGross+manualOt;const totalDeduction=Number(item.kasbon_perusahaan_amount||0)+Number(item.kasbon_warung_amount||0)+Number(item.deduction_amount||0);const newNet=Math.max(0,newGross-totalDeduction);const {error:updateErr}=await s.from("payroll_run_items").update({manual_overtime_amount:manualOt,net_amount:newNet}).eq("id",itemId);if(updateErr)throw updateErr},"Lemburan manual payroll tersimpan.")}
+export async function updatePayrollItemAction(f: FormData) {
+  const path = "/dashboard/payroll";
+  await mutate(path, "payroll.write", async () => {
+    const s = await createClient();
+    const itemId = id(f, "item_id");
+    const { data: item, error: fetchErr } = await s
+      .from("payroll_run_items")
+      .select("*")
+      .eq("id", itemId)
+      .single();
+    if (fetchErr || !item) throw new Error("Item payroll tidak ditemukan.");
+
+    const baseAmount = num(f, "base_amount", true) ?? Number(item.base_amount || 0);
+    const mealAmount = num(f, "meal_amount", true) ?? Number(item.meal_amount || 0);
+    const overtimeAmount = num(f, "overtime_amount", true) ?? Number(item.overtime_amount || 0);
+    const manualOt = num(f, "manual_overtime_amount", true) ?? Number(item.manual_overtime_amount || 0);
+    const bonus = num(f, "overtime_bonus", true) ?? Number(item.overtime_bonus || 0);
+    const holidayBonus = num(f, "holiday_bonus", true) ?? Number(item.holiday_bonus || 0);
+    const kasbonPerusahaan = num(f, "kasbon_perusahaan_amount", true) ?? Number(item.kasbon_perusahaan_amount || 0);
+    const kasbonWarung = num(f, "kasbon_warung_amount", true) ?? Number(item.kasbon_warung_amount || 0);
+    const totalDeduction = num(f, "deduction_amount", true) ?? (kasbonPerusahaan + kasbonWarung);
+
+    const newGross = baseAmount + mealAmount + overtimeAmount + manualOt + bonus + holidayBonus;
+    const newNet = Math.max(0, newGross - totalDeduction);
+
+    const { error: updateErr } = await s
+      .from("payroll_run_items")
+      .update({
+        base_amount: baseAmount,
+        meal_amount: mealAmount,
+        overtime_amount: overtimeAmount,
+        manual_overtime_amount: manualOt,
+        overtime_bonus: bonus,
+        holiday_bonus: holidayBonus,
+        kasbon_perusahaan_amount: kasbonPerusahaan,
+        kasbon_warung_amount: kasbonWarung,
+        deduction_amount: totalDeduction,
+        net_amount: newNet,
+      })
+      .eq("id", itemId);
+    if (updateErr) throw updateErr;
+
+    // Sinkronkan total run di tabel payroll_runs
+    const { data: allRunItems } = await s
+      .from("payroll_run_items")
+      .select("base_amount, meal_amount, overtime_amount, manual_overtime_amount, overtime_bonus, holiday_bonus, deduction_amount, net_amount")
+      .eq("payroll_run_id", item.payroll_run_id);
+
+    if (allRunItems) {
+      let runGross = 0;
+      let runDeduction = 0;
+      let runNet = 0;
+      for (const it of allRunItems) {
+        const itemGross = Number(it.base_amount || 0) + Number(it.meal_amount || 0) + Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0) + Number(it.overtime_bonus || 0) + Number(it.holiday_bonus || 0);
+        runGross += itemGross;
+        runDeduction += Number(it.deduction_amount || 0);
+        runNet += Number(it.net_amount || 0);
+      }
+      await s
+        .from("payroll_runs")
+        .update({
+          total_gross: runGross,
+          total_deduction: runDeduction,
+          total_net: runNet,
+        })
+        .eq("id", item.payroll_run_id);
+    }
+  }, "Koreksi upah dan rincian payroll berhasil disimpan.");
+}
 export async function savePayrollShiftSettingsAction(f: FormData) {
   const returnPath = t(f, "return_path") || "/dashboard/payroll";
   await mutate(returnPath, "payroll.write", async () => {

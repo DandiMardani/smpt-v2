@@ -112,7 +112,8 @@ export function calculateShiftOvertime(
   if (typeof manualOvertimeMinutes === "number" && manualOvertimeMinutes > 0) {
     const otMin = Math.round(manualOvertimeMinutes);
     const otHours = Math.round((otMin / 60) * 10) / 10;
-    const qualifies4h = otMin >= 240;
+    // Bonus 4 jam (uang makan lembur Rp 17.500 / Rp 5.000) hanya berlaku untuk hari kerja biasa (Senin-Sabtu), bukan hari Minggu
+    const qualifies4h = !isSunday && otMin >= 240;
     const bonus4h = qualifies4h ? bonus4hDefault : 0;
     const sundayBonus = sundayBonusDefault;
     const sundayMeal = sundayMealDefault;
@@ -132,7 +133,9 @@ export function calculateShiftOvertime(
       sundayBonusAmount: sundayBonus,
       sundayMealAmount: sundayMeal,
       fridayOvertimeNextWeek: isFriday && otMin > 0,
-      description: `Lembur manual: ${formatMinutesToHours(otMin)}`,
+      description: isSunday
+        ? `Hari Minggu: ${formatMinutesToHours(otMin)} lembur ${isBulanan ? "+ Uang Makan Rp 50.000" : "+ Insentif Rp 20.000"}`
+        : `Lembur manual: ${formatMinutesToHours(otMin)}${qualifies4h ? (isBulanan ? " + Uang Makan Lembur Rp 17.500" : " + Bonus Rp 5.000") : ""}`,
     };
   }
 
@@ -176,7 +179,8 @@ export function calculateShiftOvertime(
   }
 
   const otHours = Math.round((calculatedOtMinutes / 60) * 10) / 10;
-  const qualifies4h = calculatedOtMinutes >= 240;
+  // Bonus 4 jam (uang makan lembur Rp 17.500 / Rp 5.000) hanya berlaku jika lembur terjadi di hari kerja biasa (Senin-Sabtu), bukan hari Minggu
+  const qualifies4h = !isSunday && calculatedOtMinutes >= 240;
   const bonus4h = qualifies4h ? bonus4hDefault : 0;
   const sundayBonus = sundayBonusDefault;
   const sundayMeal = sundayMealDefault;
