@@ -5,10 +5,11 @@ import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
 import { cancelResult, cancelUsage, recordLotUsage, recordResult, recordUsage, saveComponent } from "./actions";
+import { CuttingDailyResultForm } from "./cutting-input-client";
 
 type Props = { searchParams: Promise<SearchParams> };
 type P = { id: number; project_code: string; name: string };
-type PP = { id: number; product_code: string; project_id: number; name: string };
+type PP = { id: number; product_code: string; project_id: number; name: string; target_production?: number | string };
 type C = { id: number; component_code: string; project_id: number; product_id: number | null; name: string; qty_per_product: number | string; unit: string; color: string; status: string };
 type L = { id: number; code: string };
 type B = { id: number; material_id: number | null; location_id: number; project_id: number | null; product_id: number | null; bom_requirement_id: number | null; quantity: number | string };
@@ -23,12 +24,14 @@ const UNITS = ["METER", "YARD", "CM", "MM", "FT", "INCH", "KG", "GRAM", "MG", "T
 export default async function Page({ searchParams }: Props) {
   const a = await requirePermission("cutting.view");
   const canWrite = a.permissionCodes.includes("cutting.write");
+  const userRole = (a.role ?? "").toUpperCase();
+  const isAdmin = userRole.includes("ADMIN") || a.permissionCodes.includes("*");
   const q = await searchParams;
   const s = await createClient();
 
   const [pr, ppr, cr, lr, br, mr, bmr, ur, rr, lotr] = await Promise.all([
     s.from("projects").select("id,project_code,name").limit(300),
-    s.from("project_products").select("id,product_code,project_id,name").eq("status", "AKTIF").limit(1000),
+    s.from("project_products").select("id,product_code,project_id,name,target_production").eq("status", "AKTIF").limit(1000),
     s.from("cutting_components").select("id,component_code,project_id,product_id,name,qty_per_product,unit,color,status").order("id", { ascending: false }).limit(1200),
     s.from("stock_locations").select("id,code"),
     s.from("stock_balances").select("id,material_id,location_id,project_id,product_id,bom_requirement_id,quantity").eq("item_kind", "MATERIAL").gt("quantity", 0).limit(1500),
@@ -60,6 +63,15 @@ export default async function Page({ searchParams }: Props) {
   const activeLots = lots.filter((x) => ["AVAILABLE", "PARTIAL"].includes(x.status) && Number(x.remaining_normalized_quantity) > 0);
   const trackedKeys = new Set(activeLots.map((x) => `${x.current_project_id ?? 0}:${x.current_product_id ?? 0}:${x.material_id}:${x.current_bom_requirement_id ?? 0}`));
 
+  const resultsByComponent = new Map<number, { good: number; reject: number }>();
+  for (const r of results) {
+    if (r.status !== "AKTIF") continue;
+    const cur = resultsByComponent.get(r.cutting_component_id) || { good: 0, reject: 0 };
+    cur.good += Number(r.good_qty || 0);
+    cur.reject += Number(r.reject_qty || 0);
+    resultsByComponent.set(r.cutting_component_id, cur);
+  }
+
   return (
     <MasterPageShell
       eyebrow="Produksi"
@@ -80,8 +92,8 @@ export default async function Page({ searchParams }: Props) {
         <Metric label="Hasil Terakhir" value={results.length} />
       </div>
 
-      {canWrite ? (
-        <SectionCard title="Tambah Komponen Cutting">
+      {canWrite && isAdmin ? (
+        <SectionCard title="Tambah Komponen Cutting (Khusus Admin)">
           <form action={saveComponent} className="grid gap-3 md:grid-cols-4">
             <ProjectProductFields
               projects={projects.map((x) => ({ id: x.id, name: x.name, code: x.project_code }))}
@@ -206,39 +218,112 @@ export default async function Page({ searchParams }: Props) {
       ) : null}
 
       {canWrite ? (
-        <SectionCard title="Input Hasil Cutting">
-          <form action={recordResult} className="grid gap-3 md:grid-cols-4">
-            <Field label="Tanggal">
-              <input name="result_date" type="date" required className={inputClass} />
-            </Field>
-            <Field label="Komponen">
-              <select name="component_id" required className={inputClass}>
-                <option value="">Pilih komponen</option>
-                {comps.filter((x) => x.status === "AKTIF").map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {pm.get(x.project_id)?.name} · {ppm.get(x.product_id || 0)?.name} · {x.name}{x.color ? `/${x.color}` : ""}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Hasil Baik">
-              <input name="good_qty" type="number" min="0" step="0.0001" defaultValue="0" className={inputClass} />
-            </Field>
-            <Field label="Reject">
-              <input name="reject_qty" type="number" min="0" step="0.0001" defaultValue="0" className={inputClass} />
-            </Field>
-            <Field label="Petugas">
-              <input name="officer" required className={inputClass} />
-            </Field>
-            <Field label="Keterangan">
-              <input name="notes" className={inputClass} />
-            </Field>
-            <div className="flex items-end">
-              <button className={primaryButtonClass}>Simpan Hasil</button>
-            </div>
-          </form>
-        </SectionCard>
+        <CuttingDailyResultForm
+          projects={projects}
+          products={products}
+          components={comps}
+          defaultOfficer={a.displayName || ""}
+        />
       ) : null}
+
+      {/* Tabel Komponen Yang Sudah Di-Cutting */}
+      <SectionCard
+        title={`📊 Rekap Komponen Hasil Cutting (${comps.length})`}
+        description="Pantau progres hasil potong per komponen: perbandingan hasil baik akumulasi vs target kebutuhan produk."
+      >
+        {comps.length === 0 ? (
+          <p className="text-sm text-slate-500">Belum ada master komponen cutting yang terdaftar.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-700">
+                  <th className="p-3">Komponen</th>
+                  <th className="p-3">Proyek & Produk</th>
+                  <th className="p-3 text-right">Target Kebutuhan</th>
+                  <th className="p-3 text-right">Sudah Dipotong</th>
+                  <th className="p-3 text-right">Reject</th>
+                  <th className="p-3 text-right">Sisa Target</th>
+                  <th className="p-3 text-center">Progress</th>
+                  <th className="p-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {comps.map((c) => {
+                  const summary = resultsByComponent.get(c.id) || { good: 0, reject: 0 };
+                  const prod = c.product_id ? ppm.get(c.product_id) : undefined;
+                  const proj = pm.get(c.project_id);
+                  const targetQty = prod?.target_production
+                    ? Math.round(Number(prod.target_production) * Number(c.qty_per_product || 1))
+                    : 0;
+                  const remaining = Math.max(0, targetQty - summary.good);
+                  const progressPct =
+                    targetQty > 0
+                      ? Math.min(100, Math.round((summary.good / targetQty) * 100))
+                      : summary.good > 0
+                        ? 100
+                        : 0;
+                  const isDone = targetQty > 0 ? summary.good >= targetQty : summary.good > 0;
+
+                  return (
+                    <tr key={c.id} className="hover:bg-blue-50/20 transition">
+                      <td className="p-3">
+                        <b className="text-slate-900 font-semibold">{c.name}</b>
+                        {c.color ? <span className="ml-1 text-slate-500">({c.color})</span> : null}
+                        <p className="font-mono text-[11px] text-blue-600">{c.component_code}</p>
+                      </td>
+                      <td className="p-3">
+                        <span className="font-semibold text-slate-800">{prod?.name || "-"}</span>
+                        <p className="text-[11px] text-slate-500">{proj?.name || "Proyek"}</p>
+                      </td>
+                      <td className="p-3 text-right font-mono text-slate-600">
+                        {targetQty > 0 ? `${formatNumber(targetQty)} ${c.unit}` : "-"}
+                      </td>
+                      <td className="p-3 text-right font-mono font-black text-emerald-700">
+                        {formatNumber(summary.good)} {c.unit}
+                      </td>
+                      <td className="p-3 text-right font-mono font-medium text-rose-600">
+                        {summary.reject > 0 ? `${formatNumber(summary.reject)} ${c.unit}` : "0"}
+                      </td>
+                      <td className="p-3 text-right font-mono text-slate-700">
+                        {targetQty > 0 ? `${formatNumber(remaining)} ${c.unit}` : "-"}
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <div className="w-16 h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                isDone ? "bg-emerald-500" : progressPct > 0 ? "bg-blue-500" : "bg-slate-300"
+                              }`}
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[11px] font-semibold text-slate-700">{progressPct}%</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-center">
+                        {isDone ? (
+                          <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                            SELESAI
+                          </span>
+                        ) : summary.good > 0 ? (
+                          <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
+                            BERJALAN
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                            BELUM
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
 
       <SectionCard title="Riwayat Cutting">
         <div className="grid gap-4 xl:grid-cols-2">

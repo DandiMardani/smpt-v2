@@ -8,11 +8,11 @@ import {
   SectionCard,
 } from "@/components/master/master-ui";
 import { Badge, FlowNote } from "@/components/operations/ops-ui";
-import { ProjectProductBomFields } from "@/components/forms/project-product-fields";
 import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
-import { directIssue, fulfillRequest } from "./actions";
+import { fulfillRequest } from "./actions";
+import { DirectIssueUnifiedForm } from "./direct-issue-client";
 
 type Props = { searchParams: Promise<SearchParams> };
 type Project = { id: number; name: string };
@@ -40,15 +40,18 @@ export default async function Page({ searchParams }: Props) {
   const q = await searchParams;
   const supabase = await createClient();
 
-  const [inboxRes, projectsRes, productsRes, workersRes, bomRes] = await Promise.all([
+  const [inboxRes, projectsRes, productsRes, workersRes, bomRes, locRes, balancesRes, compsRes] = await Promise.all([
     supabase.rpc("smpt_gudang_pending_inbox"),
     supabase.from("projects").select("id,name").order("id", { ascending: false }).limit(300),
     supabase.from("project_products").select("id,project_id,name").eq("status", "AKTIF").order("id", { ascending: false }).limit(1000),
     supabase.from("workers").select("id,worker_code,name").eq("status", "AKTIF").order("name").limit(1000),
     supabase.from("bom_requirements").select("id,project_id,product_id,component_name,unit").eq("status", "AKTIF").eq("component_type", "BAHAN").limit(2000),
+    supabase.from("stock_locations").select("id,code,name,physical_group"),
+    supabase.from("stock_balances").select("id,item_kind,cutting_component_id,location_id,project_id,product_id,quantity").eq("item_kind", "CUTTING_COMPONENT").gt("quantity", 0).limit(2000),
+    supabase.from("cutting_components").select("id,component_code,name,color,unit,product_id,project_id").eq("status", "AKTIF").limit(2000),
   ]);
 
-  const error = [inboxRes.error, projectsRes.error, productsRes.error, workersRes.error, bomRes.error].find(Boolean);
+  const error = [inboxRes.error, projectsRes.error, productsRes.error, workersRes.error, bomRes.error, locRes.error, balancesRes.error, compsRes.error].find(Boolean);
   if (error) throw new Error(error.message);
 
   const inbox = (inboxRes.data ?? []) as InboxRow[];
@@ -95,16 +98,94 @@ export default async function Page({ searchParams }: Props) {
       : Number(item.available_cutting || 0);
   }
 
+  const locRows = (locRes.data ?? []) as { id: number; code: string; name: string }[];
+  const locMap = new Map(locRows.map((x) => [x.id, x]));
+  const balanceRows = (balancesRes.data ?? []) as { id: number; cutting_component_id: number; location_id: number; project_id: number | null; product_id: number | null; quantity: number | string }[];
+  const compRows = (compsRes.data ?? []) as { id: number; component_code: string; name: string; color: string; unit: string; product_id: number | null; project_id: number }[];
+  const compMap = new Map(compRows.map((x) => [x.id, x]));
+
+  const wipCuttingStocks = balanceRows
+    .filter((b) => {
+      const loc = locMap.get(b.location_id);
+      return loc?.code === "GUDANG_HASIL_BELUM" || loc?.code === "GUDANG_HASIL_SABLON";
+    })
+    .map((b) => {
+      const c = compMap.get(b.cutting_component_id);
+      const loc = locMap.get(b.location_id);
+      return {
+        id: b.id,
+        location_code: loc?.code || "",
+        location_name: loc?.name || "Gudang Hasil Potong",
+        component_id: b.cutting_component_id,
+        component_code: c?.component_code || "",
+        component_name: c?.name || "Komponen",
+        color: c?.color || "",
+        unit: c?.unit || "Pcs",
+        project_id: b.project_id,
+        project_name: b.project_id ? (projectMap.get(b.project_id)?.name || "-") : "-",
+        product_id: b.product_id,
+        product_name: b.product_id ? (productMap.get(b.product_id)?.name || "-") : "-",
+        quantity: Number(b.quantity),
+      };
+    });
+
+  const wipSablonStocks = balanceRows
+    .filter((b) => locMap.get(b.location_id)?.code === "GUDANG_HASIL_SELESAI_SABLON")
+    .map((b) => {
+      const c = compMap.get(b.cutting_component_id);
+      const loc = locMap.get(b.location_id);
+      return {
+        id: b.id,
+        location_code: loc?.code || "",
+        location_name: loc?.name || "Selesai Sablon",
+        component_id: b.cutting_component_id,
+        component_code: c?.component_code || "",
+        component_name: c?.name || "Komponen",
+        color: c?.color || "",
+        unit: c?.unit || "Pcs",
+        project_id: b.project_id,
+        project_name: b.project_id ? (projectMap.get(b.project_id)?.name || "-") : "-",
+        product_id: b.product_id,
+        product_name: b.product_id ? (productMap.get(b.product_id)?.name || "-") : "-",
+        quantity: Number(b.quantity),
+      };
+    });
+
   return (
     <MasterPageShell
       eyebrow="Gudang & Material"
-      title="Barang Keluar Gudang"
-      description="Inbox tugas Gudang. Setiap permintaan SPV yang sudah dikirim tampil di sini sampai selesai dipenuhi."
+      title="Barang Keluar Gudang (1 Pintu)"
+      description="Pusat 1 Pintu Seluruh Pengeluaran Barang Pabrik: Bahan Mentah Roll (ke Cutting), Hasil Potong (ke Sablon/Jahit), dan Hasil Sablon (ke Jahit)."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
+
+      {/* Diagram Alur 1 Pintu Logistik Pabrik */}
+      <div className="mb-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/90 to-indigo-50/70 p-4 text-xs text-slate-700 shadow-xs">
+        <div className="flex items-center gap-2 mb-2 font-bold text-blue-900 text-sm">
+          <span>🚪</span>
+          <span>Alur 1 Pintu Logistik & Pengeluaran Barang Pabrik</span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-5 text-center">
+          <div className="rounded-xl border border-blue-200/80 bg-white p-2.5 shadow-2xs">
+            <span className="font-bold text-blue-700 block">1. Bahan Roll / Kain</span>
+            <span className="text-[11px] text-slate-500">Keluar ke Cutting</span>
+          </div>
+          <div className="flex items-center justify-center font-bold text-blue-400">➔</div>
+          <div className="rounded-xl border border-amber-200/80 bg-white p-2.5 shadow-2xs">
+            <span className="font-bold text-amber-700 block">2. Gudang Hasil Potong</span>
+            <span className="text-[11px] text-slate-500">Masuk otomatis dari cutting</span>
+          </div>
+          <div className="flex items-center justify-center font-bold text-blue-400">➔ (Sablon) ➔</div>
+          <div className="rounded-xl border border-emerald-200/80 bg-white p-2.5 shadow-2xs">
+            <span className="font-bold text-emerald-700 block">3. Ke Siap Produksi</span>
+            <span className="text-[11px] text-slate-500">Keluar ke Jahit / Assembling</span>
+          </div>
+        </div>
+      </div>
+
       <FlowNote>
-        REQUEST ≠ STOCK MOVEMENT. Stok baru berubah saat Gudang menekan Keluarkan. Badge sidebar menunjukkan jumlah permintaan MENUNGGU/SEBAGIAN.
+        SEMUA PENGELUARAN 1 PINTU: Pengeluaran Bahan Mentah, Hasil Cutting, dan Hasil Sablon dapat dilakukan langsung dari halaman ini tanpa perlu membuka halaman stok terpisah.
       </FlowNote>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -276,53 +357,89 @@ export default async function Page({ searchParams }: Props) {
       </SectionCard>
 
       {canWrite ? (
-        <SectionCard
-          title="Barang Keluar Langsung"
-          description="Untuk bahan mentah/BOM yang memang tidak berasal dari dokumen Permintaan Barang."
-        >
-          <form action={directIssue} className="grid gap-3 md:grid-cols-3">
-            <Field label="Tanggal">
-              <input name="issue_date" type="date" required className={inputClass} />
-            </Field>
-            <ProjectProductBomFields
-              projects={Array.from(projectMap.values()).map((x) => ({ id:x.id, name:x.name }))}
-              products={products.filter((x) => x.project_id).map((x) => ({ id:x.id, project_id:Number(x.project_id), name:x.name }))}
-              boms={boms.map((x) => ({ id:x.id, project_id:x.project_id, product_id:x.product_id, label:`${x.component_name} (${x.unit})` }))}
-              className={inputClass}
-              productRequired={false}
-            />
-            <Field label="Tujuan">
-              <select name="purpose" className={inputClass}>
-                <option>CUTTING</option>
-                <option>SABLON</option>
-                <option>PRODUKSI</option>
-              </select>
-            </Field>
-            <Field label="Qty">
-              <input name="quantity" type="number" min="0.0001" step="0.0001" required className={inputClass} />
-            </Field>
-            <Field label="Pengambil">
-              <select name="recipient_worker_id" className={inputClass}>
-                <option value="">Manual</option>
-                {workers.map((worker) => (
-                  <option key={worker.id} value={worker.id}>
-                    {worker.worker_code} · {worker.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Nama Manual">
-              <input name="recipient_name" className={inputClass} />
-            </Field>
-            <Field label="Keterangan">
-              <input name="notes" className={inputClass} />
-            </Field>
-            <div>
-              <button className={primaryButtonClass}>Catat Barang Keluar</button>
-            </div>
-          </form>
-        </SectionCard>
+        <DirectIssueUnifiedForm
+          projects={Array.from(projectMap.values()).map((x) => ({ id: x.id, name: x.name }))}
+          products={products.filter((x) => x.project_id).map((x) => ({ id: x.id, project_id: Number(x.project_id), name: x.name }))}
+          boms={boms.map((x) => ({ id: x.id, project_id: x.project_id, product_id: x.product_id, label: `${x.component_name} (${x.unit})` }))}
+          workers={workers.map((x) => ({ id: x.id, worker_code: x.worker_code, name: x.name }))}
+          wipCuttingStocks={wipCuttingStocks}
+          wipSablonStocks={wipSablonStocks}
+        />
       ) : null}
+
+      {/* Tabel Stok Gudang Yang Siap Dikeluarkan (Bertaut Hasil Potong & Sablon) */}
+      <SectionCard
+        title={`📦 Stok Komponen di Gudang Siap Dikeluarkan (${wipCuttingStocks.length + wipSablonStocks.length})`}
+        description="Hasil cutting otomatis masuk ke sini. Bisa langsung dikeluarkan ke Sablon atau Siap Jahit / Produksi."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Kolom 1: Hasil Potong (Cutting) */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+              <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                <span>✂️</span>
+                <span>Hasil Potong (Cutting WIP)</span>
+              </span>
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
+                {wipCuttingStocks.length} Komponen
+              </span>
+            </div>
+            {wipCuttingStocks.length === 0 ? (
+              <p className="text-xs text-slate-400 py-3 text-center">Belum ada stok hasil potong di gudang.</p>
+            ) : (
+              <div className="space-y-2">
+                {wipCuttingStocks.map((w) => (
+                  <div key={w.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 text-xs">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <b className="text-slate-900">{w.component_name}</b>
+                        {w.color ? <span className="text-slate-500"> ({w.color})</span> : null}
+                        <p className="text-[11px] text-slate-500">{w.product_name} · {w.project_name}</p>
+                      </div>
+                      <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        {formatNumber(w.quantity)} {w.unit}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Kolom 2: Selesai Sablon */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+              <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                <span>🎨</span>
+                <span>Hasil Sablon di Gudang</span>
+              </span>
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                {wipSablonStocks.length} Komponen
+              </span>
+            </div>
+            {wipSablonStocks.length === 0 ? (
+              <p className="text-xs text-slate-400 py-3 text-center">Belum ada stok selesai sablon di gudang.</p>
+            ) : (
+              <div className="space-y-2">
+                {wipSablonStocks.map((w) => (
+                  <div key={w.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 text-xs">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <b className="text-slate-900">{w.component_name}</b>
+                        {w.color ? <span className="text-slate-500"> ({w.color})</span> : null}
+                        <p className="text-[11px] text-slate-500">{w.product_name} · {w.project_name}</p>
+                      </div>
+                      <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {formatNumber(w.quantity)} {w.unit}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </SectionCard>
     </MasterPageShell>
   );
 }

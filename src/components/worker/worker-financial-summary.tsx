@@ -218,9 +218,9 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
   const displayedKasbonPerusahaan = officialSlip && officialSlip.kasbonPerusahaanAmount !== undefined
     ? officialSlip.kasbonPerusahaanAmount
     : (isBulanan ? activeCompanyInstallment : totalCompanyLoan);
-  const displayedKasbonWarung = officialSlip && officialSlip.kasbonWarungAmount !== undefined
-    ? officialSlip.kasbonWarungAmount
-    : totalWarung;
+  const displayedKasbonWarung = totalWarung > 0
+    ? totalWarung
+    : (officialSlip && officialSlip.kasbonWarungAmount !== undefined ? officialSlip.kasbonWarungAmount : 0);
 
   return (
     <div className="space-y-5">
@@ -424,7 +424,19 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
               </div>
               <div className="mt-1 text-2xl font-black text-amber-800">{money(displayedKasbonWarung)}</div>
               <div className="mt-1 text-[11px] text-amber-900">
-                {officialSlip ? "Potongan resmi tercantum di slip" : "Otomatis dipotong saat payroll"}
+                {officialSlip && (officialSlip.kasbonWarungAmount || 0) > 0 ? (
+                  <span>
+                    Dipotong di slip resmi: <b>{money(officialSlip.kasbonWarungAmount || 0)}</b>
+                  </span>
+                ) : officialSlip && totalWarung > 0 ? (
+                  <span className="text-amber-800 font-medium">
+                    Belum dipotong di slip periode ini (dipotong payroll berikutnya)
+                  </span>
+                ) : officialSlip ? (
+                  "Tidak ada potongan tagihan warung"
+                ) : (
+                  "Otomatis dipotong saat payroll"
+                )}
               </div>
             </div>
 

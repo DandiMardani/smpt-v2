@@ -212,11 +212,12 @@ export function MasterKebutuhanProductGrid({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {products.map((p) => {
           const project = projectMap.get(p.project_id);
+          const targetUrl = `/dashboard/masterKebutuhan?project=${p.project_id}&product=${p.id}`;
           return (
-            <div
+            <Link
               key={p.id}
-              onClick={() => router.push(`/dashboard/masterKebutuhan?project=${p.project_id}&product=${p.id}`)}
-              className="cursor-pointer rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs transition hover:border-emerald-400 hover:bg-emerald-50/30 hover:shadow-sm"
+              href={targetUrl}
+              className="group block select-none touch-manipulation rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs transition hover:border-emerald-400 hover:bg-emerald-50/20 hover:shadow-sm active:scale-[0.98]"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-xs font-bold text-emerald-700">{p.product_code}</span>
@@ -224,17 +225,17 @@ export function MasterKebutuhanProductGrid({
                   {p.status}
                 </span>
               </div>
-              <h3 className="mt-1.5 font-bold text-slate-900 text-sm line-clamp-1">{p.name}</h3>
+              <h3 className="mt-1.5 font-bold text-slate-900 text-sm line-clamp-1 group-hover:text-emerald-700 transition-colors">{p.name}</h3>
               <p className="mt-0.5 text-xs text-slate-500 font-medium">{project?.name ?? "Proyek"}</p>
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs">
                 <span className="text-slate-500">
                   Target: <b className="text-slate-800">{formatNumber(p.target_production)} {p.unit}</b>
                 </span>
-                <span className="font-bold text-emerald-700 hover:text-emerald-800">
-                  Buka BOM →
+                <span className="inline-flex min-h-[36px] items-center gap-1 rounded-xl bg-emerald-50 px-3 py-1.5 font-bold text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition shadow-2xs">
+                  Buka BOM ➔
                 </span>
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>

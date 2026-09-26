@@ -93,3 +93,59 @@ export async function directIssue(formData: FormData) {
   refresh();
   redirectWithMessage(PATH, "success", "Barang Keluar langsung berhasil dicatat.");
 }
+
+export async function issueWipDirectly(formData: FormData) {
+  await requirePermission("barang_keluar_gudang.write");
+  try {
+    const date = getOptionalDate(formData, "issue_date");
+    if (!date) throw new Error("Tanggal wajib diisi.");
+
+    const action = getText(formData, "action");
+    const componentId = getId(formData, "component_id");
+    const productId = optionalId(formData.get("product_id"));
+    const quantity = getNumber(formData, "quantity", { min: 0.0001 });
+    const notes = getText(formData, "notes") || null;
+
+    if (action === "KIRIM_SABLON_LANGSUNG") {
+      // 1-pintu: otomatis tandai untuk sablon lalu kirim ke sablon
+      await callRpc("move_wip_stock", {
+        p_transaction_date: date,
+        p_cutting_component_id: componentId,
+        p_product_id: productId,
+        p_quantity: quantity,
+        p_action: "TANDAI_SABLON",
+        p_notes: notes,
+      });
+      await callRpc("move_wip_stock", {
+        p_transaction_date: date,
+        p_cutting_component_id: componentId,
+        p_product_id: productId,
+        p_quantity: quantity,
+        p_action: "KIRIM_SABLON",
+        p_notes: notes,
+      });
+    } else {
+      await callRpc("move_wip_stock", {
+        p_transaction_date: date,
+        p_cutting_component_id: componentId,
+        p_product_id: productId,
+        p_quantity: quantity,
+        p_action: action,
+        p_notes: notes,
+      });
+    }
+  } catch (error) {
+    redirectWithMessage(
+      PATH,
+      "error",
+      errorMessage(error, "Pengeluaran komponen hasil potong/sablon gagal."),
+    );
+  }
+
+  refresh();
+  redirectWithMessage(
+    PATH,
+    "success",
+    "Pengeluaran komponen hasil potong/sablon berhasil dicatat.",
+  );
+}

@@ -9,7 +9,13 @@ const PATH = "/dashboard/cutting";
 const refresh = () => [PATH, "/dashboard/stokGudang", "/dashboard/bahan", "/dashboard/sablon", "/dashboard/produksi"].forEach((path) => revalidatePath(path));
 
 export async function saveComponent(f: FormData) {
-  await requirePermission("cutting.write");
+  const access = await requirePermission("cutting.write");
+  const role = (access.role ?? "").toUpperCase();
+  const isAdmin = role.includes("ADMIN") || access.permissionCodes.includes("*");
+  if (!isAdmin) {
+    redirectWithMessage(PATH, "error", "Hanya Administrator yang berwenang menambah atau mengubah komponen cutting.");
+    return;
+  }
   try {
     await callRpc("save_cutting_component", {
       p_component_id: optionalId(f.get("component_id")),
