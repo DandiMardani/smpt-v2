@@ -287,6 +287,8 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     children: [
       item("masterProyek", "Master Proyek"),
       item("masterProdukProyek", "Produk & Spesifikasi"),
+      item("masterItem", "Item & Tarif Pekerjaan"),
+      item("masterKebutuhan", "Kebutuhan Bahan & BOM"),
     ],
   },
   {
