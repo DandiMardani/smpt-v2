@@ -22,6 +22,9 @@ type UserProfile = {
 type Props = {
   children: ReactNode;
   menuEntries: MenuEntry[];
+  hajiEntries?: MenuEntry[];
+  regulerEntries?: MenuEntry[];
+  sdmEntries?: MenuEntry[];
   badgeCounts: Record<string, number>;
   userProfile: UserProfile;
   pendingGudangCount?: number;
@@ -80,12 +83,35 @@ function getCategoryIcon(groupId: string, className = "h-5 w-5") {
         </svg>
       );
     case "sdmPayroll":
+    case "manajemenPekerja":
       return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      );
+    case "kasbonGroup":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+          <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
+          <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+        </svg>
+      );
+    case "payrollGroup":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect width="20" height="14" x="2" y="5" rx="2" />
+          <line x1="2" x2="22" y1="10" y2="10" />
+        </svg>
+      );
+    case "keamananAkses":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
         </svg>
       );
     case "keuanganLaporan":
@@ -110,11 +136,17 @@ function getCategoryIcon(groupId: string, className = "h-5 w-5") {
 export function DashboardShell({
   children,
   menuEntries,
+  hajiEntries,
+  regulerEntries,
+  sdmEntries,
   badgeCounts,
   userProfile,
   pendingGudangCount = 0,
 }: Props) {
   const pathname = usePathname();
+
+  // Workspace Mode State: REGULER vs HAJI vs SDM
+  const [workspace, setWorkspace] = useState<"REGULER" | "HAJI" | "SDM">("REGULER");
 
   // State: Sidebar collapsed, Content width mode, Mobile drawer, Search Palette, Fullscreen
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -133,6 +165,10 @@ export function DashboardShell({
   // Restore preferences from localStorage on mount
   useEffect(() => {
     try {
+      const savedWorkspace = localStorage.getItem("smpt_workspace");
+      if (savedWorkspace === "HAJI" || savedWorkspace === "REGULER" || savedWorkspace === "SDM") {
+        setWorkspace(savedWorkspace);
+      }
       const savedCollapsed = localStorage.getItem("smpt_sidebar_collapsed");
       if (savedCollapsed !== null) {
         setSidebarCollapsed(savedCollapsed === "true");
@@ -145,6 +181,32 @@ export function DashboardShell({
       // Ignore localStorage read errors in restricted contexts
     }
   }, []);
+
+  const handleWorkspaceChange = useCallback((mode: "REGULER" | "HAJI" | "SDM") => {
+    setWorkspace(mode);
+    try {
+      localStorage.setItem("smpt_workspace", mode);
+    } catch {}
+  }, []);
+
+  const getNextWorkspace = useCallback((current: "REGULER" | "HAJI" | "SDM"): "REGULER" | "HAJI" | "SDM" => {
+    if (current === "REGULER") return "HAJI";
+    if (current === "HAJI") return "SDM";
+    return "REGULER";
+  }, []);
+
+  const effectiveMenuEntries: MenuEntry[] = useMemo(() => {
+    if (workspace === "REGULER" && regulerEntries && regulerEntries.length > 0) {
+      return regulerEntries;
+    }
+    if (workspace === "HAJI" && hajiEntries && hajiEntries.length > 0) {
+      return hajiEntries;
+    }
+    if (workspace === "SDM" && sdmEntries && sdmEntries.length > 0) {
+      return sdmEntries;
+    }
+    return menuEntries;
+  }, [workspace, regulerEntries, hajiEntries, sdmEntries, menuEntries]);
 
   // Save collapsed state
   const handleToggleSidebar = useCallback(() => {
@@ -252,7 +314,7 @@ export function DashboardShell({
   const flatMenuItems = useMemo<FlatMenuItem[]>(() => {
     const list: FlatMenuItem[] = [];
 
-    for (const entry of menuEntries) {
+    for (const entry of effectiveMenuEntries) {
       if (entry.type === "item") {
         list.push({
           id: entry.id,
@@ -287,7 +349,7 @@ export function DashboardShell({
     }
 
     return list;
-  }, [menuEntries]);
+  }, [effectiveMenuEntries]);
 
   // Current breadcrumb info
   const currentBreadcrumb = useMemo(() => {
@@ -329,9 +391,9 @@ export function DashboardShell({
   // Filtered menu entries for in-sidebar search
   const filteredSidebarEntries = useMemo(() => {
     const q = sidebarFilter.trim().toLowerCase();
-    if (!q) return menuEntries;
+    if (!q) return effectiveMenuEntries;
 
-    return menuEntries
+    return effectiveMenuEntries
       .map((entry) => {
         if (entry.type === "item") {
           return entry.text.toLowerCase().includes(q) ? entry : null;
@@ -365,7 +427,7 @@ export function DashboardShell({
         return null;
       })
       .filter(Boolean) as MenuEntry[];
-  }, [sidebarFilter, menuEntries]);
+  }, [sidebarFilter, effectiveMenuEntries]);
 
   return (
     <div className="min-h-screen bg-slate-50/80 text-slate-900 selection:bg-blue-600 selection:text-white">
@@ -420,6 +482,86 @@ export function DashboardShell({
             </svg>
           </button>
         </div>
+
+        {/* Workspace Mode Switcher (Expanded) */}
+        {!sidebarCollapsed ? (
+          <div className="border-b border-slate-100 bg-slate-50/70 p-2.5">
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 p-1 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => handleWorkspaceChange("REGULER")}
+                className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                  workspace === "REGULER"
+                    ? "bg-indigo-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>🎒</span>
+                <span>Reguler</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleWorkspaceChange("HAJI")}
+                className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                  workspace === "HAJI"
+                    ? "bg-emerald-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>🕋</span>
+                <span>Haji</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleWorkspaceChange("SDM")}
+                className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                  workspace === "SDM"
+                    ? "bg-amber-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>👥</span>
+                <span>SDM</span>
+              </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[10px] font-semibold text-slate-500 px-1">
+              <span>Ruang Kerja:</span>
+              <span
+                className={`px-2 py-0.5 rounded-full font-bold ${
+                  workspace === "REGULER"
+                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                    : workspace === "HAJI"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                }`}
+              >
+                {workspace === "REGULER"
+                  ? "🎒 Proyek Umum"
+                  : workspace === "HAJI"
+                  ? "🕋 Proyek Haji"
+                  : "👥 SDM & Payroll"}
+              </span>
+            </div>
+          </div>
+        ) : (
+          /* Mini Mode Switcher (Collapsed) */
+          <div className="flex justify-center border-b border-slate-100 py-2">
+            <button
+              type="button"
+              onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
+              title={`Klik untuk beralih mode (${workspace}). Mode berikutnya: ${getNextWorkspace(workspace)}`}
+              className={`flex h-9 w-9 items-center justify-center rounded-xl border text-sm font-bold shadow-xs transition ${
+                workspace === "REGULER"
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                  : workspace === "HAJI"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+              }`}
+            >
+              {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : "👥"}
+            </button>
+          </div>
+        )}
 
         {/* Search / Quick Filter Bar (Expanded Only) */}
         {!sidebarCollapsed ? (
@@ -632,7 +774,7 @@ export function DashboardShell({
           ) : (
             /* ================= COMPACT RAIL MODE (ICONS + FLYOUT) ================= */
             <nav className="flex flex-col items-center space-y-2">
-              {menuEntries.map((entry) => {
+              {effectiveMenuEntries.map((entry) => {
                 if (entry.type === "item") {
                   const active = pathname === entry.href;
                   return (
@@ -877,6 +1019,30 @@ export function DashboardShell({
 
             {/* Right Header Controls: Search Palette, Wide Toggle, Fullscreen, Inbox, Profile */}
             <div className="flex items-center gap-2 shrink-0">
+              {/* Workspace Mode Indicator Toggle in Header */}
+              <button
+                type="button"
+                onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
+                title={`Klik untuk beralih mode kerja. Saat ini: ${
+                  workspace === "REGULER" ? "Mode Proyek Reguler" : workspace === "HAJI" ? "Mode Proyek Haji" : "Mode SDM & Payroll"
+                }`}
+                className={`hidden sm:flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition shadow-2xs hover:scale-105 active:scale-95 ${
+                  workspace === "REGULER"
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                    : workspace === "HAJI"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                }`}
+              >
+                <span className="text-sm">
+                  {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : "👥"}
+                </span>
+                <span>
+                  {workspace === "REGULER" ? "Proyek Reguler" : workspace === "HAJI" ? "Proyek Haji" : "SDM & Payroll"}
+                </span>
+                <span className="text-[10px] opacity-60">⇄</span>
+              </button>
+
               {/* Command Palette Trigger Button */}
               <button
                 type="button"
@@ -1196,10 +1362,52 @@ export function DashboardShell({
               </div>
             </div>
 
+            {/* Workspace Mode Switcher in Drawer */}
+            <div className="p-3 bg-slate-50 border-b border-slate-100">
+              <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 p-1 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("REGULER")}
+                  className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                    workspace === "REGULER"
+                      ? "bg-indigo-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>🎒</span>
+                  <span>Reguler</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("HAJI")}
+                  className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                    workspace === "HAJI"
+                      ? "bg-emerald-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>🕋</span>
+                  <span>Haji</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("SDM")}
+                  className={`flex items-center justify-center gap-1 py-1.5 rounded-lg transition-all ${
+                    workspace === "SDM"
+                      ? "bg-amber-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>👥</span>
+                  <span>SDM</span>
+                </button>
+              </div>
+            </div>
+
             {/* Scrollable menu */}
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <nav className="space-y-1.5">
-                {menuEntries.map((entry) => {
+                {effectiveMenuEntries.map((entry) => {
                   if (entry.type === "item") {
                     const active = pathname === entry.href;
                     return (

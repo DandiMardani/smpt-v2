@@ -64,6 +64,10 @@ export const MENU_PERMISSION_BY_ID: Readonly<Record<string, string>> = {
   pengirimanEmbarkasi: "pengiriman_embarkasi.view",
   rejectEmbarkasi: "reject_embarkasi.view",
 
+  // Modul Khusus Proyek Reguler (Non-Haji)
+  produksiReguler: "hasil_produksi.view",
+  pengirimanKlien: "stok_barang_jadi.view",
+
   absensi: "absensi.view",
   payroll: "payroll.view",
   kasbon: "kasbon.view",
@@ -212,6 +216,200 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("laporan", "Laporan"),
       item("aksesUser", "Manajemen User"),
       item("setupTest", "Setup & Data Test"),
+    ],
+  },
+];
+
+export type WorkspaceMode = "HAJI" | "REGULER" | "SDM";
+
+export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
+  item("dashboard", "Dashboard Haji"),
+  {
+    type: "group",
+    id: "masterData",
+    text: "Master Data Proyek",
+    children: [
+      item("masterProyek", "Master Proyek"),
+      item("masterItem", "Item & Tarif Pekerjaan"),
+      item("masterKebutuhan", "Kebutuhan Bahan & BOM"),
+      item("masterProdukProyek", "Master Produk Proyek"),
+      item("masterBahan", "Master Bahan Baku"),
+      item("masterVendor", "Master Supplier / Vendor"),
+      item("masterLokasi", "Master Lokasi Gudang"),
+      item("masterEmbarkasi", "Master Embarkasi"),
+    ],
+  },
+  {
+    type: "group",
+    id: "gudangMaterial",
+    text: "Gudang & Material",
+    children: [
+      item("barangMasukGudang", "Barang Masuk Gudang"),
+      item("barangKeluarGudang", "Barang Keluar Gudang"),
+      item("stokGudang", "Stok Gudang Material"),
+      item("bahan", "Log Bahan Baku"),
+      item("procurement", "Procurement / PO"),
+    ],
+  },
+  {
+    type: "group",
+    id: "produksiGroup",
+    text: "Pabrik & Produksi Haji",
+    children: [
+      item("cutting", "Cutting"),
+      item("sablon", "Sablon"),
+      item("permintaanProduksi", "Permintaan Bahan SPV"),
+      item("spk", "Surat Perintah Kerja (SPK)"),
+      item("produksi", "Siap Produksi"),
+      item("borongan", "Setoran Borongan"),
+      item("hasilProduksi", "Hasil Produksi & Checker"),
+      item("manufaktur", "Barang Titipan & Maklon"),
+    ],
+  },
+  {
+    type: "group",
+    id: "qcLogistik",
+    text: "QC & Distribusi Embarkasi",
+    children: [
+      {
+        type: "subgroup",
+        id: "qcSub",
+        text: "Quality Control",
+        children: [item("qc", "Quality Control")],
+      },
+      {
+        type: "subgroup",
+        id: "barangJadiSub",
+        text: "Barang Jadi & Set",
+        children: [
+          item("stokBarangJadi", "Stok Barang Jadi"),
+          item("transferBarangJadi", "Transfer Barang Jadi"),
+          item("barangLuar", "Penerimaan Barang Luar"),
+          item("masterSet", "Master Set"),
+          item("packingSet", "Packing Set"),
+          item("stokSet", "Stok Set"),
+        ],
+      },
+      {
+        type: "subgroup",
+        id: "distribusiSub",
+        text: "Distribusi Embarkasi",
+        children: [
+          item("targetEmbarkasi", "Target Embarkasi"),
+          item("pengirimanEmbarkasi", "Pengiriman & Tracking"),
+          item("rejectEmbarkasi", "Reject & Kekurangan"),
+        ],
+      },
+    ],
+  },
+  {
+    type: "group",
+    id: "keuanganLaporan",
+    text: "Keuangan & Laporan",
+    children: [
+      item("kasKecil", "Kas Kecil"),
+      item("keuangan", "Keuangan"),
+      item("laporan", "Laporan"),
+      item("setupTest", "Setup & Data Test"),
+    ],
+  },
+];
+
+export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
+  item("dashboard", "Dashboard Reguler"),
+  {
+    type: "group",
+    id: "masterData",
+    text: "Master Data Proyek",
+    children: [
+      item("masterProyek", "Master Proyek"),
+      item("masterProdukProyek", "Produk & Spesifikasi"),
+      item("masterBahan", "Master Bahan Baku"),
+      item("masterVendor", "Master Supplier / Vendor"),
+      item("masterLokasi", "Master Lokasi Gudang"),
+    ],
+  },
+  {
+    type: "group",
+    id: "gudangMaterial",
+    text: "Gudang & Material",
+    children: [
+      item("barangMasukGudang", "Barang Masuk Gudang"),
+      item("barangKeluarGudang", "Barang Keluar Gudang"),
+      item("stokGudang", "Stok Gudang Material"),
+      item("barangLuar", "Pembelian Barang Jadi"),
+      item("procurement", "Procurement / PO"),
+    ],
+  },
+  {
+    type: "group",
+    id: "produksiGroup",
+    text: "Produksi Reguler",
+    children: [
+      item("cutting", "Cutting / Potong"),
+      item("sablon", "Sablon"),
+      item("produksiReguler", "⚡ Setoran Jahit Cepat"),
+      item("hasilProduksi", "Rekap Hasil Produksi"),
+      item("manufaktur", "Subkon & Maklon Luar"),
+    ],
+  },
+  {
+    type: "group",
+    id: "qcLogistik",
+    text: "Logistik & Kirim Klien",
+    children: [
+      item("stokBarangJadi", "Stok Barang Jadi"),
+      item("pengirimanKlien", "🚚 Surat Jalan & Kirim Klien"),
+      item("transferBarangJadi", "Transfer Antar Gudang"),
+    ],
+  },
+  {
+    type: "group",
+    id: "keuanganLaporan",
+    text: "Keuangan & Laporan",
+    children: [
+      item("kasKecil", "Kas Kecil"),
+      item("keuangan", "Keuangan"),
+      item("laporan", "Laporan"),
+    ],
+  },
+];
+
+export const SMPT_SDM_MENU_TREE: readonly MenuEntry[] = [
+  item("dashboard", "Dashboard SDM"),
+  {
+    type: "group",
+    id: "sdmPayroll",
+    text: "Tenaga Kerja & Presensi",
+    children: [
+      item("masterPekerja", "Master Data Pekerja"),
+      item("absensi", "Presensi & Absensi"),
+    ],
+  },
+  {
+    type: "group",
+    id: "kasbonGroup",
+    text: "Kasbon & Fasilitas",
+    children: [
+      item("kasbon", "Kasbon Pinjaman Kantor"),
+      item("warung", "Portal Warung"),
+    ],
+  },
+  {
+    type: "group",
+    id: "payrollGroup",
+    text: "Penggajian & Slip",
+    children: [
+      item("setoran", "Gaji & Pekerjaan Saya"),
+      item("payroll", "Payroll & Slip Gaji"),
+    ],
+  },
+  {
+    type: "group",
+    id: "keamananAkses",
+    text: "Manajemen Akun",
+    children: [
+      item("aksesUser", "Manajemen User & Hak Akses"),
     ],
   },
 ];

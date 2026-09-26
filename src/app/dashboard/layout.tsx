@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { getCurrentAccessContext } from "@/lib/access/current-user";
-import { filterMenuTree, SMPT_MENU_TREE } from "@/lib/access/menu";
+import {
+  filterMenuTree,
+  SMPT_HAJI_MENU_TREE,
+  SMPT_REGULER_MENU_TREE,
+  SMPT_SDM_MENU_TREE,
+} from "@/lib/access/menu";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardShell } from "@/components/dashboard-shell";
 
@@ -10,8 +15,17 @@ export default async function DashboardLayout({
   children: ReactNode;
 }>) {
   const access = await getCurrentAccessContext();
-  const menuEntries = filterMenuTree(
-    SMPT_MENU_TREE,
+
+  const hajiMenuEntries = filterMenuTree(
+    SMPT_HAJI_MENU_TREE,
+    access.allowedMenuIds,
+  );
+  const regulerMenuEntries = filterMenuTree(
+    SMPT_REGULER_MENU_TREE,
+    access.allowedMenuIds,
+  );
+  const sdmMenuEntries = filterMenuTree(
+    SMPT_SDM_MENU_TREE,
     access.allowedMenuIds,
   );
 
@@ -37,7 +51,10 @@ export default async function DashboardLayout({
 
   return (
     <DashboardShell
-      menuEntries={menuEntries}
+      menuEntries={hajiMenuEntries}
+      hajiEntries={hajiMenuEntries}
+      regulerEntries={regulerMenuEntries}
+      sdmEntries={sdmMenuEntries}
       badgeCounts={{ barangKeluarGudang: pendingGudangCount }}
       userProfile={userProfile}
       pendingGudangCount={pendingGudangCount}
