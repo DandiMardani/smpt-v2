@@ -796,19 +796,19 @@ export function DashboardShell({
       {/* 2. DYNAMIC MAIN LAYOUT (RESPONSIVE PADDING & FLUID CONTAINER)              */}
       {/* ========================================================================= */}
       <div
-        className={`flex min-h-screen flex-col transition-[padding] duration-300 ease-in-out ${
+        className={`flex min-h-screen flex-col w-full max-w-full min-w-0 overflow-x-clip transition-[padding] duration-300 ease-in-out ${
           sidebarCollapsed ? "lg:pl-20" : "lg:pl-72"
         }`}
       >
         {/* ULTRA-MODERN FROSTED HEADER */}
-        <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-md transition-all duration-300 shadow-xs">
+        <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-md transition-all duration-300 shadow-xs w-full max-w-full">
           <div
-            className={`mx-auto flex h-16 w-full items-center justify-between gap-3 px-4 sm:px-6 transition-all duration-300 ${
+            className={`mx-auto flex h-16 w-full items-center justify-between gap-2 px-3 sm:px-6 transition-all duration-300 min-w-0 ${
               contentWide ? "max-w-none" : "max-w-7xl"
             }`}
           >
             {/* Left Header: Mobile Hamburger, Desktop Sidebar Toggle, Breadcrumbs */}
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               {/* Mobile menu trigger */}
               <button
                 type="button"
@@ -852,7 +852,7 @@ export function DashboardShell({
 
                 {currentBreadcrumb.group ? (
                   <>
-                    <span className="text-slate-300">/</span>
+                    <span className="text-slate-300 hidden md:inline">/</span>
                     <span className="text-slate-500 truncate hidden md:inline">
                       {currentBreadcrumb.group}
                     </span>
@@ -861,7 +861,7 @@ export function DashboardShell({
 
                 {currentBreadcrumb.subgroup ? (
                   <>
-                    <span className="text-slate-300">/</span>
+                    <span className="text-slate-300 hidden lg:inline">/</span>
                     <span className="text-slate-500 truncate hidden lg:inline">
                       {currentBreadcrumb.subgroup}
                     </span>
@@ -1055,10 +1055,10 @@ export function DashboardShell({
 
         {/* MAIN BODY CONTENT (WIDE OR CENTERED CONTAINER) */}
         <main
-          className={`w-full flex-1 p-4 pb-24 sm:p-6 sm:pb-24 lg:pb-12 transition-all duration-300 ${
+          className={`w-full max-w-full min-w-0 flex-1 p-3 pb-24 sm:p-6 sm:pb-24 lg:pb-12 transition-all duration-300 ${
             contentWide
-              ? "max-w-none px-4 sm:px-6 lg:px-8"
-              : "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
+              ? "max-w-none px-3 sm:px-6 lg:px-8"
+              : "mx-auto max-w-7xl px-3 sm:px-6 lg:px-8"
           }`}
         >
           {children}

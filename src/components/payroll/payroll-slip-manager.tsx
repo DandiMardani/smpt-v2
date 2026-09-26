@@ -307,19 +307,73 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
   const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null);
   const [editBase, setEditBase] = useState<number>(0);
   const [editMeal, setEditMeal] = useState<number>(0);
+  const [editOtHours, setEditOtHours] = useState<number>(0);
   const [editOt, setEditOt] = useState<number>(0);
+  const [editManualOtHours, setEditManualOtHours] = useState<number>(0);
   const [editManualOt, setEditManualOt] = useState<number>(0);
   const [editBonus, setEditBonus] = useState<number>(0);
   const [editHoliday, setEditHoliday] = useState<number>(0);
   const [editKasbonPerusahaan, setEditKasbonPerusahaan] = useState<number>(0);
   const [editKasbonWarung, setEditKasbonWarung] = useState<number>(0);
 
+  // Perhitungan tarif lembur dinamis
+  const divisor = editingItem?.pay_system_snapshot === "BULANAN" ? 190 : 8;
+  const baseForRate = editingItem?.pay_system_snapshot === "BULANAN"
+    ? editBase
+    : (num(editingItem?.daily_wage_snapshot) || (editBase / Math.max(1, num(editingItem?.full_days) || 1)));
+  const hourlyRate = Math.round((baseForRate / Math.max(1, divisor)) * 100) / 100;
+
+  const handleSysHoursChange = (hours: number) => {
+    const h = Math.max(0, hours);
+    setEditOtHours(h);
+    const newAmt = Math.round(h * hourlyRate * 100) / 100;
+    setEditOt(newAmt);
+  };
+
+  const handleSysAmountChange = (amt: number) => {
+    const a = Math.max(0, amt);
+    setEditOt(a);
+    if (hourlyRate > 0) {
+      setEditOtHours(Math.round((a / hourlyRate) * 10) / 10);
+    }
+  };
+
+  const handleManualHoursChange = (hours: number) => {
+    const h = Math.max(0, hours);
+    setEditManualOtHours(h);
+    const newAmt = Math.round(h * hourlyRate * 100) / 100;
+    setEditManualOt(newAmt);
+  };
+
+  const handleManualAmountChange = (amt: number) => {
+    const a = Math.max(0, amt);
+    setEditManualOt(a);
+    if (hourlyRate > 0) {
+      setEditManualOtHours(Math.round((a / hourlyRate) * 10) / 10);
+    }
+  };
+
   const openEditModal = (item: PayrollItemRow) => {
     setEditingItem(item);
-    setEditBase(num(item.base_amount));
+    const base = num(item.base_amount);
+    setEditBase(base);
     setEditMeal(num(item.meal_amount));
-    setEditOt(num(item.overtime_amount));
-    setEditManualOt(num(item.manual_overtime_amount));
+
+    const div = item.pay_system_snapshot === "BULANAN" ? 190 : 8;
+    const bRate = item.pay_system_snapshot === "BULANAN" ? base : (num(item.daily_wage_snapshot) || 80000);
+    const rate = Math.max(1, bRate / div);
+
+    const otAmt = num(item.overtime_amount);
+    setEditOt(otAmt);
+    const sysHours = num(item.overtime_minutes) > 0
+      ? Math.round((num(item.overtime_minutes) / 60) * 10) / 10
+      : (rate > 0 ? Math.round((otAmt / rate) * 10) / 10 : 0);
+    setEditOtHours(sysHours);
+
+    const manAmt = num(item.manual_overtime_amount);
+    setEditManualOt(manAmt);
+    setEditManualOtHours(rate > 0 ? Math.round((manAmt / rate) * 10) / 10 : 0);
+
     setEditBonus(num(item.overtime_bonus));
     setEditHoliday(num(item.holiday_bonus));
     setEditKasbonPerusahaan(num(item.kasbon_perusahaan_amount));
@@ -605,105 +659,111 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0 max-w-full">
       {/* Selector Run Payroll */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="font-bold text-slate-900 text-base">Rincian Slip Gaji Karyawan (Harian & Bulanan)</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Pilih finalisasi payroll untuk mencetak slip atau mengirimkan slip gaji langsung ke WhatsApp pekerja.
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-xs min-w-0 max-w-full">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+          <div className="min-w-0">
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base">Rincian Slip Gaji Karyawan (Harian & Bulanan)</h3>
+            <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
+              Pilih finalisasi payroll untuk mencetak slip atau mengirimkan slip gaji via WhatsApp.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={selectedRun?.id ?? 0}
-              onChange={(e) => {
-                setSelectedRunId(Number(e.target.value));
-                setFilterMySlipOnly(false);
-              }}
-              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 shadow-xs focus:border-blue-500 focus:outline-none"
-            >
-              {runs.map((r) => {
-                const count = items.filter((it) => it.payroll_run_id === r.id).length;
-                const hasMySlip = currentWorkerId ? items.some((it) => it.payroll_run_id === r.id && it.worker_id === currentWorkerId) : false;
-                return (
-                  <option key={r.id} value={r.id}>
-                    {r.payroll_code} • {r.payroll_type} ({r.period_start} s/d {r.period_end}) — {count} Penerima Upah{hasMySlip ? " ★ (Slip Saya Ada)" : ""}
-                  </option>
-                );
-              })}
-            </select>
-
-            {currentWorkerId ? (
-              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-0.5 text-xs font-bold shadow-xs">
-                <button
-                  type="button"
-                  onClick={() => setFilterMySlipOnly(false)}
-                  className={`rounded-lg px-3 py-1.5 transition ${
-                    !filterMySlipOnly
-                      ? "bg-white text-slate-900 shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  👥 Semua ({allRunItems.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMySlipOnly(true)}
-                  className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 transition ${
-                    filterMySlipOnly
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <span>👤 Slip Saya</span>
-                  {myItemInSelectedRun ? (
-                    <span className="rounded-full bg-emerald-500 text-white px-1.5 py-0.2 text-[10px] font-bold">Ada</span>
-                  ) : (
-                    <span className="text-slate-400 text-[10px]">(-)</span>
-                  )}
-                </button>
-              </div>
-            ) : null}
-
-            {runItems.length > 0 ? (
-              <button
-                type="button"
-                onClick={handlePrintAll}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition shadow-xs"
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto min-w-0">
+            <div className="w-full sm:w-72 md:w-80 min-w-0">
+              <select
+                value={selectedRun?.id ?? 0}
+                onChange={(e) => {
+                  setSelectedRunId(Number(e.target.value));
+                  setFilterMySlipOnly(false);
+                }}
+                className="w-full max-w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-xs focus:border-blue-500 focus:outline-none truncate"
               >
-                🖨️ Cetak Semua Slip ({runItems.length})
-              </button>
-            ) : null}
+                {runs.map((r) => {
+                  const count = items.filter((it) => it.payroll_run_id === r.id).length;
+                  const hasMySlip = currentWorkerId ? items.some((it) => it.payroll_run_id === r.id && it.worker_id === currentWorkerId) : false;
+                  return (
+                    <option key={r.id} value={r.id}>
+                      {r.payroll_code} • {r.payroll_type} ({r.period_start} s/d {r.period_end}) — {count} Penerima Upah{hasMySlip ? " ★" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+              {currentWorkerId ? (
+                <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-0.5 text-xs font-bold shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setFilterMySlipOnly(false)}
+                    className={`rounded-lg px-2.5 py-1.5 transition text-xs ${
+                      !filterMySlipOnly
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    👥 Semua ({allRunItems.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterMySlipOnly(true)}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 transition text-xs ${
+                      filterMySlipOnly
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <span>👤 Slip Saya</span>
+                    {myItemInSelectedRun ? (
+                      <span className="rounded-full bg-emerald-500 text-white px-1.5 py-0.2 text-[10px] font-bold">Ada</span>
+                    ) : (
+                      <span className="text-slate-400 text-[10px]">(-)</span>
+                    )}
+                  </button>
+                </div>
+              ) : null}
+
+              {runItems.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={handlePrintAll}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition shadow-xs"
+                >
+                  🖨️ Cetak Semua ({runItems.length})
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
 
         {selectedRun ? (
-          <div className="mt-4 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/40 p-3.5 text-xs sm:grid-cols-4">
-            <div>
-              <span className="text-slate-400 font-medium">No. Payout:</span>
-              <div className="font-bold text-slate-800">{selectedRun.payroll_code}</div>
+          <div className="mt-4 grid gap-2.5 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-3.5 text-xs grid-cols-2 sm:grid-cols-4 min-w-0">
+            <div className="min-w-0">
+              <span className="text-slate-400 font-medium text-[11px]">No. Payout:</span>
+              <div className="font-bold text-slate-800 truncate">{selectedRun.payroll_code}</div>
             </div>
-            <div>
-              <span className="text-slate-400 font-medium">Jenis & Periode:</span>
-              <div className="font-bold text-slate-800">{selectedRun.payroll_type} ({selectedRun.period_start} s/d {selectedRun.period_end})</div>
+            <div className="min-w-0">
+              <span className="text-slate-400 font-medium text-[11px]">Jenis & Periode:</span>
+              <div className="font-bold text-slate-800 text-[11px] leading-tight break-words">
+                {selectedRun.payroll_type} ({selectedRun.period_start} s/d {selectedRun.period_end})
+              </div>
             </div>
-            <div>
-              <span className="text-slate-400 font-medium">Total Bruto:</span>
-              <div className="font-bold text-slate-800">{money(selectedRun.total_gross)}</div>
+            <div className="min-w-0">
+              <span className="text-slate-400 font-medium text-[11px]">Total Bruto:</span>
+              <div className="font-bold text-slate-800 truncate">{money(selectedRun.total_gross)}</div>
             </div>
-            <div>
-              <span className="text-slate-400 font-medium">Total Bersih (Net):</span>
-              <div className="font-bold text-emerald-600 text-sm">{money(selectedRun.total_net)}</div>
+            <div className="min-w-0">
+              <span className="text-slate-400 font-medium text-[11px]">Total Bersih (Net):</span>
+              <div className="font-bold text-emerald-600 text-sm truncate">{money(selectedRun.total_net)}</div>
             </div>
           </div>
         ) : null}
       </div>
 
       {/* Tabel Pekerja dalam Run */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-xs min-w-0 max-w-full">
         <h4 className="font-bold text-slate-900 text-sm mb-3">
           Daftar Penerima Upah ({runItems.length} Pekerja)
           {filterMySlipOnly ? " · Difilter: Hanya Slip Saya" : ""}
@@ -758,9 +818,9 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
             </div>
           )
         ) : (
-          <div>
+          <div className="min-w-0 max-w-full">
             {/* 1. Mobile Cards View (Khusus Layar HP / Mobile Responsive) */}
-            <div className="space-y-3 md:hidden">
+            <div className="space-y-3 md:hidden min-w-0 max-w-full">
               {runItems.map((item) => {
                 const w = workerMap.get(item.worker_id);
                 const bonus = num(item.overtime_bonus) + num(item.holiday_bonus) + num(item.holiday_manual_amount) + num(item.overtime_amount);
@@ -768,22 +828,22 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                 return (
                   <div
                     key={item.id}
-                    className={`rounded-2xl border p-3.5 sm:p-4 transition shadow-xs ${
+                    className={`rounded-2xl border p-3.5 sm:p-4 transition shadow-xs min-w-0 max-w-full ${
                       isMe ? "border-blue-400 bg-blue-50/40 ring-1 ring-blue-300" : "border-slate-200/90 bg-white"
                     }`}
                   >
                     {/* Header Pekerja & Total Net */}
-                    <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
-                      <div>
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-black text-slate-900 text-sm">{item.worker_name_snapshot}</span>
+                          <span className="font-black text-slate-900 text-sm break-words">{item.worker_name_snapshot}</span>
                           {isMe ? (
-                            <span className="rounded bg-blue-600 text-white px-1.5 py-0.2 text-[9px] font-bold">
+                            <span className="rounded bg-blue-600 text-white px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                               Slip Saya
                             </span>
                           ) : null}
                           <span
-                            className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                            className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider shrink-0 ${
                               item.pay_system_snapshot === "BULANAN"
                                 ? "bg-purple-100 text-purple-800 border border-purple-200"
                                 : "bg-blue-100 text-blue-800 border border-blue-200"
@@ -792,7 +852,7 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                             {item.pay_system_snapshot}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                        <div className="text-[11px] text-slate-500 font-medium mt-0.5 truncate">
                           {w?.department || w?.position || "Produksi"} • {w?.worker_code || `ID #${item.worker_id}`}
                         </div>
                       </div>
@@ -807,40 +867,40 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                     </div>
 
                     {/* Ringkasan Angka Gaji (Grid 2 Kolom) */}
-                    <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
-                      <div>
+                    <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 min-w-0">
+                      <div className="min-w-0">
                         <span className="text-slate-400 text-[10px] block">Gaji Pokok:</span>
-                        <span className="font-bold text-slate-800">{money(item.base_amount)}</span>
+                        <span className="font-bold text-slate-800 truncate block">{money(item.base_amount)}</span>
                         <span className="text-[10px] text-slate-500 block">({num(item.full_days)} Hari Kerja)</span>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <span className="text-slate-400 text-[10px] block">Lembur & Bonus:</span>
-                        <span className="font-bold text-blue-700">
+                        <span className="font-bold text-blue-700 truncate block">
                           {bonus + num(item.manual_overtime_amount) > 0 ? money(bonus + num(item.manual_overtime_amount)) : "-"}
                         </span>
                         <span className="text-[10px] text-slate-500 block">({(num(item.overtime_minutes) / 60).toFixed(1)} Jam)</span>
                       </div>
                       {num(item.meal_amount) > 0 ? (
-                        <div>
+                        <div className="min-w-0">
                           <span className="text-slate-400 text-[10px] block">Uang Makan Minggu:</span>
-                          <span className="font-bold text-amber-700">{money(item.meal_amount)}</span>
+                          <span className="font-bold text-amber-700 truncate block">{money(item.meal_amount)}</span>
                         </div>
                       ) : null}
-                      <div>
+                      <div className="min-w-0">
                         <span className="text-slate-400 text-[10px] block">Potongan Kasbon:</span>
-                        <span className="font-bold text-rose-600">
+                        <span className="font-bold text-rose-600 truncate block">
                           {num(item.deduction_amount) > 0 ? `-${money(item.deduction_amount)}` : "-"}
                         </span>
                       </div>
                     </div>
 
                     {/* 3 Tombol Aksi Mobile Ramah Sentuhan */}
-                    <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="mt-3 grid grid-cols-3 gap-1.5 sm:gap-2 min-w-0">
                       {canWrite ? (
                         <button
                           type="button"
                           onClick={() => openEditModal(item)}
-                          className="min-h-[40px] rounded-xl border border-amber-300 bg-amber-50 py-2 px-1 text-xs font-bold text-amber-900 hover:bg-amber-100 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs"
+                          className="min-h-[40px] rounded-xl border border-amber-300 bg-amber-50 py-2 px-1 text-[11px] sm:text-xs font-bold text-amber-900 hover:bg-amber-100 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs truncate"
                         >
                           ✏️ Koreksi
                         </button>
@@ -848,7 +908,7 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                       <button
                         type="button"
                         onClick={() => openSlip(item)}
-                        className={`min-h-[40px] rounded-xl border border-slate-200 bg-white py-2 px-1 text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs ${
+                        className={`min-h-[40px] rounded-xl border border-slate-200 bg-white py-2 px-1 text-[11px] sm:text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs truncate ${
                           !canWrite ? "col-span-1" : ""
                         }`}
                       >
@@ -857,7 +917,7 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                       <button
                         type="button"
                         onClick={() => openWaDialog(item)}
-                        className={`min-h-[40px] rounded-xl bg-emerald-600 py-2 px-1 text-xs font-bold text-white hover:bg-emerald-700 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs ${
+                        className={`min-h-[40px] rounded-xl bg-emerald-600 py-2 px-1 text-[11px] sm:text-xs font-bold text-white hover:bg-emerald-700 active:scale-95 transition flex items-center justify-center gap-1 shadow-2xs truncate ${
                           !canWrite ? "col-span-2" : ""
                         }`}
                       >
@@ -980,8 +1040,8 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
 
       {/* Modal Preview Slip Gaji Formal */}
       {activeItem && !waModalOpen && selectedRun ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs">
-          <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/50 backdrop-blur-xs">
+          <div className="relative w-full max-w-xl rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto min-w-0">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-extrabold text-slate-900 text-lg">Pratinjau Slip Gaji</h3>
@@ -1128,8 +1188,8 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
 
       {/* Modal Dialog WhatsApp */}
       {waModalOpen && activeItem && selectedRun ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs">
-          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/50 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 min-w-0 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-extrabold text-slate-900 text-base">Kirim Slip ke WhatsApp</h3>
@@ -1333,82 +1393,141 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                 <input type="hidden" name="holiday_bonus" value={editHoliday} />
               )}
 
-              {/* 4. LEMBUR SISTEM & LEMBUR MANUAL (Bisa diedit bebas oleh Admin) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-800">
-                      Upah Lembur Sistem (Rp)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setEditOt(0)}
-                      className="text-[10px] font-semibold text-rose-600 hover:underline"
-                    >
-                      Nol-kan
-                    </button>
-                  </div>
-                  <input
-                    name="overtime_amount"
-                    type="number"
-                    step="any"
-                    value={editOt}
-                    onChange={(e) => setEditOt(Number(e.target.value) || 0)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Scan Absensi: {(num(editingItem.overtime_minutes) / 60).toFixed(1)} Jam
+              {/* 4. KOREKSI JAM & UPAH LEMBUR (FLEKSIBEL: BISA UBAH JAM ATAU RUPIAH) */}
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-3.5 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="font-extrabold text-blue-950 text-xs sm:text-sm flex items-center gap-1.5">
+                    ⚡ Koreksi Jam & Upah Lembur
+                  </span>
+                  <span className="text-[10px] sm:text-[11px] font-bold text-blue-800 bg-white px-2 py-0.5 rounded-lg border border-blue-200 shadow-2xs">
+                    Tarif: {money(hourlyRate)}/jam ({editingItem.pay_system_snapshot === "BULANAN" ? "Gaji/190" : "Gaji/8"})
                   </span>
                 </div>
 
-                <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-2.5">
-                  <label className="block font-bold text-blue-900 mb-1">
-                    + Koreksi Lembur Manual (Rp)
-                  </label>
-                  <input
-                    name="manual_overtime_amount"
-                    type="number"
-                    step="any"
-                    value={editManualOt}
-                    onChange={(e) => setEditManualOt(Number(e.target.value) || 0)}
-                    placeholder="Jika lupa finger..."
-                    className="w-full rounded-lg border border-blue-300 bg-white px-3 py-1.5 font-bold text-blue-900 shadow-2xs focus:border-blue-500 focus:outline-none"
-                  />
-                  <span className="text-[10px] text-blue-700 mt-1 block">
-                    Tambahan lembur jika lupa absen
-                  </span>
+                {/* A. Lembur Sistem (Bisa Ubah Jam atau Langsung Rupiah) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-white p-3 rounded-xl border border-blue-100 shadow-2xs">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-800 text-[11px]">Jam Lembur Sistem</label>
+                      <span className="text-[10px] text-slate-500 font-bold">Jam</span>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={editOtHours}
+                      onChange={(e) => handleSysHoursChange(Number(e.target.value) || 0)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 font-black text-slate-900 shadow-2xs focus:border-blue-500 focus:outline-none"
+                    />
+                    <div className="flex gap-1 mt-1.5 flex-wrap">
+                      <button type="button" onClick={() => handleSysHoursChange(editOtHours + 1)} className="rounded px-1.5 py-0.5 bg-slate-100 text-[10px] font-bold text-slate-700 hover:bg-slate-200">+1 Jam</button>
+                      <button type="button" onClick={() => handleSysHoursChange(editOtHours + 4)} className="rounded px-1.5 py-0.5 bg-slate-100 text-[10px] font-bold text-slate-700 hover:bg-slate-200">+4 Jam</button>
+                      <button type="button" onClick={() => handleSysHoursChange(editOtHours + 8)} className="rounded px-1.5 py-0.5 bg-blue-100 text-[10px] font-bold text-blue-800 hover:bg-blue-200">+8 Jam (Minggu)</button>
+                      <button type="button" onClick={() => handleSysHoursChange(0)} className="rounded px-1.5 py-0.5 bg-rose-50 text-[10px] font-bold text-rose-700 hover:bg-rose-100">0 Jam</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-800 text-[11px]">Upah Lembur Sistem (Rp)</label>
+                      <button type="button" onClick={() => handleSysAmountChange(0)} className="text-[10px] font-semibold text-rose-600 hover:underline">Nol-kan</button>
+                    </div>
+                    <input
+                      name="overtime_amount"
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={editOt}
+                      onChange={(e) => handleSysAmountChange(Number(e.target.value) || 0)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 font-black text-blue-700 shadow-2xs focus:border-blue-500 focus:outline-none"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      = {editOtHours} Jam × {money(hourlyRate)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* B. Lembur Manual (Jika Ada Lembur Terlewat Absen Finger) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-white p-3 rounded-xl border border-blue-100 shadow-2xs">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-blue-900 text-[11px]">+ Jam Lembur Manual</label>
+                      <span className="text-[10px] text-blue-600 font-bold">Lupa Finger</span>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={editManualOtHours}
+                      onChange={(e) => handleManualHoursChange(Number(e.target.value) || 0)}
+                      placeholder="0 Jam"
+                      className="w-full rounded-xl border border-blue-300 px-3 py-2 font-black text-blue-900 shadow-2xs focus:border-blue-500 focus:outline-none"
+                    />
+                    <div className="flex gap-1 mt-1.5 flex-wrap">
+                      <button type="button" onClick={() => handleManualHoursChange(editManualOtHours + 1)} className="rounded px-1.5 py-0.5 bg-blue-50 text-[10px] font-bold text-blue-700 hover:bg-blue-100">+1 Jam</button>
+                      <button type="button" onClick={() => handleManualHoursChange(editManualOtHours + 4)} className="rounded px-1.5 py-0.5 bg-blue-50 text-[10px] font-bold text-blue-700 hover:bg-blue-100">+4 Jam</button>
+                      <button type="button" onClick={() => handleManualHoursChange(0)} className="rounded px-1.5 py-0.5 bg-slate-100 text-[10px] font-bold text-slate-600">0 Jam</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-blue-900 text-[11px] mb-1">+ Upah Lembur Manual (Rp)</label>
+                    <input
+                      name="manual_overtime_amount"
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={editManualOt}
+                      onChange={(e) => handleManualAmountChange(Number(e.target.value) || 0)}
+                      placeholder="Rp 0"
+                      className="w-full rounded-xl border border-blue-300 px-3 py-2 font-black text-blue-900 shadow-2xs focus:border-blue-500 focus:outline-none"
+                    />
+                    <span className="text-[10px] text-blue-600 mt-1 block">
+                      {editManualOtHours > 0 ? `= ${editManualOtHours} Jam × ${money(hourlyRate)}` : "Nominal tambahan manual"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* C. Live Counter Total Lembur */}
+                <div className="rounded-xl bg-blue-100/70 p-2.5 text-[11px] text-blue-950 font-bold flex items-center justify-between">
+                  <span>Total Jam Lembur: <b className="text-blue-900">{Math.round((editOtHours + editManualOtHours) * 10) / 10} Jam</b></span>
+                  <span>Total Upah Lembur: <b className="text-blue-900 text-xs">{money(editOt + editManualOt)}</b></span>
                 </div>
               </div>
 
-              {/* 5. BONUS LEMBUR 4 JAM */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="font-bold text-slate-800">
-                    Bonus Lembur &ge; 4 Jam (Rp)
+              {/* 5. BONUS LEMBUR ≥ 4 JAM (FLEKSIBEL) */}
+              <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-3 space-y-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <label className="font-bold text-purple-950 text-xs">
+                    Bonus Tambahan Lembur &ge; 4 Jam (Rp)
                   </label>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1 flex-wrap">
                     {editingItem.pay_system_snapshot === "HARIAN" ? (
-                      <button
-                        type="button"
-                        onClick={() => setEditBonus(5000)}
-                        className="rounded-md border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100"
-                      >
-                        ⚡ +Rp 5.000
-                      </button>
+                      <>
+                        <button type="button" onClick={() => setEditBonus(5000)} className="rounded-md border border-purple-300 bg-white px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 shadow-2xs">
+                          ⚡ 1x (5rb)
+                        </button>
+                        <button type="button" onClick={() => setEditBonus(10000)} className="rounded-md border border-purple-300 bg-white px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 shadow-2xs">
+                          2x (10rb)
+                        </button>
+                        <button type="button" onClick={() => setEditBonus(15000)} className="rounded-md border border-purple-300 bg-white px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 shadow-2xs">
+                          3x (15rb)
+                        </button>
+                      </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setEditBonus(17500)}
-                        className="rounded-md border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100"
-                      >
-                        ⚡ +Rp 17.500
-                      </button>
+                      <>
+                        <button type="button" onClick={() => setEditBonus(17500)} className="rounded-md border border-purple-300 bg-white px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 shadow-2xs">
+                          ⚡ 1x (17.5rb)
+                        </button>
+                        <button type="button" onClick={() => setEditBonus(35000)} className="rounded-md border border-purple-300 bg-white px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 shadow-2xs">
+                          2x (35rb)
+                        </button>
+                        <button type="button" onClick={() => setEditBonus(52500)} className="rounded-md border border-purple-300 bg-white px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 shadow-2xs">
+                          3x (52.5rb)
+                        </button>
+                      </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setEditBonus(0)}
-                      className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100"
-                    >
+                    <button type="button" onClick={() => setEditBonus(0)} className="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100 shadow-2xs">
                       Rp 0
                     </button>
                   </div>
@@ -1417,12 +1536,13 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                   name="overtime_bonus"
                   type="number"
                   step="any"
+                  min="0"
                   value={editBonus}
                   onChange={(e) => setEditBonus(Number(e.target.value) || 0)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-xl border border-purple-300 bg-white px-3.5 py-2 font-black text-purple-950 shadow-2xs focus:border-blue-500 focus:outline-none"
                 />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Berlaku jika lembur hari kerja biasa &ge; 4 jam (lewat jam 17:00 / 15:00) atau lembur Minggu lewat jam 17:00 &ge; 4 jam (pulang &ge; 21:00).
+                <p className="text-[10px] text-purple-900 leading-tight">
+                  Berlaku jika lembur hari biasa &ge; 4 jam atau lembur Minggu lewat jam 17:00 &ge; 4 jam. Bisa diisi nominal berapa pun secara fleksibel.
                 </p>
               </div>
 
@@ -1472,17 +1592,18 @@ export function PayrollSlipManager({ runs, items, workers, currentWorkerId, canW
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              {/* STICKY FOOTER ACTION BUTTONS */}
+              <div className="sticky bottom-0 z-10 bg-white/95 backdrop-blur-md pt-3 pb-1 border-t border-slate-100 flex items-center justify-end gap-2 -mx-5 -mb-5 px-5 sm:-mx-6 sm:-mb-6 sm:px-6 rounded-b-2xl">
                 <button
                   type="button"
                   onClick={() => setEditingItem(null)}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700 hover:bg-slate-50 transition"
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-700 hover:bg-slate-50 transition text-xs"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-blue-600 px-5 py-2 font-bold text-white hover:bg-blue-700 shadow-xs transition"
+                  className="rounded-xl bg-blue-600 px-5 py-2.5 font-bold text-white hover:bg-blue-700 shadow-md transition text-xs flex items-center gap-1.5"
                 >
                   💾 Simpan Koreksi Gaji
                 </button>

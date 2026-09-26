@@ -104,19 +104,19 @@ export default async function Page({ searchParams }: Props) {
         activeRunCode={payrollRuns[0]?.payroll_code}
         workerCount={payrollRuns[0] ? payrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
         slipsNode={
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-2 text-center sm:text-left">
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-2xs">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Run</span>
-                <div className="text-lg sm:text-2xl font-black text-slate-800">{payrollRuns.length}</div>
+          <div className="space-y-4 min-w-0 max-w-full">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center sm:text-left min-w-0">
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-2.5 sm:p-3 shadow-2xs min-w-0">
+                <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Total Run</span>
+                <div className="text-base sm:text-2xl font-black text-slate-800">{payrollRuns.length}</div>
               </div>
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-2xs">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pekerja Aktif</span>
-                <div className="text-lg sm:text-2xl font-black text-blue-600">{workers.length}</div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-2.5 sm:p-3 shadow-2xs min-w-0">
+                <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Pekerja Aktif</span>
+                <div className="text-base sm:text-2xl font-black text-blue-600">{workers.length}</div>
               </div>
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-2xs">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Run Operator</span>
-                <div className="text-lg sm:text-2xl font-black text-emerald-600">{operatorRuns.length}</div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-2.5 sm:p-3 shadow-2xs min-w-0">
+                <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Run Operator</span>
+                <div className="text-base sm:text-2xl font-black text-emerald-600">{operatorRuns.length}</div>
               </div>
             </div>
 
