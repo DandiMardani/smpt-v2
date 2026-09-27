@@ -189,12 +189,11 @@ export default async function Page({ searchParams }: Props) {
   const s = await createClient();
 
   // paralel fetch
-  const [hr, pr, cr, ar, projRes] = await Promise.all([
+  const [hr, pr, cr, ar, projRes, kaRes] = await Promise.all([
     s.rpc("smpt_final_health"),
     // progress produksi — filter by workspace jika dipilih
     (() => {
       let q2 = s.from("v_production_progress").select("*").order("order_id", { ascending: false }).limit(200);
-      // v_production_progress mungkin punya kolom project_category atau project_id
       if (projectId) q2 = (q2 as any).eq("project_id", projectId);
       return q2;
     })(),
@@ -216,6 +215,8 @@ export default async function Page({ searchParams }: Props) {
       .limit(80),
     // daftar proyek untuk dropdown filter
     s.from("projects").select("id, name, project_code, product_category, status").order("name").limit(400),
+    // keepalive status (opsional — tidak throw jika tabel belum ada)
+    s.rpc("smpt_last_keepalive").maybeSingle().then((r) => r).catch(() => ({ data: null, error: null })),
   ]);
 
   const err = [hr.error, pr.error, cr.error, ar.error, projRes.error].find(Boolean);
@@ -348,6 +349,68 @@ export default async function Page({ searchParams }: Props) {
         <Metric label={`Transaksi Keluar`} value={<span className="text-red-600">{money(totalKeluar)}</span>} />
         <Metric label="Net Periode" value={<span className={(totalMasuk - totalKeluar) >= 0 ? "text-emerald-700" : "text-red-600"}>{money(totalMasuk - totalKeluar)}</span>} />
       </div>
+
+      {/* ── Keepalive / Health Supabase ──────────────────────────────────── */}
+      {(() => {
+        const ka = (kaRes as any)?.data as {
+          last_ping: string;
+          last_ping_wib: string;
+          all_ok: boolean;
+          jam_sejak: number;
+          status: string;
+        } | null;
+
+        const jamSejak = ka ? Number(ka.jam_sejak) : null;
+        // Waspada jika ping terakhir > 5 hari (120 jam), limit pause Supabase = 7 hari
+        const isStale = jamSejak !== null && jamSejak > 120;
+        const isCritical = jamSejak !== null && jamSejak > 144; // > 6 hari
+        const neverPinged = !ka;
+
+        if (neverPinged) {
+          // Tabel belum dibuat — tampilkan notice setup
+          return (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-bold">⚙️ Auto-Ping Supabase Belum Disetup</p>
+              <p className="mt-1 text-xs">
+                Jalankan SQL di{" "}
+                <a href="https://supabase.com/dashboard/project/xhtwpfzryrtrjhjpemor/sql" target="_blank" rel="noopener" className="underline font-semibold">
+                  Supabase SQL Editor
+                </a>{" "}
+                dari file <code className="rounded bg-amber-100 px-1 font-mono text-[11px]">supabase/migrations/smpt_keepalive_log.sql</code> untuk mengaktifkan monitoring auto-ping.
+              </p>
+            </div>
+          );
+        }
+
+        const bgCls = isCritical
+          ? "border-red-200 bg-red-50"
+          : isStale
+          ? "border-amber-200 bg-amber-50"
+          : "border-emerald-200 bg-emerald-50";
+        const textCls = isCritical ? "text-red-800" : isStale ? "text-amber-800" : "text-emerald-800";
+        const dotCls = isCritical ? "bg-red-500" : isStale ? "bg-amber-400" : "bg-emerald-500";
+
+        return (
+          <div className={`flex items-center justify-between rounded-xl border px-4 py-3 ${bgCls}`}>
+            <div className="flex items-center gap-2.5">
+              <span className={`inline-block h-2.5 w-2.5 rounded-full ${dotCls} ${!isCritical && !isStale ? "animate-pulse" : ""}`} />
+              <div>
+                <p className={`text-sm font-bold ${textCls}`}>
+                  {isCritical ? "🔴 Supabase — Berisiko Pause!" : isStale ? "⚠️ Supabase — Jarang Di-ping" : "✅ Supabase — Aktif"}
+                </p>
+                <p className={`text-xs ${textCls} opacity-80`}>
+                  Ping terakhir: {ka.last_ping_wib}
+                  {jamSejak !== null ? ` (${jamSejak >= 24 ? `${Math.floor(jamSejak / 24)} hari` : `${jamSejak.toFixed(0)} jam`} lalu)` : ""}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className={`text-xs font-semibold ${textCls}`}>{ka.status}</p>
+              <p className="text-[11px] text-slate-400">Auto-ping tiap 5 hari</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Pusat Export Excel ───────────────────────────────────────────── */}
       <Card title="📊 Pusat Export Excel">
