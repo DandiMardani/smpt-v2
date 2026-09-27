@@ -355,7 +355,7 @@ export default async function Page({ searchParams }: Props) {
         const ka = (kaRes as any)?.data as {
           last_ping: string;
           last_ping_wib: string;
-          all_ok: boolean;
+          is_ok: boolean;
           jam_sejak: number;
           status: string;
         } | null;

@@ -18,43 +18,36 @@ CREATE TABLE IF NOT EXISTS smpt_keepalive_log (
 CREATE INDEX IF NOT EXISTS smpt_keepalive_log_pinged_at_idx
   ON smpt_keepalive_log (pinged_at DESC);
 
--- RLS: tabel ini hanya bisa ditulis oleh service role (via SUPABASE_SECRET_KEY)
--- User biasa tidak bisa akses
+-- RLS: hanya service role yang bisa tulis (bypass RLS secara default)
 ALTER TABLE smpt_keepalive_log ENABLE ROW LEVEL SECURITY;
-
--- Tidak ada policy public → hanya service role yang bisa akses
--- (service role bypass RLS secara default)
-
--- Auto-hapus log lama (>30 hari) agar tidak tumbuh terus
--- Jalankan via pg_cron kalau tersedia, atau biarkan manual cleanup
--- Di free tier, 30 baris/bulan = ~1 KB, aman.
 
 -- View untuk mudah cek status terakhir
 CREATE OR REPLACE VIEW smpt_keepalive_status AS
 SELECT
-  id,
-  pinged_at,
-  TO_CHAR(pinged_at AT TIME ZONE 'Asia/Jakarta', 'DD Mon YYYY HH24:MI WIB') AS waktu_wib,
-  auth_ok,
-  db_ok,
-  all_ok,
+  k.id,
+  k.pinged_at,
+  TO_CHAR(k.pinged_at AT TIME ZONE 'Asia/Jakarta', 'DD Mon YYYY HH24:MI WIB') AS waktu_wib,
+  k.auth_ok,
+  k.db_ok,
+  k.all_ok,
   CASE
-    WHEN all_ok THEN '✅ OK'
-    WHEN NOT auth_ok THEN '❌ Auth Gagal'
-    WHEN NOT db_ok  THEN '❌ DB Gagal'
+    WHEN k.all_ok       THEN '✅ OK'
+    WHEN NOT k.auth_ok  THEN '❌ Auth Gagal'
+    WHEN NOT k.db_ok    THEN '❌ DB Gagal'
     ELSE '⚠️ Partial'
   END AS status_label,
-  EXTRACT(EPOCH FROM (NOW() - pinged_at)) / 3600 AS jam_sejak_ping
-FROM smpt_keepalive_log
-ORDER BY pinged_at DESC
+  EXTRACT(EPOCH FROM (NOW() - k.pinged_at)) / 3600 AS jam_sejak_ping
+FROM smpt_keepalive_log k
+ORDER BY k.pinged_at DESC
 LIMIT 20;
 
--- Fungsi untuk ambil status keepalive terakhir (bisa dipanggil dari RPC)
+-- Fungsi RPC: ambil status ping terakhir
+-- Pakai alias "k" agar kolom tidak konflik dengan nama RETURNS TABLE
 CREATE OR REPLACE FUNCTION smpt_last_keepalive()
 RETURNS TABLE (
   last_ping     TIMESTAMPTZ,
   last_ping_wib TEXT,
-  all_ok        BOOLEAN,
+  is_ok         BOOLEAN,
   jam_sejak     NUMERIC,
   status        TEXT
 )
@@ -63,15 +56,15 @@ STABLE
 SECURITY DEFINER
 AS $$
   SELECT
-    pinged_at,
-    TO_CHAR(pinged_at AT TIME ZONE 'Asia/Jakarta', 'DD Mon YYYY HH24:MI WIB'),
-    all_ok,
-    ROUND(EXTRACT(EPOCH FROM (NOW() - pinged_at)) / 3600, 1),
+    k.pinged_at,
+    TO_CHAR(k.pinged_at AT TIME ZONE 'Asia/Jakarta', 'DD Mon YYYY HH24:MI WIB'),
+    k.all_ok,
+    ROUND(EXTRACT(EPOCH FROM (NOW() - k.pinged_at)) / 3600, 1),
     CASE
-      WHEN all_ok THEN '✅ Aktif'
+      WHEN k.all_ok THEN '✅ Aktif'
       ELSE '⚠️ Perlu Cek'
     END
-  FROM smpt_keepalive_log
-  ORDER BY pinged_at DESC
+  FROM smpt_keepalive_log k
+  ORDER BY k.pinged_at DESC
   LIMIT 1;
 $$;
