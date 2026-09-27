@@ -157,6 +157,17 @@ export default async function Page({ searchParams }: Props) {
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
 
+      {/* Export Shortcut */}
+      <div className="flex flex-wrap items-center gap-2">
+        <a
+          href={`/api/export/xlsx?report=spk&from=${new Date().toISOString().slice(0,4)}-01-01&to=${new Date().toISOString().slice(0,10)}${categoryParam ? `&ws=${categoryParam}` : ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
+        >
+          📥 Export SPK Excel
+        </a>
+        <span className="text-xs text-slate-400">Unduh seluruh data SPK{categoryParam ? ` — ${categoryParam}` : ""} tahun ini</span>
+      </div>
+
       {/* Category Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 mb-4">
         <Link

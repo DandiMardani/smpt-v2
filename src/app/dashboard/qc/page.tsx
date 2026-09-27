@@ -91,6 +91,17 @@ export default async function Page({ searchParams }: Props) {
         Checker → Qty Sah Output Final → QC (Baik/Reject/Rework) → Barang Jadi. Mendukung verifikasi proyek Reguler & Haji.
       </Flow>
 
+      {/* Export Shortcut */}
+      <div className="flex flex-wrap items-center gap-2">
+        <a
+          href={`/api/export/xlsx?report=qc&from=${new Date().toISOString().slice(0,4)}-01-01&to=${new Date().toISOString().slice(0,10)}${categoryParam ? `&ws=${categoryParam}` : ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
+        >
+          📥 Export QC Excel
+        </a>
+        <span className="text-xs text-slate-400">Unduh data QC{categoryParam ? ` — ${categoryParam}` : ""} tahun ini</span>
+      </div>
+
       {/* Tab Filter Kategori Proyek */}
       <div className="flex flex-wrap items-center gap-2">
         <Link

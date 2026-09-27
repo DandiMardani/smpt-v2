@@ -98,13 +98,16 @@ function columnsFromRows(rows: Array<Record<string, unknown>>) {
   return (keys.length ? keys : ["info"]).map((key) => ({ key, label: label(key) }));
 }
 function metaSheet(title: string, from: string, to: string, params: URLSearchParams, rowCount: number): XlsxSheet {
+  const wsRaw = String(params.get("ws") ?? "").trim().toUpperCase();
+  const wsLabel = wsRaw === "HAJI" ? "Haji" : wsRaw === "REGULER" ? "Reguler" : "Semua";
   return {
     name: "Info Export",
     columns: [{ key: "field", label: "Keterangan" }, { key: "value", label: "Nilai" }],
     rows: [
       { field: "Laporan", value: title },
       { field: "Periode", value: `${from} s/d ${to}` },
-      { field: "Project ID", value: params.get("project") || "Semua" },
+      { field: "Workspace", value: wsLabel },
+      { field: "Project ID", value: params.get("project") || params.get("project_id") || "Semua" },
       { field: "Produk ID", value: params.get("product") || "Semua" },
       { field: "Material ID", value: params.get("material") || "Semua" },
       { field: "Pekerja ID", value: params.get("worker") || "Semua" },
@@ -132,11 +135,41 @@ async function loadSimpleReport(
   from: string,
   to: string,
 ): Promise<Array<Record<string, unknown>>> {
-  const project = positiveId(params.get("project"));
+  const project = positiveId(params.get("project") || params.get("project_id"));
   const product = positiveId(params.get("product"));
   const material = positiveId(params.get("material"));
   const worker = positiveId(params.get("worker"));
   const status = safeStatus(params.get("status"));
+
+  // workspace filter: hanya berlaku jika tabel punya projectColumn
+  const wsRaw = String(params.get("ws") ?? "").trim().toUpperCase();
+  const ws = wsRaw === "HAJI" ? "HAJI" : wsRaw === "REGULER" ? "REGULER" : null;
+
+  // Jika ada filter workspace dan tabel punya projectColumn, fetch project IDs dulu
+  let wsProjectIds: number[] | null = null;
+  if (ws && report.projectColumn) {
+    const { data: projData } = await (supabase as any)
+      .from("projects")
+      .select("id, product_category, name, project_code")
+      .limit(2000);
+    if (projData) {
+      wsProjectIds = (projData as Array<{ id: number; product_category?: string | null; name?: string; project_code?: string }>)
+        .filter((p) => {
+          const cat = String(p.product_category ?? "").trim().toUpperCase();
+          if (cat === ws) return true;
+          if (!cat) {
+            const txt = `${p.name ?? ""} ${p.project_code ?? ""}`.toLowerCase();
+            if (ws === "HAJI") return txt.includes("haji") || txt.includes("embarkasi") || txt.includes("hajj") || txt.includes("kemenag");
+            return true; // REGULER adalah fallback
+          }
+          return false;
+        })
+        .map((p) => p.id);
+      // Jika tidak ada proyek cocok, kembalikan kosong
+      if (wsProjectIds.length === 0) return [];
+    }
+  }
+
   const all: Array<Record<string, unknown>> = [];
 
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
@@ -149,6 +182,7 @@ async function loadSimpleReport(
       }
     }
     if (project && report.projectColumn) query = query.eq(report.projectColumn, project);
+    else if (wsProjectIds && report.projectColumn) query = query.in(report.projectColumn, wsProjectIds);
     if (product && report.productColumn) query = query.eq(report.productColumn, product);
     if (material && report.materialColumn) query = query.eq(report.materialColumn, material);
     if (worker && report.workerColumn) query = query.eq(report.workerColumn, worker);

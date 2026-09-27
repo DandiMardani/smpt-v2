@@ -189,6 +189,28 @@ export default async function Page({ searchParams }: Props) {
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
 
+      {/* Export Shortcuts */}
+      <div className="flex flex-wrap items-center gap-2">
+        <a
+          href={`/api/export/xlsx?report=payroll_slips&run_id=${payrollRuns[0]?.id ?? ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
+        >
+          📥 Export Slip Gaji Terkini
+        </a>
+        <a
+          href={`/api/export/xlsx?report=operator_payroll_slips&run_id=${operatorRuns[0]?.id ?? ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-xs font-semibold text-violet-800 shadow-xs hover:bg-violet-100 transition"
+        >
+          📥 Export Slip Borongan Terkini
+        </a>
+        <a
+          href={`/api/export/xlsx?report=payroll&from=${new Date().toISOString().slice(0,4)}-01-01&to=${new Date().toISOString().slice(0,10)}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
+        >
+          📊 Rekap Payroll Tahun Ini
+        </a>
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Flow>
           HARIAN/BULANAN memakai Master Pekerja + absensi terverifikasi. Slip gaji dapat dicetak satuan, dicetak massal per periode, atau dikirimkan langsung ke nomor WhatsApp pekerja lengkap dengan rincian pendapatan, potongan kasbon, dan upah bersih (netto).
