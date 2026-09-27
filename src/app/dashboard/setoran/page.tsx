@@ -221,6 +221,31 @@ export default async function Page() {
         const run = it.payroll_runs;
         const gr = n(it.base_amount) + n(it.meal_amount) + n(it.overtime_amount) + n(it.manual_overtime_amount) + n(it.overtime_bonus) + n(it.holiday_bonus);
 
+        // Ambil kasbon dari snapshot dulu
+        let liveKasbonPerusahaan = n(it.kasbon_perusahaan_amount);
+        let liveKasbonWarung = n(it.kasbon_warung_amount);
+
+        // SINKRONISASI REAL-TIME: Jika run BELUM DIBAYAR, override kasbon dari data live cash_advances
+        // Ini memastikan kasbon yang baru ditambahkan setelah payroll dibuat langsung terlihat worker
+        const runPayStatus = getRunPaymentStatus(run);
+        if (runPayStatus === "BELUM DIBAYAR") {
+          const allAdv = advRes.data ?? [];
+          liveKasbonPerusahaan = allAdv
+            .filter((a: any) => a.category !== "KASBON_WARUNG")
+            .reduce((acc: number, a: any) => {
+              const rem = n(a.amount) - n(a.paid_amount);
+              const count = Number(a.installment_count) || 1;
+              const instAmt = n(a.installment_amount) || (count > 1 ? Math.round(n(a.amount) / count) : rem);
+              return acc + Math.min(rem, instAmt);
+            }, 0);
+          liveKasbonWarung = allAdv
+            .filter((a: any) => a.category === "KASBON_WARUNG")
+            .reduce((acc: number, a: any) => acc + Math.max(0, n(a.amount) - n(a.paid_amount)), 0);
+        }
+
+        const liveTotalDeduction = liveKasbonPerusahaan + liveKasbonWarung;
+        const liveNetAmount = Math.max(0, gr - liveTotalDeduction);
+
         officialSlip = {
           type: it.pay_system_snapshot || workerData.pay_system,
           payrollCode: run?.payroll_code || `PAY-${String(it.payroll_run_id).padStart(6, "0")}`,
@@ -238,10 +263,10 @@ export default async function Page() {
           mealAmount: n(it.meal_amount),
           holidayBonus: n(it.holiday_bonus),
           grossAmount: gr,
-          kasbonPerusahaanAmount: n(it.kasbon_perusahaan_amount),
-          kasbonWarungAmount: n(it.kasbon_warung_amount),
-          deductionAmount: n(it.deduction_amount),
-          netAmount: n(it.net_amount),
+          kasbonPerusahaanAmount: liveKasbonPerusahaan,
+          kasbonWarungAmount: liveKasbonWarung,
+          deductionAmount: liveTotalDeduction,
+          netAmount: liveNetAmount,
           notes: run?.notes,
         };
       }
