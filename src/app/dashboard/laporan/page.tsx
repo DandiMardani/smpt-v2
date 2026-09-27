@@ -215,8 +215,8 @@ export default async function Page({ searchParams }: Props) {
       .limit(80),
     // daftar proyek untuk dropdown filter
     s.from("projects").select("id, name, project_code, product_category, status").order("name").limit(400),
-    // keepalive status (opsional — tidak throw jika tabel belum ada)
-    s.rpc("smpt_last_keepalive").maybeSingle().then((r) => r).catch(() => ({ data: null, error: null })),
+    // keepalive status (opsional — tidak throw jika tabel/function belum ada)
+    Promise.resolve(s.rpc("smpt_last_keepalive").maybeSingle()).then((r) => r).catch(() => ({ data: null, error: null })),
   ]);
 
   const err = [hr.error, pr.error, cr.error, ar.error, projRes.error].find(Boolean);
