@@ -347,8 +347,41 @@ export function PayrollSlipManager({
   // General Run Items
   const allRunItems = useMemo(() => {
     if (!selectedRun) return [];
-    return items.filter((it) => it.payroll_run_id === selectedRun.id);
-  }, [items, selectedRun]);
+    const isUnpaid = selectedRun.status !== "PAID" && selectedRun.status !== "DIBATALKAN";
+    return items
+      .filter((it) => it.payroll_run_id === selectedRun.id)
+      .map((it) => {
+        if (!isUnpaid) return it;
+        const liveAdv = activeAdvancesByWorker.get(it.worker_id);
+        if (!liveAdv) return it;
+
+        const curP = num(it.kasbon_perusahaan_amount);
+        const curW = num(it.kasbon_warung_amount);
+        const effP = liveAdv.kasbonP > 0 ? liveAdv.kasbonP : curP;
+        const effW = liveAdv.kasbonW > 0 ? liveAdv.kasbonW : curW;
+
+        if (effP === curP && effW === curW) return it;
+
+        const gross =
+          num(it.base_amount) +
+          num(it.meal_amount) +
+          num(it.overtime_amount) +
+          num(it.manual_overtime_amount) +
+          num(it.overtime_bonus) +
+          num(it.holiday_bonus) +
+          num(it.holiday_manual_amount);
+        const deduction = Math.round((effP + effW) * 100) / 100;
+        const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
+
+        return {
+          ...it,
+          kasbon_perusahaan_amount: effP,
+          kasbon_warung_amount: effW,
+          deduction_amount: deduction,
+          net_amount: net,
+        };
+      });
+  }, [items, selectedRun, activeAdvancesByWorker]);
 
   const runItems = useMemo(() => {
     if (!selectedRun) return [];
@@ -436,8 +469,11 @@ export function PayrollSlipManager({
 
     setEditBonus(num(item.overtime_bonus));
     setEditHoliday(num(item.holiday_bonus));
-    setEditKasbonPerusahaan(num(item.kasbon_perusahaan_amount));
-    setEditKasbonWarung(num(item.kasbon_warung_amount));
+
+    const activeP = activeAdvancesByWorker.get(item.worker_id)?.kasbonP || 0;
+    const activeW = activeAdvancesByWorker.get(item.worker_id)?.kasbonW || 0;
+    setEditKasbonPerusahaan(activeP > 0 ? activeP : num(item.kasbon_perusahaan_amount));
+    setEditKasbonWarung(activeW > 0 ? activeW : num(item.kasbon_warung_amount));
   };
 
   const openOperatorEditModal = (item: OperatorItemRow) => {
@@ -1426,22 +1462,43 @@ export function PayrollSlipManager({
               {/* 5. Potongan Kasbon */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-rose-700">Kasbon Kantor (Rp)</label>
-                    {editingItem && (activeAdvancesByWorker.get(editingItem.worker_id)?.kasbonP || 0) > 0 ? (
-                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                        Cicilan: {money(activeAdvancesByWorker.get(editingItem.worker_id)?.kasbonP || 0)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <input
-                    name="kasbon_perusahaan_amount"
-                    type="number"
-                    step="any"
-                    value={editKasbonPerusahaan}
-                    onChange={(e) => setEditKasbonPerusahaan(Number(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-rose-200 bg-white px-3.5 py-2 font-bold text-rose-700 shadow-2xs focus:border-rose-500 focus:outline-none"
-                  />
+                  {(() => {
+                    const pDebt = editingItem ? (activeAdvancesByWorker.get(editingItem.worker_id)?.kasbonP || 0) : 0;
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-bold text-rose-700">Kasbon Kantor (Rp)</label>
+                          {pDebt > 0 ? (
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                              Cicilan: {money(pDebt)}
+                            </span>
+                          ) : null}
+                        </div>
+                        <input
+                          name="kasbon_perusahaan_amount"
+                          type="number"
+                          step="any"
+                          value={editKasbonPerusahaan}
+                          onChange={(e) => setEditKasbonPerusahaan(Number(e.target.value) || 0)}
+                          className="w-full rounded-xl border border-rose-200 bg-white px-3.5 py-2 font-bold text-rose-700 shadow-2xs focus:border-rose-500 focus:outline-none"
+                        />
+                        {pDebt > 0 ? (
+                          <div className="mt-1.5 flex items-center justify-between rounded-lg bg-rose-50 p-2 border border-rose-200 text-[11px] text-rose-900">
+                            <span>
+                              Cicilan Terdaftar: <b>{money(pDebt)}</b>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setEditKasbonPerusahaan(pDebt)}
+                              className="ml-2 shrink-0 rounded-md bg-rose-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-rose-700 shadow-2xs transition cursor-pointer"
+                            >
+                              ⚡ Terapkan
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div>
                   {(() => {

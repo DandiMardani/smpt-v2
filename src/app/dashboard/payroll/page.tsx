@@ -89,6 +89,91 @@ export default async function Page({ searchParams }: Props) {
   const activeAdvances = (advancesResult.data ?? []) as any[];
   const operatorRunMap = new Map(operatorRuns.map((run) => [run.id, run]));
 
+  // Petakan live kasbon aktif per pekerja
+  const activeAdvMap = new Map<number, { kasbonP: number; kasbonW: number }>();
+  for (const a of activeAdvances) {
+    if (a.status !== "AKTIF") continue;
+    const cur = activeAdvMap.get(a.worker_id) || { kasbonP: 0, kasbonW: 0 };
+    const rem = Math.max(0, Number(a.amount || 0) - Number(a.paid_amount || 0));
+    if (a.category === "KASBON_PERUSAHAAN") {
+      const inst = Number(a.installment_amount || 0);
+      cur.kasbonP += inst > 0 ? Math.min(inst, rem) : rem;
+    } else if (a.category === "KASBON_WARUNG") {
+      cur.kasbonW += rem;
+    }
+    activeAdvMap.set(a.worker_id, cur);
+  }
+
+  // Sinkronkan secara otomatis untuk run yang BELUM DIBAYAR (status !== 'PAID' dan !== 'DIBATALKAN')
+  const unpaidRuns = payrollRuns.filter((r) => r.status !== "PAID" && r.status !== "DIBATALKAN");
+  const unpaidRunIds = new Set(unpaidRuns.map((r) => r.id));
+
+  const itemsToSyncDb: PayrollItemRow[] = [];
+  const synchronizedPayrollItems = payrollItems.map((it) => {
+    if (!unpaidRunIds.has(it.payroll_run_id)) return it;
+    const live = activeAdvMap.get(it.worker_id);
+    if (!live) return it;
+
+    const curP = Number(it.kasbon_perusahaan_amount || 0);
+    const curW = Number(it.kasbon_warung_amount || 0);
+    const effP = live.kasbonP;
+    const effW = live.kasbonW;
+
+    if (Math.abs(curP - effP) < 0.01 && Math.abs(curW - effW) < 0.01) return it;
+
+    const gross =
+      Number(it.base_amount || 0) +
+      Number(it.meal_amount || 0) +
+      Number(it.overtime_amount || 0) +
+      Number(it.manual_overtime_amount || 0) +
+      Number(it.overtime_bonus || 0) +
+      Number(it.holiday_bonus || 0) +
+      Number(it.holiday_manual_amount || 0);
+    const deduction = Math.round((effP + effW) * 100) / 100;
+    const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
+
+    const updated = {
+      ...it,
+      kasbon_perusahaan_amount: effP,
+      kasbon_warung_amount: effW,
+      deduction_amount: deduction,
+      net_amount: net,
+    };
+    itemsToSyncDb.push(updated);
+    return updated;
+  });
+
+  // Jika ada kasbon yang berubah setelah finalisasi run, simpan ke database di background
+  if (itemsToSyncDb.length > 0 && canWrite) {
+    (async () => {
+      try {
+        for (const item of itemsToSyncDb) {
+          await supabase
+            .from("payroll_run_items")
+            .update({
+              kasbon_perusahaan_amount: item.kasbon_perusahaan_amount,
+              kasbon_warung_amount: item.kasbon_warung_amount,
+              deduction_amount: item.deduction_amount,
+              net_amount: item.net_amount,
+            })
+            .eq("id", item.id);
+        }
+        for (const run of unpaidRuns) {
+          const runItems = synchronizedPayrollItems.filter((i) => i.payroll_run_id === run.id);
+          const tGross = runItems.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.meal_amount || 0) + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0) + Number(i.holiday_bonus || 0) + Number(i.holiday_manual_amount || 0), 0);
+          const tDed = runItems.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0);
+          const tNet = runItems.reduce((acc, i) => acc + Number(i.net_amount || 0), 0);
+          await supabase
+            .from("payroll_runs")
+            .update({ total_gross: tGross, total_deduction: tDed, total_net: tNet })
+            .eq("id", run.id);
+        }
+      } catch (err) {
+        console.error("Auto sync advances DB error:", err);
+      }
+    })();
+  }
+
   const settingsRows = (settingsResult.data ?? []) as Array<{ key: string; value_numeric: number | null; value_text: string | null }>;
   const settingsMap: PayrollSettingsMap = {};
   settingsRows.forEach((r) => {
@@ -118,7 +203,7 @@ export default async function Page({ searchParams }: Props) {
       <PayrollViewTabs
         canWrite={canWrite}
         activeRunCode={payrollRuns[0]?.payroll_code}
-        workerCount={payrollRuns[0] ? payrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
+        workerCount={payrollRuns[0] ? synchronizedPayrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
         slipsNode={
           <div className="space-y-4 min-w-0 max-w-full">
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center sm:text-left min-w-0">
@@ -139,7 +224,7 @@ export default async function Page({ searchParams }: Props) {
             {/* Slip Gaji & WhatsApp Manager (Utama) */}
             <PayrollSlipManager
               runs={payrollRuns}
-              items={payrollItems}
+              items={synchronizedPayrollItems}
               operatorRuns={operatorRuns}
               operatorItems={operatorItems}
               workers={workers}
