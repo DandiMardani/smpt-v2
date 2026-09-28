@@ -15,6 +15,7 @@ import {
   WorkerFormFields,
   type WorkerItem,
 } from "./worker-directory-client";
+import { ExportWorkerButton } from "./export-worker-button";
 
 type Props = { searchParams: Promise<SearchParams> };
 
@@ -69,6 +70,11 @@ export default async function Page({ searchParams }: Props) {
           </form>
         </SectionCard>
       ) : null}
+
+      {/* Baris Tombol Export Excel & PDF */}
+      <div className="flex justify-end my-3">
+        <ExportWorkerButton workers={rows} />
+      </div>
 
       {/* Tampilan Direktori Pekerja dengan 4 Kartu Metrik & Fitur Pencarian / Filter */}
       <WorkerDirectoryClient workers={rows} canWrite={canWrite} />
