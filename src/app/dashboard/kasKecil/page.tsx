@@ -21,6 +21,10 @@ import { createClient } from "@/lib/supabase/server";
 import { addPettyCashAction } from "@/lib/final/actions";
 import { NotaUploadInput } from "./nota-upload-input";
 
+  
+import { ExportKasKecilBar } from "./export-kas-kecil";
+
+
 type Props = { searchParams: Promise<SearchParams> };
 
 export default async function Page({ searchParams }: Props) {
@@ -102,6 +106,9 @@ export default async function Page({ searchParams }: Props) {
           </form>
         </Card>
       ) : null}
+
+
+<ExportKasKecilBar data={r.data ?? []} />
 
       <Card title="Riwayat">
         <TableWrap>
