@@ -19,7 +19,7 @@ import { requirePermission } from "@/lib/access/current-user";
 import { money, n, param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { addPettyCashAction } from "@/lib/final/actions";
-import { NotaUploadInput } from "@/components/kas-kecil/nota-upload-input";
+import { NotaUploadInput } from "./nota-upload-input";
 
 type Props = { searchParams: Promise<SearchParams> };
 
@@ -90,7 +90,6 @@ export default async function Page({ searchParams }: Props) {
               <input name="document_no" className={inputClass} placeholder="Opsional" />
             </Field>
 
-            {/* Upload Nota Terkompresi Otomatis */}
             <div className="md:col-span-2">
               <Field label="Foto Nota / Bukti (Opsional)">
                 <NotaUploadInput />
