@@ -64,6 +64,7 @@ export const MENU_PERMISSION_BY_ID: Readonly<Record<string, string>> = {
   pengirimanEmbarkasi: "pengiriman_embarkasi.view",
   rejectEmbarkasi: "reject_embarkasi.view",
 
+  // Modul Khusus Proyek Reguler (Non-Haji)
   produksiReguler: "hasil_produksi.view",
   pengirimanKlien: "stok_barang_jadi.view",
 
@@ -92,7 +93,7 @@ function item(id: string, text: string, customHref?: string): MenuLeaf {
   };
 }
 
-// 1. POHON MENU LENGKAP UTAMA (SUSUNAN VERTIKAL LURUS KE BAWAH)
+// 1. POHON MENU GLOBAL (LURUS KE BAWAH TANPA SUBGROUP SAMPING)
 export const SMPT_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard"),
   {
@@ -184,7 +185,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
     text: "Keuangan & Kas",
     children: [
       item("kasKecil", "Kas Kecil"),
-      item("keuangan", "Keuangan Umum"),
+      item("keuangan", "Keuangan"),
       item("laporan", "Laporan Rekap"),
     ],
   },
@@ -201,7 +202,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
 
 export type WorkspaceMode = "HAJI" | "REGULER" | "GUDANG" | "SDM";
 
-// 2. WORKSPACE TAB [HAJI] (PRODUKSI HAJI & KEUANGAN PABRIK - TANPA PEKERJA)
+// 2. TAB HAJI (PRODUKSI EMBARKASI & KEUANGAN - TANPA PEKERJA)
 export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Haji"),
   {
@@ -259,7 +260,7 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
   },
 ];
 
-// 3. WORKSPACE TAB [REGULER] (PRODUKSI REGULER & KEUANGAN - TANPA PEKERJA)
+// 3. TAB REGULER (PRODUKSI REGULER & KEUANGAN - TANPA PEKERJA)
 export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Reguler"),
   {
@@ -308,7 +309,7 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
   },
 ];
 
-// 4. WORKSPACE TAB [GUDANG] (MURNI STOK & LOGISTIK)
+// 4. TAB GUDANG (MATERIAL & GUDANG PUSAT)
 export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Gudang"),
   {
@@ -326,10 +327,10 @@ export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
     id: "gudangMaterial",
     text: "Material & Bahan Mentah",
     children: [
-      item("procurement", "Procurement / PO Supplier"),
+      item("procurement", "Procurement / PO"),
       item("barangMasukGudang", "Barang Masuk Gudang"),
       item("barangKeluarGudang", "Barang Keluar Gudang"),
-      item("stokGudang", "Stok Gudang Material (Roll/Lot)"),
+      item("stokGudang", "Stok Gudang Material"),
       item("bahan", "Log Bahan Baku"),
     ],
   },
@@ -338,14 +339,14 @@ export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
     id: "qcLogistik",
     text: "Gudang Barang Jadi",
     children: [
-      item("stokBarangJadi", "Stok Barang Jadi (Gudang Pusat)"),
-      item("barangLuar", "Penerimaan Barang Jadi Luar"),
+      item("stokBarangJadi", "Stok Barang Jadi"),
+      item("barangLuar", "Penerimaan Barang Luar"),
       item("transferBarangJadi", "Transfer Antar Gudang"),
     ],
   },
 ];
 
-// 5. WORKSPACE TAB [SDM] (MURNI PEKERJA & PAYROLL - TANPA KAS KECIL)
+// 5. TAB SDM (MURNI TENAGA KERJA, KASBON & PAYROLL - TANPA KAS KECIL)
 export const SMPT_SDM_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard SDM"),
   {
@@ -353,7 +354,7 @@ export const SMPT_SDM_MENU_TREE: readonly MenuEntry[] = [
     id: "sdmPayroll",
     text: "Tenaga Kerja & Presensi",
     children: [
-      item("masterPekerja", "Master Data Pekerja"), // <-- Tetap di tempat aslinya di SDM
+      item("masterPekerja", "Master Data Pekerja"),
       item("absensi", "Presensi & Absensi"),
     ],
   },
@@ -407,19 +408,11 @@ export function getAllowedMenuIds(permissionCodes: Iterable<string>): string[] {
     allowed.push("payroll");
   }
 
-  // Kas Kecil otomatis muncul jika user punya izin kas_kecil.view, keuangan.view, atau Admin
   if (
-    (permissions.has("kas_kecil.view") ||
-      permissions.has("keuangan.view") ||
-      permissions.has("access_control.view")) &&
+    (permissions.has("keuangan.view") || permissions.has("access_control.view")) &&
     !allowed.includes("kasKecil")
   ) {
     allowed.push("kasKecil");
-  }
-
-  // Master Pekerja otomatis muncul jika user punya izin master_pekerja.view
-  if (permissions.has("master_pekerja.view") && !allowed.includes("masterPekerja")) {
-    allowed.push("masterPekerja");
   }
 
   return allowed;
