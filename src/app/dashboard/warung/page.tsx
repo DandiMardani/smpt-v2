@@ -1,100 +1,89 @@
-import { Metric, Notice, PageShell, ReadOnly } from "@/components/final/final-ui";
-import { requirePermission } from "@/lib/access/current-user";
-import { money, n, param, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { WarungPortal } from "./warung-portal";
 
-type Props = { searchParams: Promise<SearchParams> };
+export const metadata = {
+  title: "Portal Warung | SMPT",
+};
 
-export default async function Page({ searchParams }: Props) {
-  const access = await requirePermission("warung.view");
-  const canWrite = access.permissionCodes.includes("warung.write");
-  const query = await searchParams;
+export default async function WarungPage() {
   const supabase = await createClient();
 
-  let workers: any[] = [];
-  const [rpcWorkersResult, fallbackWorkersResult, warungAdvancesResult] = await Promise.all([
-    supabase.rpc("smpt_get_active_workers_for_reference"),
-    supabase
-      .from("workers")
-      .select("id,worker_code,name,pay_system,department,status")
-      .eq("status", "AKTIF")
-      .order("name"),
-    supabase
-      .from("cash_advances")
-      .select("*")
-      .eq("category", "KASBON_WARUNG")
-      .order("advance_date", { ascending: false })
-      .limit(1000),
-  ]);
-
-  if (warungAdvancesResult.error) throw new Error(warungAdvancesResult.error.message);
-
-  if (rpcWorkersResult.data && rpcWorkersResult.data.length > 0) {
-    workers = rpcWorkersResult.data;
-  } else if (fallbackWorkersResult.data && fallbackWorkersResult.data.length > 0) {
-    workers = fallbackWorkersResult.data;
+  // 1. Verifikasi User & Sesi
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    redirect("/login");
   }
 
-  const transactions = warungAdvancesResult.data ?? [];
+  const warungId = user.id;
+  const warungName = (user.user_metadata?.warung_name as string) || 
+                     (user.user_metadata?.full_name as string) || 
+                     user.email?.split("@")[0] || 
+                     "Warung Mitra";
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-  let todayAmount = 0;
-  let todayCount = 0;
-  let totalUnpaid = 0;
-  let totalPaid = 0;
-  const debtorWorkerIds = new Set<number>();
+  // 2. Query Pekerja Aktif
+  const { data: workersData } = await supabase
+    .from("workers")
+    .select("id, name, worker_code, role, status")
+    .eq("status", "AKTIF")
+    .order("name", { ascending: true });
 
-  for (const tx of transactions) {
-    const rem = n(tx.amount) - n(tx.paid_amount);
-    if (tx.status === "AKTIF" && rem > 0) {
-      totalUnpaid += rem;
-      debtorWorkerIds.add(tx.worker_id);
-    } else {
-      totalPaid += n(tx.paid_amount || tx.amount);
-    }
+  const workers = workersData || [];
 
-    if (tx.advance_date === todayStr) {
-      todayAmount += n(tx.amount);
-      todayCount += 1;
-    }
-  }
+  // 3. Query Transaksi Khusus Warung Ini Saja (Multi-Tenant Filter)
+  const { data: transactionsData } = await supabase
+    .from("cash_advances")
+    .select(`
+      id,
+      worker_id,
+      amount,
+      notes,
+      created_at,
+      status,
+      installments_paid,
+      warung_id,
+      warung_name,
+      workers (
+        id,
+        name,
+        worker_code
+      ),
+      warung_transaction_items (
+        id,
+        item_name,
+        qty,
+        unit_price,
+        subtotal
+      )
+    `)
+    .eq("category", "KASBON_WARUNG")
+    .eq("warung_id", warungId)
+    .order("created_at", { ascending: false });
+
+  const transactions = (transactionsData || []).map((t: any) => ({
+    id: t.id,
+    worker_id: t.worker_id,
+    worker_name: t.workers?.name || "Tanpa Nama",
+    worker_code: t.workers?.worker_code || "-",
+    amount: Number(t.amount) || 0,
+    notes: t.notes || "",
+    created_at: t.created_at,
+    status: t.status,
+    installments_paid: t.installments_paid || 0,
+    items: (t.warung_transaction_items || []).map((item: any) => ({
+      id: item.id,
+      item_name: item.item_name,
+      qty: Number(item.qty),
+      unit_price: Number(item.unit_price),
+      subtotal: Number(item.subtotal),
+    })),
+  }));
 
   return (
-    <PageShell
-      eyebrow="Portal Warung Mitra"
-      title="Pencatatan Kasbon Warung Luar"
-      description="Hak akses khusus pemilik warung luar untuk mencatat konsumsi/hutang makan pekerja harian, borongan, dan bulanan yang otomatis masuk ke slip gaji payroll."
-    >
-      <Notice success={param(query, "success")} error={param(query, "error")} />
-      {!canWrite ? <ReadOnly /> : null}
-
-      {/* Summary KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric
-          label="Tagihan Dicatat Hari Ini"
-          value={money(todayAmount)}
-        />
-        <Metric
-          label="Total Tagihan Belum Lunas"
-          value={money(totalUnpaid)}
-        />
-        <Metric
-          label="Pekerja Berhutang Aktif"
-          value={`${debtorWorkerIds.size} orang`}
-        />
-        <Metric
-          label="Total Sudah Terbayar (Payroll)"
-          value={money(totalPaid)}
-        />
-      </div>
-
-      {/* Interactive Portal Client Component */}
-      <WarungPortal
-        workers={workers}
-        transactions={transactions}
-        canWrite={canWrite}
-      />
-    </PageShell>
+    <WarungPortal
+      initialWorkers={workers}
+      initialTransactions={transactions}
+      currentWarung={{ id: warungId, name: warungName }}
+    />
   );
 }
