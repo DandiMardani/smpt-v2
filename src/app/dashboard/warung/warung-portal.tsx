@@ -7,19 +7,43 @@ import {
   deleteWarungTransactionAction,
   TransactionItemInput 
 } from "./actions";
-import { 
-  Search, 
-  Plus, 
-  Receipt, 
-  Users, 
-  Calendar, 
-  Clock, 
-  Trash2, 
-  Edit3, 
-  X, 
-  Check, 
-  AlertCircle 
-} from "lucide-react";
+
+// Ikon Native SVG (Tidak butuh library tambahan sama sekali)
+const SearchIcon = () => (
+  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+  </svg>
+);
+
+const PlusIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+  </svg>
+);
+
+const EditIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const CheckIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+  </svg>
+);
 
 const PRESET_CATALOG = [
   { name: "Kopi", price: 5000 },
@@ -83,7 +107,7 @@ export function WarungPortal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // State Modal Detail Riwayat Pekerja (Ketika kartu diklik)
+  // State Modal Detail Riwayat Pekerja (Klik kartu pekerja)
   const [selectedWorkerForDetail, setSelectedWorkerForDetail] = useState<Worker | null>(null);
 
   // Rekap saldo per pekerja
@@ -108,7 +132,6 @@ export function WarungPortal({
     );
   }, [initialWorkers, initialTransactions, searchQuery]);
 
-  // Transaksi aktif dengan filter pencarian
   const filteredTransactions = useMemo(() => {
     return initialTransactions.filter((tx) =>
       tx.worker_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -260,12 +283,12 @@ export function WarungPortal({
             onClick={() => handleOpenCreateForm()}
             className="flex items-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow-sm active:scale-95 transition"
           >
-            <Plus className="w-4 h-4" />
-            + Catat Nota Baru
+            <PlusIcon />
+            <span>Catat Nota Baru</span>
           </button>
         </div>
 
-        {/* Tab Switcher (Sesuai Screenshot: Oranye jika aktif, Putih jika non-aktif) */}
+        {/* Tab Switcher (Oranye jika aktif, Putih jika non-aktif) */}
         <div className="grid grid-cols-2 gap-2 mb-3">
           <button
             onClick={() => setActiveTab("rekap")}
@@ -275,8 +298,7 @@ export function WarungPortal({
                 : "bg-white text-slate-700 border border-slate-200"
             }`}
           >
-            <Users className="w-4 h-4 shrink-0" />
-            <span>Rekap Saldo Total per Orang ({activeWorkersWithDebtCount})</span>
+            <span>👥 Rekap Saldo Total per Orang ({activeWorkersWithDebtCount})</span>
           </button>
 
           <button
@@ -287,8 +309,7 @@ export function WarungPortal({
                 : "bg-white text-slate-700 border border-slate-200"
             }`}
           >
-            <Receipt className="w-4 h-4 shrink-0" />
-            <span>Riwayat Transaksi Harian ({initialTransactions.length})</span>
+            <span>📋 Riwayat Transaksi Harian ({initialTransactions.length})</span>
           </button>
         </div>
 
@@ -303,7 +324,7 @@ export function WarungPortal({
           />
         </div>
 
-        {/* TAB 1: KARTU PEKERJA (KLIK UNTUK LIHAT RINCIAN & EDIT) */}
+        {/* TAB 1: KARTU PEKERJA (BISA DIKLIK UNTUK LIHAT RINCIAN & EDIT) */}
         {activeTab === "rekap" && (
           <div className="space-y-3">
             {workerBalances.map(({ worker, totalDebt, transactionCount }) => {
@@ -315,7 +336,6 @@ export function WarungPortal({
                   onClick={() => setSelectedWorkerForDetail(worker)}
                   className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs hover:border-[#ea580c] active:scale-[0.99] transition cursor-pointer"
                 >
-                  {/* Baris Atas: Nama Pekerja & Badge Kuning X Nota */}
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-slate-900 text-sm tracking-tight">{worker.name}</h3>
                     <span className="bg-[#fef3c7] text-[#92400e] text-[11px] font-semibold px-2.5 py-0.5 rounded-full">
@@ -323,12 +343,10 @@ export function WarungPortal({
                     </span>
                   </div>
 
-                  {/* Baris Kedua: Kode Pekerja & Role */}
                   <div className="text-[11px] text-slate-500 font-medium mt-1">
                     {worker.worker_code} · {worker.role || "PRODUKSI (BULANAN)"}
                   </div>
 
-                  {/* Baris Ketiga: Total Tagihan */}
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-50">
                     <span className="text-xs text-slate-600 font-normal">Total Tagihan:</span>
                     <span className="text-base font-bold text-[#e11d48]">
@@ -336,7 +354,6 @@ export function WarungPortal({
                     </span>
                   </div>
 
-                  {/* Banner Kuning di Bagian Bawah Kartu */}
                   <div className="bg-[#fefce8] border border-[#fef08a]/80 text-[#854d0e] text-[11px] py-1.5 px-3 rounded-lg mt-2.5">
                     Otomatis masuk potongan slip gaji pada payroll berikutnya.
                   </div>
@@ -403,7 +420,7 @@ export function WarungPortal({
         )}
       </div>
 
-      {/* DRAWER / MODAL: RINCIAN RIWAYAT KHUSUS PEKERJA */}
+      {/* DRAWER / MODAL: RINCIAN RIWAYAT PEKERJA */}
       {selectedWorkerForDetail && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
@@ -421,7 +438,7 @@ export function WarungPortal({
                 onClick={() => setSelectedWorkerForDetail(null)}
                 className="p-1 rounded-full text-slate-400 hover:bg-slate-200 transition"
               >
-                <X className="w-5 h-5" />
+                <CloseIcon />
               </button>
             </div>
 
@@ -455,7 +472,6 @@ export function WarungPortal({
                         </span>
                       </div>
 
-                      {/* Detail Items jika ada */}
                       {tx.items.length > 0 && (
                         <div className="bg-slate-50 rounded-lg p-2 text-xs divide-y divide-slate-100">
                           {tx.items.map((item, idx) => (
@@ -478,16 +494,16 @@ export function WarungPortal({
                           disabled={tx.installments_paid > 0}
                           className="flex items-center gap-1 text-[11px] text-slate-700 hover:text-orange-600 font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-orange-50 disabled:opacity-40 transition"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          Edit Nota
+                          <EditIcon />
+                          <span>Edit Nota</span>
                         </button>
                         <button
                           onClick={() => handleDeleteTransaction(tx.id)}
                           disabled={tx.installments_paid > 0}
                           className="flex items-center gap-1 text-[11px] text-red-600 font-semibold px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 disabled:opacity-40 transition"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Hapus
+                          <TrashIcon />
+                          <span>Hapus</span>
                         </button>
                       </div>
                     </div>
@@ -505,21 +521,21 @@ export function WarungPortal({
                 }}
                 className="w-full bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
               >
-                <Plus className="w-4 h-4" />
-                Catat Nota Baru untuk {selectedWorkerForDetail.name.split(" ")[0]}
+                <PlusIcon />
+                <span>Catat Nota Baru untuk {selectedWorkerForDetail.name.split(" ")[0]}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL INPUT / EDIT NOTA DENGAN PRESET & FLEKSIBEL NOMINAL */}
+      {/* MODAL INPUT / EDIT NOTA */}
       {isFormOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
             <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between bg-[#ea580c] text-white rounded-t-2xl">
               <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5" />
+                <span className="text-base">📋</span>
                 <h2 className="font-bold text-sm">
                   {editingTransaction ? "Koreksi / Edit Nota Warung" : "Catat Nota Kasbon Baru"}
                 </h2>
@@ -528,15 +544,14 @@ export function WarungPortal({
                 onClick={() => setIsFormOpen(false)}
                 className="p-1 rounded-full text-orange-100 hover:bg-orange-600 transition"
               >
-                <X className="w-5 h-5" />
+                <CloseIcon />
               </button>
             </div>
 
             <form onSubmit={handleSubmitForm} className="overflow-y-auto p-4 space-y-3.5 flex-1">
               {errorMessage && (
-                <div className="bg-red-50 text-red-700 text-xs p-2.5 rounded-xl border border-red-200 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{errorMessage}</span>
+                <div className="bg-red-50 text-red-700 text-xs p-2.5 rounded-xl border border-red-200">
+                  ⚠️ {errorMessage}
                 </div>
               )}
 
@@ -560,7 +575,7 @@ export function WarungPortal({
                 </select>
               </div>
 
-              {/* 2. Checkbox Input Langsung Nominal (Misal: Kuota, Token, Uang Tunai) */}
+              {/* 2. Checkbox Input Langsung Nominal */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between">
                 <div>
                   <span className="text-xs font-bold text-amber-900 block">Input Langsung Nominal Saja?</span>
@@ -610,13 +625,13 @@ export function WarungPortal({
                               Rp {preset.price.toLocaleString("id-ID")}
                             </span>
                           </div>
-                          <Plus className="w-4 h-4 text-[#ea580c]" />
+                          <span className="text-[#ea580c] font-bold">+</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* Rincian Keranjang Barang */}
+                  {/* Keranjang Rincian Barang */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-[11px] font-bold text-slate-700 uppercase">
@@ -627,7 +642,7 @@ export function WarungPortal({
                         onClick={handleAddManualItem}
                         className="text-xs text-[#ea580c] font-bold hover:underline flex items-center gap-1"
                       >
-                        <Plus className="w-3.5 h-3.5" /> Item Manual
+                        + Item Manual
                       </button>
                     </div>
 
@@ -665,7 +680,7 @@ export function WarungPortal({
                             onClick={() => handleRemoveItem(idx)}
                             className="p-1 text-slate-400 hover:text-red-500 rounded transition"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <TrashIcon />
                           </button>
                         </div>
                       ))}
@@ -680,7 +695,7 @@ export function WarungPortal({
                 </div>
               )}
 
-              {/* Catatan / Keterangan (seperti Kuota, Token, dll) */}
+              {/* Catatan / Keterangan */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                   Menu / Keterangan
@@ -707,8 +722,8 @@ export function WarungPortal({
                   disabled={isSubmitting || computedFormTotal <= 0}
                   className="bg-[#ea580c] hover:bg-[#c2410c] disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition"
                 >
-                  <Check className="w-4 h-4" />
-                  {isSubmitting ? "Menyimpan..." : "Simpan Nota"}
+                  <CheckIcon />
+                  <span>{isSubmitting ? "Menyimpan..." : "Simpan Nota"}</span>
                 </button>
               </div>
             </form>
