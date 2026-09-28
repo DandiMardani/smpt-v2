@@ -8,7 +8,11 @@ export default async function WarungPage() {
   if (!user) redirect("/login");
 
   const warungId = user.id;
-  const warungName = user.user_metadata?.warung_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "Warung Mitra";
+  const userEmail = (user.email || "").toLowerCase();
+  const isDandi = userEmail.includes("dandi");
+  const warungName = isDandi 
+    ? "Dandi Store" 
+    : (user.user_metadata?.warung_name || user.email?.split("@")[0] || "Warung Mitra");
 
   // 1. Ambil data pekerja
   let workers: any[] = [];
@@ -22,7 +26,16 @@ export default async function WarungPage() {
     workers = data || [];
   }
 
-  // 2. ISOLASI MUTLAK: HANYA ambil data yang warung_id-nya SAMA PERSIS dengan ID user yang login!
+  // 2. OTOMATIS: Kunci 14 nota lama Dandi Store ke ID akun Dandi jika belum terkunci
+  if (isDandi) {
+    await supabase
+      .from("cash_advances")
+      .update({ warung_id: warungId })
+      .eq("category", "KASBON_WARUNG")
+      .is("warung_id", null);
+  }
+
+  // 3. ISOLASI MUTLAK: HANYA ambil data yang warung_id-nya SAMA PERSIS dengan ID user login!
   const { data: transactionsData } = await supabase
     .from("cash_advances")
     .select("id, worker_id, amount, notes, created_at, status, installments_paid, warung_name, warung_id")
