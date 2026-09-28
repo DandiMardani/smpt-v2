@@ -6,14 +6,81 @@ type KtpUploadInputProps = {
   existingUrl?: string | null;
 };
 
+// Fungsi kompresi gambar otomatis di browser (Client-Side)
+async function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<File> {
+  if (!file.type.startsWith("image/")) return file;
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let { width, height } = img;
+
+        // Skala proporsional jika resolusi melebihi maxWidth
+        if (width > height && width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        } else if (height > maxWidth) {
+          width = Math.round((width * maxWidth) / height);
+          height = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const cleanName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+            const compressed = new File([blob], cleanName, {
+              type: "image/jpeg",
+              lastModified: Date.now(),
+            });
+            resolve(compressed);
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      img.onerror = () => resolve(file);
+    };
+    reader.onerror = () => resolve(file);
+  });
+}
+
+function formatBytes(bytes: number): string {
+  const kb = bytes / 1024;
+  if (kb >= 1024) {
+    return `${(kb / 1024).toFixed(1)} MB`;
+  }
+  return `${Math.round(kb)} KB`;
+}
+
 export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(existingUrl || null);
   const [isNewFile, setIsNewFile] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [fileName, setFileName] = useState<string>("");
-  const [fileSize, setFileSize] = useState<string>("");
+  const [originalSizeStr, setOriginalSizeStr] = useState<string>("");
+  const [compressedSizeStr, setCompressedSizeStr] = useState<string>("");
   const [showFullModal, setShowFullModal] = useState(false);
 
   // Bersihkan object URL saat unmount untuk mencegah memory leak
@@ -33,9 +100,9 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
     galleryInputRef.current?.click();
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>, source: "camera" | "gallery") => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>, source: "camera" | "gallery") => {
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
 
     // Bersihkan input lainnya agar hanya 1 file yang terkirim di FormData
     if (source === "camera" && galleryInputRef.current) {
@@ -44,18 +111,41 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
       cameraInputRef.current.value = "";
     }
 
-    if (previewUrl && previewUrl.startsWith("blob:")) {
-      URL.revokeObjectURL(previewUrl);
+    setIsCompressing(true);
+
+    try {
+      // 1. Kompresi gambar secara otomatis
+      const compressedFile = await compressImage(rawFile, 1200, 0.75);
+
+      // 2. Suntikkan file hasil kompresi ke input element menggunakan DataTransfer
+      if (typeof DataTransfer !== "undefined") {
+        const dt = new DataTransfer();
+        dt.items.add(compressedFile);
+        e.target.files = dt.files;
+      }
+
+      // 3. Update preview dengan file yang sudah terkompresi
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+
+      const objectUrl = URL.createObjectURL(compressedFile);
+      setPreviewUrl(objectUrl);
+      setIsNewFile(true);
+      setFileName(compressedFile.name);
+      setOriginalSizeStr(formatBytes(rawFile.size));
+      setCompressedSizeStr(formatBytes(compressedFile.size));
+    } catch (err) {
+      console.error("Gagal mengompres gambar:", err);
+      // Fallback ke file mentah jika ada error
+      const objectUrl = URL.createObjectURL(rawFile);
+      setPreviewUrl(objectUrl);
+      setIsNewFile(true);
+      setFileName(rawFile.name);
+      setCompressedSizeStr(formatBytes(rawFile.size));
+    } finally {
+      setIsCompressing(false);
     }
-
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
-    setIsNewFile(true);
-    setFileName(file.name);
-
-    // Format ukuran file (KB / MB)
-    const kb = file.size / 1024;
-    setFileSize(kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`);
   };
 
   const handleReset = () => {
@@ -67,7 +157,8 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
     setPreviewUrl(existingUrl || null);
     setIsNewFile(false);
     setFileName("");
-    setFileSize("");
+    setOriginalSizeStr("");
+    setCompressedSizeStr("");
   };
 
   return (
@@ -75,7 +166,7 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
       {/* Hidden Inputs untuk Server Action */}
       <input type="hidden" name="existing_ktp_photo_url" value={existingUrl || ""} />
 
-      {/* Input Kamera Langsung (membuka kamera belakang HP secara instan) */}
+      {/* Input Kamera Langsung */}
       <input
         ref={cameraInputRef}
         type="file"
@@ -86,7 +177,7 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
         onChange={(e) => handleFileChange(e, "camera")}
       />
 
-      {/* Input File Galeri (membuka pemilih file/galeri HP) */}
+      {/* Input File Galeri */}
       <input
         ref={galleryInputRef}
         type="file"
@@ -122,9 +213,13 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
             {/* Info Status & Tombol Aksi */}
             <div className="flex-1 space-y-1.5">
               <div className="flex items-center gap-2">
-                {isNewFile ? (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200">
-                    ⚡ Foto Baru Dipilih
+                {isCompressing ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200 animate-pulse">
+                    ⚙️ Mengompres Foto Otomatis...
+                  </span>
+                ) : isNewFile ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                    ✨ Foto Siap (Terkompres Otomatis)
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
@@ -133,30 +228,38 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
                 )}
               </div>
 
-              <p className="text-xs text-slate-500">
+              <div className="text-xs text-slate-500">
                 {isNewFile ? (
                   <>
-                    <span className="font-medium text-slate-700">{fileName}</span> ({fileSize})
-                    <span className="block text-[11px] text-slate-400">Tekan tombol Simpan di bawah untuk mengunggah.</span>
+                    <p className="font-medium text-slate-700 truncate max-w-xs">{fileName}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Ukuran:{" "}
+                      {originalSizeStr ? (
+                        <span className="line-through text-slate-400 mr-1">{originalSizeStr}</span>
+                      ) : null}
+                      <b className="text-emerald-700">{compressedSizeStr}</b> (Optimal & Tajam)
+                    </p>
                   </>
                 ) : (
-                  <span>Foto KTP pekerja sudah terverifikasi dan aktif di sistem.</span>
+                  <p>Foto KTP pekerja sudah terverifikasi dan aktif di sistem.</p>
                 )}
-              </p>
+              </div>
 
               {/* Tombol Ambil Ulang / Ganti */}
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <button
                   type="button"
                   onClick={handleCameraClick}
-                  className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition shadow-2xs"
+                  disabled={isCompressing}
+                  className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition shadow-2xs disabled:opacity-50"
                 >
                   📸 Foto Ulang (Kamera)
                 </button>
                 <button
                   type="button"
                   onClick={handleGalleryClick}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                  disabled={isCompressing}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs disabled:opacity-50"
                 >
                   📁 Ambil dari Galeri
                 </button>
@@ -181,21 +284,23 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
           </div>
           <p className="text-xs font-semibold text-slate-700">Lampirkan Foto / Scan KTP</p>
           <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-0.5">
-            Di HP bisa langsung jepret dengan kamera belakang atau pilih file gambar dari Galeri / WhatsApp.
+            Foto dari kamera otomatis diperkecil agar hemat kuota tanpa mengurangi ketajaman NIK dan teks KTP.
           </p>
 
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               onClick={handleCameraClick}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-xs active:scale-95"
+              disabled={isCompressing}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-xs active:scale-95 disabled:opacity-50"
             >
               📸 Buka Kamera HP
             </button>
             <button
               type="button"
               onClick={handleGalleryClick}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs active:scale-95"
+              disabled={isCompressing}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs active:scale-95 disabled:opacity-50"
             >
               📁 Pilih dari Galeri
             </button>
@@ -217,8 +322,8 @@ export function KtpUploadInput({ existingUrl }: KtpUploadInputProps) {
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold text-slate-900">🪪 Pratinjau Foto KTP</span>
                 {isNewFile ? (
-                  <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
-                    Foto Baru
+                  <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                    Ukuran Optimal ({compressedSizeStr})
                   </span>
                 ) : null}
               </div>
