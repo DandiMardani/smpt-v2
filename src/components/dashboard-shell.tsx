@@ -158,6 +158,7 @@ export function DashboardShell({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState<boolean>(false);
   const [sidebarFilter, setSidebarFilter] = useState<string>("");
+  const [mobileFilter, setMobileFilter] = useState<string>("");
   const [activeFlyoutGroup, setActiveFlyoutGroup] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [mobileOpenGroups, setMobileOpenGroups] = useState<Record<string, boolean>>({});
@@ -190,7 +191,7 @@ export function DashboardShell({
         setContentWide(savedWide !== "false");
       }
     } catch {
-      // Ignore localStorage read errors in restricted contexts
+      // Ignore localStorage read errors
     }
   }, []);
 
@@ -267,7 +268,6 @@ export function DashboardShell({
     }
   }, []);
 
-  // Listen to fullscreen changes
   useEffect(() => {
     const handleFsChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
@@ -276,7 +276,6 @@ export function DashboardShell({
     return () => document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) {
@@ -287,7 +286,7 @@ export function DashboardShell({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Global Keyboard shortcuts: Ctrl+B (sidebar), Ctrl+K (search), Esc
+  // Global Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
@@ -312,9 +311,9 @@ export function DashboardShell({
     setMobileOpen(false);
     setUserDropdownOpen(false);
     setActiveFlyoutGroup(null);
+    setMobileFilter("");
   }, [pathname]);
 
-  // Prevent background scroll when mobile drawer or search is open
   useEffect(() => {
     if (mobileOpen || searchOpen) {
       document.body.style.overflow = "hidden";
@@ -326,7 +325,6 @@ export function DashboardShell({
     };
   }, [mobileOpen, searchOpen]);
 
-  // Focus search input when search modal opens
   useEffect(() => {
     if (searchOpen) {
       setTimeout(() => {
@@ -380,7 +378,6 @@ export function DashboardShell({
   const currentBreadcrumb = useMemo(() => {
     const found = flatMenuItems.find((item) => item.href === pathname);
     if (!found) {
-      // Fallback for special or nested paths
       if (pathname === "/dashboard") return { page: "Dashboard", group: null };
       if (pathname.startsWith("/dashboard/akun")) return { page: "Akun Saya", group: "Pengaturan" };
       if (pathname.startsWith("/dashboard/spk")) return { page: "Surat Perintah Kerja", group: "Produksi" };
@@ -408,12 +405,11 @@ export function DashboardShell({
     );
   }, [searchQuery, flatMenuItems]);
 
-  // Reset selected search index on query change
   useEffect(() => {
     setSelectedSearchIndex(0);
   }, [searchQuery]);
 
-  // Filtered menu entries for in-sidebar search
+  // Filtered menu entries for Desktop in-sidebar search
   const filteredSidebarEntries = useMemo(() => {
     const q = sidebarFilter.trim().toLowerCase();
     if (!q) return effectiveMenuEntries;
@@ -454,6 +450,47 @@ export function DashboardShell({
       .filter(Boolean) as MenuEntry[];
   }, [sidebarFilter, effectiveMenuEntries]);
 
+  // Filtered menu entries for Mobile Drawer in-drawer search
+  const filteredMobileEntries = useMemo(() => {
+    const q = mobileFilter.trim().toLowerCase();
+    if (!q) return effectiveMenuEntries;
+
+    return effectiveMenuEntries
+      .map((entry) => {
+        if (entry.type === "item") {
+          return entry.text.toLowerCase().includes(q) ? entry : null;
+        }
+
+        const filteredChildren: MenuGroupChild[] = [];
+        for (const child of entry.children) {
+          if (child.type === "item") {
+            if (child.text.toLowerCase().includes(q)) {
+              filteredChildren.push(child);
+            }
+          } else {
+            const filteredSubs = child.children.filter((sub) =>
+              sub.text.toLowerCase().includes(q)
+            );
+            if (filteredSubs.length > 0 || child.text.toLowerCase().includes(q)) {
+              filteredChildren.push({
+                ...child,
+                children: filteredSubs.length > 0 ? filteredSubs : child.children,
+              });
+            }
+          }
+        }
+
+        if (filteredChildren.length > 0 || entry.text.toLowerCase().includes(q)) {
+          return {
+            ...entry,
+            children: filteredChildren.length > 0 ? filteredChildren : entry.children,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as MenuEntry[];
+  }, [mobileFilter, effectiveMenuEntries]);
+
   return (
     <div className="min-h-screen bg-slate-50/80 text-slate-900 selection:bg-blue-600 selection:text-white">
       {/* ========================================================================= */}
@@ -487,7 +524,6 @@ export function DashboardShell({
             ) : null}
           </Link>
 
-          {/* Collapse/Expand Toggle Button in Sidebar */}
           <button
             type="button"
             onClick={handleToggleSidebar}
@@ -585,12 +621,11 @@ export function DashboardShell({
             </div>
           </div>
         ) : (
-          /* Mini Mode Switcher (Collapsed) */
           <div className="flex justify-center border-b border-slate-100 py-2">
             <button
               type="button"
               onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
-              title={`Klik untuk beralih mode (${workspace}). Mode berikutnya: ${getNextWorkspace(workspace)}`}
+              title={`Klik untuk beralih mode (${workspace}).`}
               className={`flex h-9 w-9 items-center justify-center rounded-xl border text-sm font-bold shadow-xs transition ${
                 workspace === "REGULER"
                   ? "border-indigo-200 bg-indigo-50 text-indigo-700"
@@ -606,7 +641,7 @@ export function DashboardShell({
           </div>
         )}
 
-        {/* Search / Quick Filter Bar (Expanded Only) */}
+        {/* Search / Quick Filter Bar (Expanded Desktop) */}
         {!sidebarCollapsed ? (
           <div className="px-3.5 pt-3 pb-1">
             <div className="relative">
@@ -643,7 +678,6 @@ export function DashboardShell({
             </div>
           </div>
         ) : (
-          /* Mini Quick Search Button (Collapsed) */
           <div className="flex justify-center pt-3 pb-1">
             <button
               type="button"
@@ -662,7 +696,6 @@ export function DashboardShell({
         {/* Scrollable Navigation List */}
         <div className="flex-1 overflow-y-auto px-3 py-3">
           {!sidebarCollapsed ? (
-            /* ================= FULL EXPANDED MENU ================= */
             <nav className="space-y-1.5">
               {filteredSidebarEntries.map((entry) => {
                 if (entry.type === "item") {
@@ -690,13 +723,6 @@ export function DashboardShell({
                   );
                 }
 
-                // Group item
-                const hasActiveChild = entry.children.some((child) =>
-                  child.type === "item"
-                    ? isLinkActive(child.href)
-                    : child.children.some((sub) => isLinkActive(sub.href))
-                );
-
                 return (
                   <details
                     key={entry.id}
@@ -721,7 +747,7 @@ export function DashboardShell({
                       >
                         <path
                           fillRule="evenodd"
-                          d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 01-1.06-.02z"
+                          d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
                           clipRule="evenodd"
                         />
                       </svg>
@@ -758,7 +784,6 @@ export function DashboardShell({
                           );
                         }
 
-                        // Subgroup
                         const subActive = child.children.some((sub) => sub.href === pathname);
                         return (
                           <details
@@ -819,7 +844,6 @@ export function DashboardShell({
               })}
             </nav>
           ) : (
-            /* ================= COMPACT RAIL MODE (ICONS + FLYOUT) ================= */
             <nav className="flex flex-col items-center space-y-2">
               {effectiveMenuEntries.map((entry) => {
                 if (entry.type === "item") {
@@ -845,7 +869,6 @@ export function DashboardShell({
                   );
                 }
 
-                // Group icon with flyout
                 const hasActive = entry.children.some((child) =>
                   child.type === "item"
                     ? isLinkActive(child.href)
@@ -853,7 +876,6 @@ export function DashboardShell({
                 );
                 const isFlyoutOpen = activeFlyoutGroup === entry.id;
 
-                // Flatten all leaf links of this entry for flyout popover
                 const flatGroupLinks: { id: string; text: string; href: string }[] = [];
                 for (const child of entry.children) {
                   if (child.type === "item") {
@@ -892,7 +914,6 @@ export function DashboardShell({
                       {getCategoryIcon(entry.id, "h-5 w-5")}
                     </button>
 
-                    {/* Flyout Popover */}
                     {isFlyoutOpen ? (
                       <div className="absolute left-full top-0 z-50 ml-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-3 shadow-xl animate-in fade-in zoom-in-95 duration-150">
                         <div className="mb-2 border-b border-slate-100 pb-2">
@@ -982,21 +1003,20 @@ export function DashboardShell({
       </aside>
 
       {/* ========================================================================= */}
-      {/* 2. DYNAMIC MAIN LAYOUT (RESPONSIVE PADDING & FLUID CONTAINER)              */}
+      {/* 2. DYNAMIC MAIN LAYOUT                                                    */}
       {/* ========================================================================= */}
       <div
         className={`flex min-h-screen flex-col w-full max-w-full min-w-0 overflow-x-clip transition-[padding] duration-300 ease-in-out ${
           sidebarCollapsed ? "lg:pl-20" : "lg:pl-72"
         }`}
       >
-        {/* ULTRA-MODERN FROSTED HEADER */}
+        {/* HEADER */}
         <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-md transition-all duration-300 shadow-xs w-full max-w-full">
           <div
             className={`mx-auto flex h-16 w-full items-center justify-between gap-2 px-3 sm:px-6 transition-all duration-300 min-w-0 ${
               contentWide ? "max-w-none" : "max-w-7xl"
             }`}
           >
-            {/* Left Header: Mobile Hamburger, Desktop Sidebar Toggle, Breadcrumbs */}
             <div className="flex items-center gap-2 min-w-0">
               {/* Mobile menu trigger */}
               <button
@@ -1064,21 +1084,12 @@ export function DashboardShell({
               </nav>
             </div>
 
-            {/* Right Header Controls: Search Palette, Wide Toggle, Fullscreen, Inbox, Profile */}
+            {/* Right Header Controls */}
             <div className="flex items-center gap-2 shrink-0">
-              {/* Floating Workspace Mode Indicator Toggle in Header */}
               <button
                 type="button"
                 onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
-                title={`Klik untuk beralih mode kerja. Saat ini: ${
-                  workspace === "REGULER"
-                    ? "Mode Proyek Reguler"
-                    : workspace === "HAJI"
-                    ? "Mode Proyek Haji"
-                    : workspace === "GUDANG"
-                    ? "Mode Gudang & Logistik"
-                    : "Mode SDM & Payroll"
-                }`}
+                title={`Klik untuk beralih mode kerja. Saat ini: ${workspace}`}
                 className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-extrabold transition shadow-xs hover:shadow-md active:scale-95 ${
                   workspace === "REGULER"
                     ? "border-indigo-200 bg-indigo-50/90 text-indigo-700 hover:bg-indigo-100"
@@ -1110,7 +1121,6 @@ export function DashboardShell({
                 <span className="text-[10px] opacity-60">⇄</span>
               </button>
 
-              {/* Mobile Quick Search Button */}
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
@@ -1123,7 +1133,6 @@ export function DashboardShell({
                 </svg>
               </button>
 
-              {/* Desktop Command Palette Trigger Button */}
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
@@ -1139,11 +1148,10 @@ export function DashboardShell({
                 </kbd>
               </button>
 
-              {/* Wide / Fluid Container Toggle */}
               <button
                 type="button"
                 onClick={handleToggleWide}
-                title={contentWide ? "Ganti ke Tampilan Terpusat (Standard)" : "Ganti ke Tampilan Lebar Penuh (Widescreen)"}
+                title={contentWide ? "Ganti ke Tampilan Terpusat" : "Ganti ke Tampilan Lebar Penuh"}
                 className={`hidden md:flex h-9 w-9 items-center justify-center rounded-xl border shadow-xs transition active:scale-95 ${
                   contentWide
                     ? "border-blue-300 bg-blue-50 text-blue-700"
@@ -1167,7 +1175,6 @@ export function DashboardShell({
                 )}
               </button>
 
-              {/* Fullscreen Toggle */}
               <button
                 type="button"
                 onClick={handleToggleFullscreen}
@@ -1191,7 +1198,6 @@ export function DashboardShell({
                 )}
               </button>
 
-              {/* Inbox Gudang Alert */}
               {pendingGudangCount > 0 ? (
                 <Link
                   href="/dashboard/barangKeluarGudang"
@@ -1233,7 +1239,6 @@ export function DashboardShell({
                   </svg>
                 </button>
 
-                {/* Dropdown Menu */}
                 {userDropdownOpen ? (
                   <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl animate-in fade-in zoom-in-95 duration-100 z-50">
                     <div className="border-b border-slate-100 p-3">
@@ -1299,7 +1304,7 @@ export function DashboardShell({
           </div>
         </header>
 
-        {/* MAIN BODY CONTENT (WIDE OR CENTERED CONTAINER) */}
+        {/* MAIN BODY CONTENT */}
         <main
           className={`w-full max-w-full min-w-0 flex-1 p-3 pb-24 sm:p-6 sm:pb-24 lg:pb-12 transition-all duration-300 ${
             contentWide
@@ -1310,26 +1315,22 @@ export function DashboardShell({
           {children}
         </main>
 
-        {/* FOOTER */}
         <footer className="border-t border-slate-200/70 bg-white/50 py-4 text-center text-xs font-medium text-slate-400">
           Kreasi Dinamika Maju Bersama © 2026 · Sistem Manajemen Produksi Terpadu (SMPT V2)
         </footer>
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. COMMAND PALETTE MODAL (CTRL+K SEARCH)                                   */}
+      {/* 3. COMMAND PALETTE MODAL (CTRL+K SEARCH)                                  */}
       {/* ========================================================================= */}
       {searchOpen ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-6 pt-16 sm:pt-20">
-          {/* Backdrop */}
           <div
             onClick={() => setSearchOpen(false)}
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
           />
 
-          {/* Modal Container */}
           <div className="relative w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Search Input Box */}
             <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3.5">
               <svg className="h-5 w-5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="11" cy="11" r="8" />
@@ -1348,7 +1349,6 @@ export function DashboardShell({
               </kbd>
             </div>
 
-            {/* Results List */}
             <div className="max-h-96 overflow-y-auto p-2 space-y-1">
               {searchResults.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-400">
@@ -1383,7 +1383,6 @@ export function DashboardShell({
               )}
             </div>
 
-            {/* Modal Footer */}
             <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 flex items-center justify-between text-[11px] text-slate-400">
               <div className="flex items-center gap-3">
                 <span>Tekan <kbd className="font-bold text-slate-600">↵</kbd> untuk memilih</span>
@@ -1396,54 +1395,46 @@ export function DashboardShell({
       ) : null}
 
       {/* ========================================================================= */}
-      {/* 4. MOBILE DRAWER OVERLAY                                                  */}
+      {/* 4. REFINED MOBILE DRAWER (RINGKAS & ACCORDION RAPI)                       */}
       {/* ========================================================================= */}
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
-          {/* Backdrop */}
           <div
             onClick={() => setMobileOpen(false)}
             className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300"
           />
 
-          {/* Drawer container */}
           <aside className="relative flex h-full w-[85vw] max-w-sm flex-col bg-white shadow-2xl transition-transform duration-300 ease-out">
-            <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            {/* Header Terpadu: Profil + Inisial + Tombol Tutup */}
+            <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-black text-white shadow-xs">
-                  KD
+                  {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "KD"}
                 </div>
-                <div>
-                  <p className="text-xs font-extrabold text-slate-900">Kreasi Dinamika</p>
-                  <p className="text-[10px] font-semibold text-blue-600">SMPT V2 Mobile</p>
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-extrabold text-slate-900 leading-tight">
+                    {userProfile.displayName || userProfile.email.split("@")[0]}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">
+                      {userProfile.role}
+                    </span>
+                  </div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 active:scale-95 transition"
+                aria-label="Tutup menu"
               >
                 ✕
               </button>
             </div>
 
-            {/* Profile info in drawer */}
-            <div className="bg-slate-50/80 px-5 py-3 border-b border-slate-100 flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xs font-bold text-white shadow-xs">
-                {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-xs font-bold text-slate-800">
-                  {userProfile.displayName || userProfile.email}
-                </p>
-                <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
-                  {userProfile.role}
-                </span>
-              </div>
-            </div>
-
-            {/* Workspace Mode Switcher in Drawer */}
-            <div className="p-3 bg-slate-50 border-b border-slate-100">
+            {/* Workspace Mode Switcher (4 Tab Mode) */}
+            <div className="p-2.5 bg-slate-50 border-b border-slate-100">
               <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/70 p-1 text-[11px] font-bold">
                 <button
                   type="button"
@@ -1496,106 +1487,186 @@ export function DashboardShell({
               </div>
             </div>
 
-            {/* Scrollable menu */}
-            <div className="flex-1 overflow-y-auto px-4 py-4">
-              <nav className="space-y-1.5">
-                {effectiveMenuEntries.map((entry) => {
-                  if (entry.type === "item") {
-                    const active = isLinkActive(entry.href);
-                    return (
-                      <Link
-                        key={entry.id}
-                        href={entry.href}
-                        onClick={() => setMobileOpen(false)}
-                        className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
-                          active
-                            ? "bg-blue-600 text-white shadow-xs"
-                            : "text-slate-600 hover:bg-slate-100"
-                        }`}
-                      >
-                        {getCategoryIcon(entry.id, "h-4 w-4")}
-                        <span>{entry.text}</span>
-                      </Link>
-                    );
-                  }
-
-                  return (
-                    <details
-                      key={entry.id}
-                      open={mobileOpenGroups[entry.id] ?? true}
-                      onToggle={(e) => {
-                        const isOpen = e.currentTarget.open;
-                        setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
-                      }}
-                      className="group rounded-xl"
-                    >
-                      <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
-                        <span>{entry.text}</span>
-                        <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                        </svg>
-                      </summary>
-                      <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-3">
-                        {entry.children.map((child) => {
-                          if (child.type === "item") {
-                            const active = isLinkActive(child.href);
-                            return (
-                              <Link
-                                key={child.id}
-                                href={child.href}
-                                onClick={() => setMobileOpen(false)}
-                                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
-                                  active ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"
-                                }`}
-                              >
-                                <span>{child.text}</span>
-                              </Link>
-                            );
-                          }
-                          return (
-                            <div key={child.id} className="space-y-0.5 py-1">
-                              <p className="px-2 text-[10px] font-bold text-slate-400 uppercase">{child.text}</p>
-                              {child.children.map((sub) => (
-                                <Link
-                                  key={sub.id}
-                                  href={sub.href}
-                                  onClick={() => setMobileOpen(false)}
-                                  className={`flex items-center justify-between rounded-lg px-2 py-1 text-xs ${
-                                    isLinkActive(sub.href) ? "bg-blue-600 text-white font-bold" : "text-slate-600 hover:bg-slate-100"
-                                  }`}
-                                >
-                                  <span>{sub.text}</span>
-                                </Link>
-                              ))}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </details>
-                  );
-                })}
-              </nav>
+            {/* Kolom Pencarian Menu Mobile Instan */}
+            <div className="px-3 pt-2.5 pb-1">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={mobileFilter}
+                  onChange={(e) => setMobileFilter(e.target.value)}
+                  placeholder="🔍 Cari menu (spk, qc, barang, dll)..."
+                  className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-3 pr-8 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 shadow-2xs"
+                />
+                {mobileFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileFilter("")}
+                    className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Mobile drawer quick actions footer */}
-            <div className="border-t border-slate-100 p-4 space-y-2 bg-slate-50/50">
+            {/* Scrollable Navigation List (Accordion Otomatis Rapi) */}
+            <div className="flex-1 overflow-y-auto px-3.5 py-2">
+              {filteredMobileEntries.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  Tidak ada menu yang sesuai dengan &quot;{mobileFilter}&quot;
+                </div>
+              ) : (
+                <nav className="space-y-1">
+                  {filteredMobileEntries.map((entry) => {
+                    if (entry.type === "item") {
+                      const active = isLinkActive(entry.href);
+                      return (
+                        <Link
+                          key={entry.id}
+                          href={entry.href}
+                          onClick={() => setMobileOpen(false)}
+                          className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
+                            active
+                              ? "bg-blue-600 text-white shadow-xs"
+                              : "text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          {getCategoryIcon(entry.id, "h-4 w-4")}
+                          <span>{entry.text}</span>
+                        </Link>
+                      );
+                    }
+
+                    // Cek apakah ada menu aktif di dalam kelompok ini
+                    const hasActiveChild = entry.children.some((child) =>
+                      child.type === "item"
+                        ? isLinkActive(child.href)
+                        : child.children.some((sub) => isLinkActive(sub.href))
+                    );
+
+                    // Accordion: default terbuka hanya jika ada menu aktif atau sedang dicari
+                    const isGroupOpen = Boolean(mobileFilter) || (mobileOpenGroups[entry.id] ?? hasActiveChild);
+
+                    return (
+                      <details
+                        key={entry.id}
+                        open={isGroupOpen}
+                        onToggle={(e) => {
+                          const isOpen = e.currentTarget.open;
+                          setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
+                        }}
+                        className="group rounded-xl transition"
+                      >
+                        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition [&::-webkit-details-marker]:hidden">
+                          <div className="flex items-center gap-2">
+                            <span>{getCategoryIcon(entry.id, "h-3.5 w-3.5")}</span>
+                            <span>{entry.text}</span>
+                          </div>
+                          <svg
+                            className="h-3.5 w-3.5 text-slate-400 transition-transform duration-200 group-open:rotate-90"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </summary>
+
+                        <div className="mt-0.5 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-3">
+                          {entry.children.map((child) => {
+                            if (child.type === "item") {
+                              const active = isLinkActive(child.href);
+                              return (
+                                <Link
+                                  key={child.id}
+                                  href={child.href}
+                                  onClick={() => setMobileOpen(false)}
+                                  className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                                    active
+                                      ? "bg-blue-600 text-white font-bold shadow-xs"
+                                      : "text-slate-600 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  <span>{child.text}</span>
+                                  {badgeCounts[child.id] ? (
+                                    <span className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold ${active ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
+                                      {badgeCounts[child.id]}
+                                    </span>
+                                  ) : null}
+                                </Link>
+                              );
+                            }
+
+                            const subActive = child.children.some((sub) => isLinkActive(sub.href));
+                            const isSubOpen = Boolean(mobileFilter) || subActive;
+
+                            return (
+                              <details
+                                key={child.id}
+                                open={isSubOpen || undefined}
+                                className="group/sub"
+                              >
+                                <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
+                                  <span>{child.text}</span>
+                                  <svg className="h-3 w-3 text-slate-400 transition-transform duration-200 group-open/sub:rotate-90" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                                  </svg>
+                                </summary>
+                                <div className="mt-0.5 space-y-0.5 pl-2">
+                                  {child.children.map((sub) => (
+                                    <Link
+                                      key={sub.id}
+                                      href={sub.href}
+                                      onClick={() => setMobileOpen(false)}
+                                      className={`flex items-center justify-between rounded-lg px-2 py-1 text-xs transition ${
+                                        isLinkActive(sub.href) ? "bg-blue-600 text-white font-bold" : "text-slate-600 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      <span>{sub.text}</span>
+                                    </Link>
+                                  ))}
+                                </div>
+                              </details>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </nav>
+              )}
+            </div>
+
+            {/* Footer Ringkas */}
+            <div className="border-t border-slate-100 p-3 bg-slate-50/70 flex items-center gap-2">
               <Link
                 href="/dashboard/akun"
                 onClick={() => setMobileOpen(false)}
-                className="flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition"
               >
-                Akun Saya
+                ⚙️ Akun Saya
               </Link>
+              <form action={logout} className="shrink-0">
+                <button
+                  type="submit"
+                  title="Keluar Akun"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition"
+                >
+                  🚪
+                </button>
+              </form>
             </div>
           </aside>
         </div>
       ) : null}
 
       {/* ========================================================================= */}
-      {/* 5. FLOATING MOBILE BOTTOM NAVIGATION DOCK (MENGAMBANG)                    */}
+      {/* 5. FLOATING MOBILE BOTTOM NAVIGATION DOCK                                 */}
       {/* ========================================================================= */}
       <nav className="fixed bottom-3 inset-x-3 z-40 mx-auto flex h-14 max-w-sm items-center justify-around rounded-2xl border border-slate-200/90 bg-white/92 px-2 shadow-2xl backdrop-blur-xl ring-1 ring-slate-900/5 lg:hidden">
-        {/* Home */}
         <Link
           href="/dashboard"
           className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
@@ -1609,33 +1680,32 @@ export function DashboardShell({
           <span>Home</span>
         </Link>
 
-        {/* Dynamic Context Shortcut based on active workspace */}
         {workspace === "HAJI" && (
           <>
-          <Link
-            href="/dashboard/spk"
-            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
-              pathname.startsWith("/dashboard/spk") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-            </svg>
-            <span>SPK</span>
-          </Link>
-          <Link
-            href="/dashboard/qc"
-            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
-              pathname.startsWith("/dashboard/qc") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            <span className="text-sm leading-none">🔍</span>
-            <span>QC</span>
-          </Link>
-        </>
-      )}
+            <Link
+              href="/dashboard/spk"
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
+                pathname.startsWith("/dashboard/spk") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+              </svg>
+              <span>SPK</span>
+            </Link>
+            <Link
+              href="/dashboard/qc"
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+                pathname.startsWith("/dashboard/qc") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              <span className="text-sm leading-none">🔍</span>
+              <span>QC</span>
+            </Link>
+          </>
+        )}
 
         {workspace === "REGULER" && (
           <>
@@ -1689,7 +1759,7 @@ export function DashboardShell({
           </Link>
         )}
 
-        {/* Floating Quick Workspace Switcher Button on Mobile */}
+        {/* Quick Workspace Switcher Button on Mobile */}
         <button
           type="button"
           onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
@@ -1704,7 +1774,7 @@ export function DashboardShell({
           </span>
         </button>
 
-        {/* Menu Hamburger Trigger */}
+        {/* Menu Drawer Trigger */}
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
