@@ -71,6 +71,17 @@ const CUSTOM_MODULES = [
   { id: "kasbon.*", label: "💵 Modul Kasbon Kantor", desc: "Pencatatan pinjaman perusahaan dan cicilan" },
   { id: "warung.*", label: "🍜 Portal Warung Mitra", desc: "Pencatatan hutang makan pekerja" },
   { id: "laporan.*", label: "📊 Laporan & Monitoring", desc: "Melihat rekap laporan dan monitoring produksi" },
+ 
+  { 
+    id: "kas_kecil.view", 
+    label: "🪙 Kas Kecil (Lihat Nota & Export)", 
+    desc: "Bisa melihat buku kas kecil, foto nota belanja, filter periode, dan export Excel/PDF" 
+  },
+  { 
+    id: "master_pekerja.view", 
+    label: "🪪 Master Pekerja (Lihat Detail, KTP & Export)", 
+    desc: "Bisa melihat direktori pekerja, rincian NIK, foto fisik KTP, dan export data (Read Only)" 
+  },
 ];
 
 export default async function Page({ searchParams }: Props) {
