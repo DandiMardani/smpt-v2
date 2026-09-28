@@ -233,6 +233,7 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
       item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=HAJI"),
       item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=HAJI"),
       item("masterProdukProyek", "Master Produk Proyek", "/dashboard/masterProdukProyek?category=HAJI"),
+      item("masterBarangJadi", "Master Barang Jadi"),
       item("masterEmbarkasi", "Master Embarkasi"),
     ],
   },
@@ -289,6 +290,7 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
       item("masterProdukProyek", "Produk & Spesifikasi", "/dashboard/masterProdukProyek?category=REGULER"),
       item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=REGULER"),
       item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=REGULER"),
+      item("masterBarangJadi", "Master Barang Jadi"),
     ],
   },
   {
