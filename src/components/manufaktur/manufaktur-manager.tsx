@@ -57,6 +57,9 @@ export function ManufakturManager({
 }: Props) {
   const canWrite = canTitipan || canBarangLuar || canPengiriman;
 
+  // View Mode: Tab Sisa Stok vs Riwayat Transaksi
+  const [activeTab, setActiveTab] = useState<"stok" | "riwayat">("stok");
+
   // Form State
   const defaultFlow = canTitipan ? "TITIPAN" : canBarangLuar ? "BARANG_LUAR" : canPengiriman ? "PENGIRIMAN" : "TITIPAN";
   const [flowType, setFlowType] = useState<string>(defaultFlow);
@@ -75,24 +78,19 @@ export function ManufakturManager({
   const [filterProject, setFilterProject] = useState<string>("ALL");
   const [editingTx, setEditingTx] = useState<ManufacturingTransaction | null>(null);
 
-  // Material map and Finished Good map
+  // Maps untuk lookup cepat
   const materialMap = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const fgMap = useMemo(() => new Map(finishedGoods.map((f) => [f.id, f])), [finishedGoods]);
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const vendorMap = useMemo(() => new Map(vendors.map((v) => [v.id, v])), [vendors]);
 
-  // Scoped finished goods based on selected project
   const availableFinishedGoods = useMemo(() => {
-    if (!selectedProjectId || showAllFinishedGoods) {
-      return finishedGoods;
-    }
+    if (!selectedProjectId || showAllFinishedGoods) return finishedGoods;
     const pid = Number(selectedProjectId);
     const filtered = finishedGoods.filter((fg) => fg.project_id === pid);
-    // If no finished goods specifically linked to this project, show all so user is never stuck
     return filtered.length > 0 ? filtered : finishedGoods;
   }, [finishedGoods, selectedProjectId, showAllFinishedGoods]);
 
-  // Auto-set unit when material selected
   const handleMaterialChange = (matId: string) => {
     setSelectedMaterialId(matId);
     if (matId) {
@@ -101,7 +99,6 @@ export function ManufakturManager({
     }
   };
 
-  // Auto-set unit when finished good selected
   const handleFinishedGoodChange = (fgId: string) => {
     setSelectedFinishedGoodId(fgId);
     if (fgId) {
@@ -110,7 +107,7 @@ export function ManufakturManager({
     }
   };
 
-  // KPI stats
+  // KPI Stats
   const stats = useMemo(() => {
     const total = transactions.length;
     const titipan = transactions.filter((t) => t.flow_type === "TITIPAN").length;
@@ -119,24 +116,126 @@ export function ManufakturManager({
     return { total, titipan, barangLuar, pengiriman };
   }, [transactions]);
 
-  // Filtered transactions for the table
+  // ==========================================
+  // KALKULASI SISA STOK REAL-TIME DARI MUTASI
+  // ==========================================
+  const stockBalances = useMemo(() => {
+    type StockItem = {
+      key: string;
+      itemKind: "BAHAN" | "BARANG_JADI";
+      code: string;
+      name: string;
+      unit: string;
+      projectId: number | null;
+      projectName: string;
+      vendorId: number | null;
+      vendorName: string;
+      totalIn: number;
+      totalOut: number;
+      remainingStock: number;
+      txCount: number;
+    };
+
+    const map = new Map<string, StockItem>();
+
+    transactions.forEach((tx) => {
+      // Abaikan transaksi yang berstatus BATAL / NONAKTIF
+      if (tx.status !== "AKTIF") return;
+
+      const isMaterial = Boolean(tx.material_id);
+      const isFg = Boolean(tx.finished_good_id);
+      if (!isMaterial && !isFg) return;
+
+      const kind: "BAHAN" | "BARANG_JADI" = isMaterial ? "BAHAN" : "BARANG_JADI";
+      const itemId = isMaterial ? tx.material_id : tx.finished_good_id;
+      const projId = tx.project_id || null;
+      const vendId = tx.vendor_id || null;
+
+      // Kunci unik: Jenis + Item ID + Proyek ID + Vendor ID
+      const groupKey = `${kind}_${itemId}_proj:${projId || "none"}_vend:${vendId || "none"}`;
+
+      let record = map.get(groupKey);
+      if (!record) {
+        let code = "-";
+        let name = "-";
+        let defaultUnit = tx.unit || "PCS";
+
+        if (isMaterial) {
+          const m = materialMap.get(tx.material_id!);
+          code = m?.material_code || tx.material_code || "-";
+          name = m?.name || tx.material_name || "Bahan Baku";
+          if (m?.standard_unit) defaultUnit = m.standard_unit;
+        } else {
+          const f = fgMap.get(tx.finished_good_id!);
+          code = f?.finished_good_code || tx.fg_code || "-";
+          name = f?.name || tx.fg_name || "Barang Jadi";
+          if (f?.unit) defaultUnit = f.unit;
+        }
+
+        const pName = projId ? projectMap.get(projId)?.name || "Proyek" : "Umum / Non-Proyek";
+        const vName = vendId ? vendorMap.get(vendId)?.name || "Vendor" : "-";
+
+        record = {
+          key: groupKey,
+          itemKind: kind,
+          code,
+          name,
+          unit: defaultUnit,
+          projectId: projId,
+          projectName: pName,
+          vendorId: vendId,
+          vendorName: vName,
+          totalIn: 0,
+          totalOut: 0,
+          remainingStock: 0,
+          txCount: 0,
+        };
+        map.set(groupKey, record);
+      }
+
+      const qty = Number(tx.quantity) || 0;
+      if (tx.flow_type === "TITIPAN" || tx.flow_type === "BARANG_LUAR") {
+        record.totalIn += qty;
+        record.remainingStock += qty;
+      } else if (tx.flow_type === "PENGIRIMAN") {
+        record.totalOut += qty;
+        record.remainingStock -= qty;
+      }
+      record.txCount += 1;
+    });
+
+    // Saring sesuai filter pencarian
+    const q = search.trim().toLowerCase();
+    return Array.from(map.values()).filter((item) => {
+      if (filterKind === "BAHAN" && item.itemKind !== "BAHAN") return false;
+      if (filterKind === "BARANG_JADI" && item.itemKind !== "BARANG_JADI") return false;
+      if (filterProject === "NON_PROJECT" && item.projectId !== null) return false;
+      if (filterProject !== "ALL" && filterProject !== "NON_PROJECT" && item.projectId !== Number(filterProject)) return false;
+
+      if (!q) return true;
+      return (
+        item.code.toLowerCase().includes(q) ||
+        item.name.toLowerCase().includes(q) ||
+        item.vendorName.toLowerCase().includes(q) ||
+        item.projectName.toLowerCase().includes(q)
+      );
+    });
+  }, [transactions, search, filterKind, filterProject, materialMap, fgMap, projectMap, vendorMap]);
+
+  // Transaksi untuk Tabel Riwayat
   const filteredTransactions = useMemo(() => {
     const q = search.trim().toLowerCase();
     return transactions.filter((item) => {
-      // Flow filter
       if (filterFlow !== "ALL" && item.flow_type !== filterFlow) return false;
 
-      // Item Kind filter
       const isMaterial = item.material_id !== null;
       const isFg = item.finished_good_id !== null;
       if (filterKind === "BAHAN" && !isMaterial) return false;
       if (filterKind === "BARANG_JADI" && !isFg) return false;
 
-      // Project filter
       if (filterProject === "NON_PROJECT" && item.project_id !== null) return false;
       if (filterProject !== "ALL" && filterProject !== "NON_PROJECT" && item.project_id !== Number(filterProject)) return false;
 
-      // Text search
       if (!q) return true;
       const code = (item.manufacturing_code || "").toLowerCase();
       const doc = (item.document_no || "").toLowerCase();
@@ -165,34 +264,22 @@ export function ManufakturManager({
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Transaksi</div>
           <div className="mt-1 text-2xl font-bold text-slate-900">{stats.total}</div>
-          <div className="mt-1 text-xs text-slate-500">Semua riwayat manufaktur</div>
+          <div className="mt-1 text-xs text-slate-500">Semua riwayat mutasi</div>
         </div>
         <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 shadow-xs">
           <div className="text-xs font-semibold uppercase tracking-wider text-amber-700">Barang Titipan</div>
           <div className="mt-1 text-2xl font-bold text-amber-900">{stats.titipan}</div>
-          <div className="mt-1 text-xs text-amber-600">Non-Aset (Bahan & Barang Jadi)</div>
+          <div className="mt-1 text-xs text-amber-600">Non-Aset (Masuk)</div>
         </div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-xs">
           <div className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Barang Luar</div>
           <div className="mt-1 text-2xl font-bold text-emerald-900">{stats.barangLuar}</div>
-          <div className="mt-1 text-xs text-emerald-600">Penerimaan masuk gudang</div>
+          <div className="mt-1 text-xs text-emerald-600">Penerimaan Rekanan</div>
         </div>
         <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 shadow-xs">
           <div className="text-xs font-semibold uppercase tracking-wider text-blue-700">Pengiriman</div>
           <div className="mt-1 text-2xl font-bold text-blue-900">{stats.pengiriman}</div>
-          <div className="mt-1 text-xs text-blue-600">Ekspedisi / Pengeluaran</div>
-        </div>
-      </div>
-
-      {/* Info notice matching V1 */}
-      <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-xs text-blue-900 shadow-xs">
-        <div className="font-semibold text-blue-950">💡 Panduan Fleksibilitas Manufaktur & Titipan (Paritas V1)</div>
-        <div className="mt-1 text-blue-800 leading-relaxed">
-          • <strong>TITIPAN:</strong> Dapat berupa <strong>Bahan Baku</strong> maupun <strong>Barang Jadi</strong> dari pelanggan / pihak ketiga. Tercatat terpisah sebagai non-aset (tidak membebani neraca modal perusahaan). Dapat terikat proyek spesifik atau bebas proyek (Umum).
-          <br />
-          • <strong>BARANG LUAR:</strong> Penerimaan barang jadi dari supplier/vendor atau hasil produksi rekanan luar. Jika dipilih Barang Jadi, sistem otomatis menambah saldo inventaris Gudang Pusat.
-          <br />
-          • <strong>FLEKSIBILITAS PROYEK:</strong> Transaksi dapat diisi tanpa proyek (Stok Bebas / Titipan Umum) atau ditautkan langsung ke proyek aktif.
+          <div className="mt-1 text-xs text-blue-600">Total Keluar Gudang</div>
         </div>
       </div>
 
@@ -204,7 +291,6 @@ export function ManufakturManager({
               <h3 className="text-base font-bold text-slate-900">Catat Transaksi Manufaktur & Titipan</h3>
               <p className="text-xs text-slate-500">Mendukung Bahan Baku maupun Barang Jadi, fleksibel dengan atau tanpa proyek.</p>
             </div>
-            {/* Quick Flow Picker */}
             <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-medium">
               {canTitipan && (
                 <button
@@ -246,11 +332,9 @@ export function ManufakturManager({
           </div>
 
           <form action={addManufacturingAction} className="mt-4 space-y-4">
-            {/* Hidden Flow Field */}
             <input type="hidden" name="flow_type" value={flowType} />
 
             <div className="grid gap-4 md:grid-cols-3">
-              {/* Tanggal */}
               <div>
                 <label className="block text-xs font-bold text-slate-700">
                   Tanggal Transaksi <span className="text-rose-500">*</span>
@@ -264,7 +348,6 @@ export function ManufakturManager({
                 />
               </div>
 
-              {/* Jenis Item (Bahan vs Barang Jadi) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700">
                   Jenis Item <span className="text-rose-500">*</span>
@@ -301,7 +384,6 @@ export function ManufakturManager({
                 </div>
               </div>
 
-              {/* Proyek (Fleksibel: Opsional) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700">
                   Proyek <span className="font-normal text-slate-500">(Opsional / Standalone)</span>
@@ -309,9 +391,7 @@ export function ManufakturManager({
                 <select
                   name="project_id"
                   value={selectedProjectId}
-                  onChange={(e) => {
-                    setSelectedProjectId(e.target.value);
-                  }}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="">Umum / Tanpa Proyek (Stok Bebas)</option>
@@ -324,7 +404,6 @@ export function ManufakturManager({
               </div>
             </div>
 
-            {/* Pilihan Item Dinamis */}
             <div className="grid gap-4 md:grid-cols-2">
               {itemKind === "BAHAN" ? (
                 <div>
@@ -345,7 +424,6 @@ export function ManufakturManager({
                       </option>
                     ))}
                   </select>
-                  <span className="mt-1 block text-xs text-slate-500">Bahan baku titipan atau bahan proses eksternal.</span>
                 </div>
               ) : (
                 <div>
@@ -359,7 +437,7 @@ export function ManufakturManager({
                         onClick={() => setShowAllFinishedGoods((prev) => !prev)}
                         className="text-xs text-blue-600 underline hover:text-blue-800"
                       >
-                        {showAllFinishedGoods ? "Filter per Proyek" : "Tampilkan Semua Barang Jadi"}
+                        {showAllFinishedGoods ? "Filter per Proyek" : "Tampilkan Semua"}
                       </button>
                     )}
                   </div>
@@ -380,13 +458,9 @@ export function ManufakturManager({
                       );
                     })}
                   </select>
-                  <span className="mt-1 block text-xs text-slate-500">
-                    Barang jadi yang dititipkan atau diterima dari pihak luar.
-                  </span>
                 </div>
               )}
 
-              {/* Vendor / Rekanan / Pihak Penitip */}
               <div>
                 <label className="block text-xs font-bold text-slate-700">
                   Vendor / Pihak Penitip / Supplier <span className="font-normal text-slate-500">(Opsional)</span>
@@ -395,18 +469,16 @@ export function ManufakturManager({
                   name="vendor_id"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="">-- Pilih Vendor / Rekanan (Atau tulis di keterangan) --</option>
+                  <option value="">-- Pilih Vendor / Rekanan --</option>
                   {vendors.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.vendor_code} · {v.name}
                     </option>
                   ))}
                 </select>
-                <span className="mt-1 block text-xs text-slate-500">Pihak penitip barang atau supplier pengirim.</span>
               </div>
             </div>
 
-            {/* Qty, Satuan, Dokumen, Keterangan */}
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700">
@@ -470,41 +542,64 @@ export function ManufakturManager({
         </div>
       )}
 
-      {/* Riwayat Transaksi Manufaktur */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
+      {/* KONTROL TAB & FILTER GLOBAL */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Riwayat Transaksi Manufaktur & Titipan</h3>
-            <p className="text-xs text-slate-500">Daftar mutasi produksi internal, bahan/barang jadi titipan, dan penerimaan luar.</p>
+          {/* Tab Switcher Fleksibel */}
+          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl max-w-md w-full">
+            <button
+              type="button"
+              onClick={() => setActiveTab("stok")}
+              className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                activeTab === "stok"
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>📦 Rekap Sisa Stok ({stockBalances.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("riwayat")}
+              className={`py-2 px-3 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                activeTab === "riwayat"
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <span>📋 Riwayat Mutasi ({filteredTransactions.length})</span>
+            </button>
           </div>
 
           {/* Quick Filters */}
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="text"
-              placeholder="Cari kode, item, no dok..."
+              placeholder="Cari kode, item, vendor..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-48 rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+              className="w-44 rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
             />
 
-            <select
-              value={filterFlow}
-              onChange={(e) => setFilterFlow(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="ALL">Semua Alur</option>
-              <option value="TITIPAN">Titipan</option>
-              <option value="BARANG_LUAR">Barang Luar</option>
-              <option value="PENGIRIMAN">Pengiriman</option>
-            </select>
+            {activeTab === "riwayat" && (
+              <select
+                value={filterFlow}
+                onChange={(e) => setFilterFlow(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="ALL">Semua Alur</option>
+                <option value="TITIPAN">Titipan</option>
+                <option value="BARANG_LUAR">Barang Luar</option>
+                <option value="PENGIRIMAN">Pengiriman</option>
+              </select>
+            )}
 
             <select
               value={filterKind}
               onChange={(e) => setFilterKind(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
             >
-              <option value="ALL">Semua Item</option>
+              <option value="ALL">Semua Jenis Item</option>
               <option value="BAHAN">Bahan Baku</option>
               <option value="BARANG_JADI">Barang Jadi</option>
             </select>
@@ -512,10 +607,10 @@ export function ManufakturManager({
             <select
               value={filterProject}
               onChange={(e) => setFilterProject(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
             >
               <option value="ALL">Semua Proyek</option>
-              <option value="NON_PROJECT">Umum / Tanpa Proyek</option>
+              <option value="NON_PROJECT">Umum / Bebas Proyek</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -525,149 +620,248 @@ export function ManufakturManager({
           </div>
         </div>
 
-        {/* Table */}
-        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[900px] border-collapse text-left text-xs">
-            <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase tracking-wider text-slate-600">
-              <tr>
-                <th className="px-3 py-3">Kode</th>
-                <th className="px-3 py-3">Tanggal</th>
-                <th className="px-3 py-3">Flow</th>
-                <th className="px-3 py-3">Jenis Item</th>
-                <th className="px-3 py-3">Nama Item</th>
-                <th className="px-3 py-3">Proyek</th>
-                <th className="px-3 py-3 text-right">Qty</th>
-                <th className="px-3 py-3">Pihak / Vendor</th>
-                <th className="px-3 py-3">Dokumen</th>
-                <th className="px-3 py-3">Keterangan</th>
-                <th className="px-3 py-3 text-center">Status</th>
-                <th className="px-3 py-3 text-center">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-800">
-              {filteredTransactions.length === 0 ? (
+        {/* TAB 1: KARTU & TABEL REKAP SISA STOK */}
+        {activeTab === "stok" && (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full min-w-[850px] border-collapse text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase tracking-wider text-slate-600">
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-slate-400">
-                    Belum ada data transaksi yang cocok dengan kriteria filter.
-                  </td>
+                  <th className="px-3 py-3">Jenis</th>
+                  <th className="px-3 py-3">Kode & Nama Item</th>
+                  <th className="px-3 py-3">Proyek Terkait</th>
+                  <th className="px-3 py-3">Pihak / Vendor Penitip</th>
+                  <th className="px-3 py-3 text-right">Total Masuk</th>
+                  <th className="px-3 py-3 text-right">Terkirim / Keluar</th>
+                  <th className="px-3 py-3 text-right bg-emerald-50/50 text-emerald-950">Sisa Stok Fisik</th>
+                  <th className="px-3 py-3 text-center">Status</th>
                 </tr>
-              ) : (
-                filteredTransactions.map((tx) => {
-                  const mat = tx.material_id ? materialMap.get(tx.material_id) : null;
-                  const fg = tx.finished_good_id ? fgMap.get(tx.finished_good_id) : null;
-                  const proj = tx.project_id ? projectMap.get(tx.project_id) : null;
-                  const vend = tx.vendor_id ? vendorMap.get(tx.vendor_id) : null;
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-800">
+                {stockBalances.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                      Belum ada data barang titipan yang aktif.
+                    </td>
+                  </tr>
+                ) : (
+                  stockBalances.map((item) => {
+                    const isAvailable = item.remainingStock > 0;
+                    const isNegative = item.remainingStock < 0;
 
-                  const isMaterial = Boolean(tx.material_id);
-                  const isFg = Boolean(tx.finished_good_id);
-
-                  const itemName = isMaterial
-                    ? `${mat?.material_code || ""} · ${mat?.name || tx.material_name || "Bahan Baku"}`
-                    : isFg
-                    ? `${fg?.finished_good_code || ""} · ${fg?.name || tx.fg_name || "Barang Jadi"}`
-                    : tx.description || "-";
-
-                  const flowColor =
-                    tx.flow_type === "TITIPAN"
-                      ? "bg-amber-100 text-amber-800 border-amber-300"
-                      : tx.flow_type === "BARANG_LUAR"
-                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                      : "bg-blue-100 text-blue-800 border-blue-300";
-
-                  return (
-                    <tr key={tx.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-3 py-2.5 font-mono font-bold text-slate-900">{tx.manufacturing_code}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-slate-600">{tx.transaction_date}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-bold ${flowColor}`}>
-                          {tx.flow_type}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {isMaterial ? (
-                          <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
-                            Bahan Baku
+                    return (
+                      <tr key={item.key} className="hover:bg-slate-50/80 transition">
+                        <td className="px-3 py-3">
+                          {item.itemKind === "BAHAN" ? (
+                            <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-200">
+                              Bahan Baku
+                            </span>
+                          ) : (
+                            <span className="inline-block rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-200">
+                              Barang Jadi
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="font-mono font-bold text-slate-900">{item.code}</div>
+                          <div className="text-slate-600 font-medium">{item.name}</div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                            {item.projectName}
                           </span>
-                        ) : isFg ? (
-                          <span className="inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
-                            Barang Jadi
+                        </td>
+                        <td className="px-3 py-3 font-medium text-slate-700">{item.vendorName}</td>
+                        <td className="px-3 py-3 text-right font-mono font-semibold text-slate-700">
+                          {item.totalIn.toLocaleString("id-ID", { maximumFractionDigits: 4 })} {item.unit}
+                        </td>
+                        <td className="px-3 py-3 text-right font-mono font-semibold text-blue-700">
+                          {item.totalOut.toLocaleString("id-ID", { maximumFractionDigits: 4 })} {item.unit}
+                        </td>
+                        <td className="px-3 py-3 text-right font-mono font-extrabold text-sm bg-emerald-50/30">
+                          <span
+                            className={
+                              isNegative
+                                ? "text-rose-600"
+                                : isAvailable
+                                ? "text-emerald-700"
+                                : "text-slate-400"
+                            }
+                          >
+                            {item.remainingStock.toLocaleString("id-ID", { maximumFractionDigits: 4 })} {item.unit}
                           </span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 font-medium text-slate-900">{itemName}</td>
-                      <td className="px-3 py-2.5">
-                        {proj ? (
-                          <span className="font-semibold text-slate-800">{proj.name}</span>
-                        ) : (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                            Umum / Non-Proyek
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {isNegative ? (
+                            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
+                              Minus (Cek SJ)
+                            </span>
+                          ) : isAvailable ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                              Tersedia
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                              Habis
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* TAB 2: TABEL RIWAYAT TRANSAKSI LENGKAP */}
+        {activeTab === "riwayat" && (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full min-w-[900px] border-collapse text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase tracking-wider text-slate-600">
+                <tr>
+                  <th className="px-3 py-3">Kode</th>
+                  <th className="px-3 py-3">Tanggal</th>
+                  <th className="px-3 py-3">Flow</th>
+                  <th className="px-3 py-3">Jenis Item</th>
+                  <th className="px-3 py-3">Nama Item</th>
+                  <th className="px-3 py-3">Proyek</th>
+                  <th className="px-3 py-3 text-right">Qty</th>
+                  <th className="px-3 py-3">Pihak / Vendor</th>
+                  <th className="px-3 py-3">Dokumen</th>
+                  <th className="px-3 py-3">Keterangan</th>
+                  <th className="px-3 py-3 text-center">Status</th>
+                  <th className="px-3 py-3 text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-800">
+                {filteredTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="py-8 text-center text-slate-400">
+                      Belum ada data transaksi yang cocok dengan kriteria filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTransactions.map((tx) => {
+                    const mat = tx.material_id ? materialMap.get(tx.material_id) : null;
+                    const fg = tx.finished_good_id ? fgMap.get(tx.finished_good_id) : null;
+                    const proj = tx.project_id ? projectMap.get(tx.project_id) : null;
+                    const vend = tx.vendor_id ? vendorMap.get(tx.vendor_id) : null;
+
+                    const isMaterial = Boolean(tx.material_id);
+                    const isFg = Boolean(tx.finished_good_id);
+
+                    const itemName = isMaterial
+                      ? `${mat?.material_code || ""} · ${mat?.name || tx.material_name || "Bahan Baku"}`
+                      : isFg
+                      ? `${fg?.finished_good_code || ""} · ${fg?.name || tx.fg_name || "Barang Jadi"}`
+                      : tx.description || "-";
+
+                    const flowColor =
+                      tx.flow_type === "TITIPAN"
+                        ? "bg-amber-100 text-amber-800 border-amber-300"
+                        : tx.flow_type === "BARANG_LUAR"
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-blue-100 text-blue-800 border-blue-300";
+
+                    const isOut = tx.flow_type === "PENGIRIMAN";
+
+                    return (
+                      <tr key={tx.id} className="hover:bg-slate-50/80 transition">
+                        <td className="px-3 py-2.5 font-mono font-bold text-slate-900">{tx.manufacturing_code}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap text-slate-600">{tx.transaction_date}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-bold ${flowColor}`}>
+                            {tx.flow_type}
                           </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                        {Number(tx.quantity).toLocaleString("id-ID", { maximumFractionDigits: 4 })} {tx.unit || ""}
-                      </td>
-                      <td className="px-3 py-2.5 text-slate-700">{vend ? vend.name : "-"}</td>
-                      <td className="px-3 py-2.5 text-slate-600 font-mono text-[11px]">{tx.document_no || "-"}</td>
-                      <td className="px-3 py-2.5 text-slate-600 max-w-xs truncate" title={tx.description || ""}>
-                        {tx.description || "-"}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                            tx.status === "AKTIF" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-                          }`}
-                        >
-                          {tx.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                        {tx.status === "AKTIF" && canWrite ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setEditingTx(tx)}
-                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition"
-                              title="Edit No Dokumen / Keterangan"
-                            >
-                              ✏️ Edit
-                            </button>
-                            <form
-                              action={cancelManufacturingAction}
-                              onSubmit={(e) => {
-                                const reason = prompt(`Yakin ingin membatalkan transaksi "${tx.manufacturing_code}"?\n\nMasukkan alasan pembatalan:`);
-                                if (reason === null) {
-                                  e.preventDefault();
-                                  return;
-                                }
-                                const input = e.currentTarget.querySelector("input[name='reason']") as HTMLInputElement;
-                                if (input) input.value = reason;
-                              }}
-                            >
-                              <input type="hidden" name="transaction_id" value={tx.id} />
-                              <input type="hidden" name="reason" value="" />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {isMaterial ? (
+                            <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                              Bahan Baku
+                            </span>
+                          ) : isFg ? (
+                            <span className="inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                              Barang Jadi
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-slate-900">{itemName}</td>
+                        <td className="px-3 py-2.5">
+                          {proj ? (
+                            <span className="font-semibold text-slate-800">{proj.name}</span>
+                          ) : (
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                              Umum / Non-Proyek
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold whitespace-nowrap">
+                          <span className={isOut ? "text-blue-700" : "text-emerald-700"}>
+                            {isOut ? "- " : "+ "}
+                            {Number(tx.quantity).toLocaleString("id-ID", { maximumFractionDigits: 4 })} {tx.unit || ""}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-700">{vend ? vend.name : "-"}</td>
+                        <td className="px-3 py-2.5 text-slate-600 font-mono text-[11px]">{tx.document_no || "-"}</td>
+                        <td className="px-3 py-2.5 text-slate-600 max-w-xs truncate" title={tx.description || ""}>
+                          {tx.description || "-"}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                              tx.status === "AKTIF" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                            }`}
+                          >
+                            {tx.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                          {tx.status === "AKTIF" && canWrite ? (
+                            <div className="flex items-center justify-center gap-1.5">
                               <button
-                                type="submit"
-                                className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 transition"
-                                title="Batalkan transaksi manufaktur"
+                                type="button"
+                                onClick={() => setEditingTx(tx)}
+                                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition"
                               >
-                                ✕ Batal
+                                ✏️ Edit
                               </button>
-                            </form>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 font-mono">-</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                              <form
+                                action={cancelManufacturingAction}
+                                onSubmit={(e) => {
+                                  const reason = prompt(`Yakin ingin membatalkan transaksi "${tx.manufacturing_code}"?\n\nMasukkan alasan pembatalan:`);
+                                  if (reason === null) {
+                                    e.preventDefault();
+                                    return;
+                                  }
+                                  const input = e.currentTarget.querySelector("input[name='reason']") as HTMLInputElement;
+                                  if (input) input.value = reason;
+                                }}
+                              >
+                                <input type="hidden" name="transaction_id" value={tx.id} />
+                                <input type="hidden" name="reason" value="" />
+                                <button
+                                  type="submit"
+                                  className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 transition"
+                                >
+                                  ✕ Batal
+                                </button>
+                              </form>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 font-mono">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Modal Edit Transaksi Manufaktur */}
