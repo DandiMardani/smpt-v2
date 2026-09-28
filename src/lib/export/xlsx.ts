@@ -3,8 +3,12 @@ import { deflateRawSync } from "node:zlib";
 export type XlsxCell = unknown;
 export type XlsxSheet = {
   name: string;
-  columns: Array<{ key: string; label: string }>;
+  columns: Array<{ key: string; label: string; width?: number }>;
   rows: Array<Record<string, XlsxCell>>;
+  /** Warna tab sheet, hex 6 digit tanpa #. Contoh: "10B981" */
+  tabColor?: string;
+  /** Warna background header row, hex 6 digit tanpa #. Contoh: "1E293B" */
+  headerColor?: string;
 };
 
 const encoder = new TextEncoder();
@@ -59,20 +63,22 @@ function widthFor(values: XlsxCell[], header: string): number {
   return Math.min(Math.max(max + 2, 10), 62);
 }
 
-function sheetXml(sheet: XlsxSheet): string {
+function sheetXml(sheet: XlsxSheet, headerStyleIdx: number): string {
   const columns = sheet.columns.length ? sheet.columns : [{ key: "info", label: "Info" }];
   const rows = sheet.rows.length ? sheet.rows : [{ info: "Tidak ada data untuk filter ini." }];
   const lastCol = colName(columns.length - 1);
   const lastRow = rows.length + 1;
   const colWidths = columns.map((col) => widthFor(rows.map((row) => row[col.key]), col.label));
   const cols = colWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("");
-  const header = columns.map((col, i) => cellXml(`${colName(i)}1`, col.label, 1)).join("");
+  const header = columns.map((col, i) => cellXml(`${colName(i)}1`, col.label, headerStyleIdx)).join("");
   const body = rows.map((row, r) => {
     const cells = columns.map((col, c) => cellXml(`${colName(c)}${r + 2}`, row[col.key], 0)).join("");
     return `<row r="${r + 2}">${cells}</row>`;
   }).join("");
+  const tabColorXml = sheet.tabColor ? `<sheetPr><tabColor rgb="FF${sheet.tabColor.toUpperCase()}"/></sheetPr>` : "";
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  ${tabColorXml}
   <dimension ref="A1:${lastCol}${lastRow}"/>
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <cols>${cols}</cols>
@@ -99,6 +105,69 @@ function uniqueSheetNames(sheets: XlsxSheet[]): string[] {
     used.add(candidate.toLowerCase());
     return candidate;
   });
+}
+
+export function buildXlsx(sheetsInput: XlsxSheet[]): Uint8Array {
+  const sheets = sheetsInput.length ? sheetsInput : [{ name: "Data", columns: [{ key: "info", label: "Info" }], rows: [{ info: "Tidak ada data." }] }];
+  const names = uniqueSheetNames(sheets);
+  const created = new Date().toISOString();
+
+  // Kumpulkan warna header unik — index 0 = default, lalu per warna unik
+  const DEFAULT_HDR = "1E293B";
+  const uniqueColors: string[] = [DEFAULT_HDR];
+  for (const s of sheets) {
+    const c = (s.headerColor ?? DEFAULT_HDR).toUpperCase();
+    if (!uniqueColors.includes(c)) uniqueColors.push(c);
+  }
+
+  // Map: headerColor → style index (0 = data cell, 1..n = header per warna)
+  function headerStyleIdx(sheet: XlsxSheet): number {
+    const c = (sheet.headerColor ?? DEFAULT_HDR).toUpperCase();
+    const idx = uniqueColors.indexOf(c);
+    return idx < 0 ? 1 : idx + 1; // +1 karena style 0 = data cell
+  }
+
+  // Build styles.xml dinamis
+  const fontDefs = [
+    // 0: normal
+    `<font><sz val="11"/><name val="Calibri"/><family val="2"/></font>`,
+    // 1..n: bold white per warna header
+    ...uniqueColors.map(() => `<font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/><family val="2"/></font>`),
+  ].join("");
+
+  const fillDefs = [
+    `<fill><patternFill patternType="none"/></fill>`,
+    `<fill><patternFill patternType="gray125"/></fill>`,
+    // 2..n+1: satu fill per warna header unik
+    ...uniqueColors.map((c) => `<fill><patternFill patternType="solid"><fgColor rgb="FF${c}"/><bgColor indexed="64"/></patternFill></fill>`),
+  ].join("");
+
+  // cellXfs: 0=data, 1..n=header per warna
+  const xfDefs = [
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`, // 0: data
+    ...uniqueColors.map((_, i) =>
+      `<xf numFmtId="0" fontId="${i + 1}" fillId="${i + 2}" borderId="0" xfId="0" applyFont="1" applyFill="1"/>`,
+    ), // 1..n: header
+  ].join("");
+
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${uniqueColors.length + 1}">${fontDefs}</fonts><fills count="${uniqueColors.length + 2}">${fillDefs}</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${uniqueColors.length + 1}">${xfDefs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+
+  const workbookSheets = names.map((name, i) => `<sheet name="${xml(name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("");
+  const rels = names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("");
+  const overrides = names.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
+
+  const files: Array<{ name: string; data: Uint8Array }> = [
+    { name: "[Content_Types].xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>${overrides}</Types>`) },
+    { name: "_rels/.rels", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`) },
+    { name: "xl/workbook.xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${workbookSheets}</sheets></workbook>`) },
+    { name: "xl/_rels/workbook.xml.rels", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}<Relationship Id="rId${names.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },
+    { name: "xl/styles.xml", data: encoder.encode(stylesXml) },
+    { name: "docProps/core.xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>SMPT</dc:creator><cp:lastModifiedBy>SMPT</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified></cp:coreProperties>`) },
+    { name: "docProps/app.xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>SMPT</Application></Properties>`) },
+  ];
+
+  sheets.forEach((sheet, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, data: encoder.encode(sheetXml(sheet, headerStyleIdx(sheet))) }));
+  return zip(files);
 }
 
 let crcTable: Uint32Array | null = null;
@@ -182,25 +251,4 @@ function zip(files: Array<{ name: string; data: Uint8Array }>): Uint8Array {
   return concat([...localParts, central, end]);
 }
 
-export function buildXlsx(sheetsInput: XlsxSheet[]): Uint8Array {
-  const sheets = sheetsInput.length ? sheetsInput : [{ name: "Data", columns: [{ key: "info", label: "Info" }], rows: [{ info: "Tidak ada data." }] }];
-  const names = uniqueSheetNames(sheets);
-  const created = new Date().toISOString();
 
-  const workbookSheets = names.map((name, i) => `<sheet name="${xml(name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("");
-  const rels = names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("");
-  const overrides = names.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
-
-  const files: Array<{ name: string; data: Uint8Array }> = [
-    { name: "[Content_Types].xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>${overrides}</Types>`) },
-    { name: "_rels/.rels", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`) },
-    { name: "xl/workbook.xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${workbookSheets}</sheets></workbook>`) },
-    { name: "xl/_rels/workbook.xml.rels", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}<Relationship Id="rId${names.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },
-    { name: "xl/styles.xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1E293B"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`) },
-    { name: "docProps/core.xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>SMPT</dc:creator><cp:lastModifiedBy>SMPT</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified></cp:coreProperties>`) },
-    { name: "docProps/app.xml", data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>SMPT</Application></Properties>`) },
-  ];
-
-  sheets.forEach((sheet, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, data: encoder.encode(sheetXml(sheet)) }));
-  return zip(files);
-}

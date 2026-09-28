@@ -237,8 +237,15 @@ export default async function Page({ searchParams }: Props) {
       <Card title="Backup Tersimpan">
         {backups.length ? (
           <TableWrap>
-            <thead><tr><Th>Backup</Th><Th>Label</Th><Th>Status</Th><Th>Ukuran</Th><Th>Dibuat</Th><Th>Restore Terakhir</Th></tr></thead>
-            <tbody>{backups.map((backup) => <tr key={backup.id}><Td>{backup.backup_code}</Td><Td>{backup.label || "-"}</Td><Td>{backup.status}</Td><Td>{sizeLabel(backup.byte_size)}</Td><Td>{backup.created_at}</Td><Td>{backup.last_restored_at || "-"}</Td></tr>)}</tbody>
+            <thead><tr><Th>Backup</Th><Th>Label</Th><Th>Status</Th><Th>Ukuran</Th><Th>Dibuat</Th><Th>Restore Terakhir</Th><Th>Export</Th></tr></thead>
+            <tbody>{backups.map((backup) => <tr key={backup.id}><Td>{backup.backup_code}</Td><Td>{backup.label || "-"}</Td><Td>{backup.status}</Td><Td>{sizeLabel(backup.byte_size)}</Td><Td>{backup.created_at}</Td><Td>{backup.last_restored_at || "-"}</Td><Td>
+              <a
+                href={`/api/export/backup?backup_id=${backup.id}`}
+                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+              >
+                📥 Excel
+              </a>
+            </Td></tr>)}</tbody>
           </TableWrap>
         ) : <p className="text-sm text-slate-500">Belum ada backup.</p>}
       </Card>
