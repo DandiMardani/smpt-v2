@@ -11,7 +11,11 @@ async function getAuthenticatedWarung() {
     throw new Error("Sesi login telah habis. Silakan login kembali.");
   }
 
-  const warungName = "Dandi Store";
+  const warungName = (user.user_metadata?.warung_name as string) || 
+                     (user.user_metadata?.full_name as string) || 
+                     user.email?.split("@")[0] || 
+                     "Warung Mitra";
+
   return { supabase, user, warungId: user.id, warungName };
 }
 
@@ -20,24 +24,17 @@ export async function createWarungTransactionAction(payload: {
   notes?: string;
   is_direct_nominal: boolean;
   direct_amount?: number;
-  items: Array<{ item_name: string; qty: number; unit_price: number; subtotal: number }>;
+  items?: Array<{ item_name: string; qty: number; unit_price: number; subtotal: number }>;
 }) {
   try {
     const { supabase, warungId, warungName } = await getAuthenticatedWarung();
-
-    let totalAmount = 0;
-    if (payload.is_direct_nominal) {
-      totalAmount = Number(payload.direct_amount) || 0;
-    } else {
-      totalAmount = payload.items.reduce((acc, item) => acc + (Number(item.subtotal) || 0), 0);
-    }
+    const totalAmount = Number(payload.direct_amount) || 0;
 
     if (totalAmount <= 0) {
-      return { success: false, error: "Total transaksi harus lebih dari Rp 0." };
+      return { success: false, error: "Nominal harus lebih dari Rp 0." };
     }
 
-    // Insert ke cash_advances dengan status AKTIF sesuai sistem SMPT
-    const { data: advance, error: advanceError } = await supabase
+    const { error: advanceError } = await supabase
       .from("cash_advances")
       .insert({
         worker_id: payload.worker_id,
@@ -50,33 +47,16 @@ export async function createWarungTransactionAction(payload: {
         installment_count: 1,
         installment_amount: totalAmount,
         installments_paid: 0,
-      })
-      .select("id")
-      .single();
+      });
 
-    if (advanceError || !advance) {
-      return { 
-        success: false, 
-        error: advanceError ? advanceError.message : "Gagal menyimpan nota transaksi ke pembukuan." 
-      };
-    }
-
-    // Simpan rincian item jika ada
-    if (!payload.is_direct_nominal && payload.items.length > 0) {
-      const itemsToInsert = payload.items.map((it) => ({
-        cash_advance_id: advance.id,
-        item_name: it.item_name,
-        qty: it.qty,
-        unit_price: it.unit_price,
-        subtotal: it.qty * it.unit_price,
-      }));
-      await supabase.from("warung_transaction_items").insert(itemsToInsert);
+    if (advanceError) {
+      return { success: false, error: advanceError.message };
     }
 
     revalidatePath("/dashboard/warung");
-    return { success: true, message: "Nota berhasil disimpan!" };
+    return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || "Terjadi kesalahan internal." };
+    return { success: false, error: err.message || "Terjadi kesalahan." };
   }
 }
 
@@ -87,19 +67,14 @@ export async function updateWarungTransactionAction(
     notes?: string;
     is_direct_nominal: boolean;
     direct_amount?: number;
-    items: Array<{ item_name: string; qty: number; unit_price: number; subtotal: number }>;
+    items?: Array<{ item_name: string; qty: number; unit_price: number; subtotal: number }>;
   }
 ) {
   try {
-    const { supabase } = await getAuthenticatedWarung();
+    const { supabase, warungId } = await getAuthenticatedWarung();
+    const totalAmount = Number(payload.direct_amount) || 0;
 
-    let totalAmount = 0;
-    if (payload.is_direct_nominal) {
-      totalAmount = Number(payload.direct_amount) || 0;
-    } else {
-      totalAmount = payload.items.reduce((acc, item) => acc + (Number(item.subtotal) || 0), 0);
-    }
-
+    // Proteksi: HANYA bisa update jika warung_id cocok dengan user yang sedang login!
     const { error: updateError } = await supabase
       .from("cash_advances")
       .update({
@@ -108,33 +83,37 @@ export async function updateWarungTransactionAction(
         installment_amount: totalAmount,
         notes: payload.notes || "Kasbon",
       })
-      .eq("id", transactionId);
+      .eq("id", transactionId)
+      .eq("warung_id", warungId);
 
     if (updateError) {
-      return { success: false, error: updateError.message || "Gagal memperbarui nota." };
+      return { success: false, error: updateError.message };
     }
 
     revalidatePath("/dashboard/warung");
-    return { success: true, message: "Nota berhasil diperbarui!" };
+    return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || "Terjadi kesalahan sistem." };
+    return { success: false, error: err.message || "Terjadi kesalahan." };
   }
 }
 
 export async function deleteWarungTransactionAction(transactionId: string) {
   try {
-    const { supabase } = await getAuthenticatedWarung();
+    const { supabase, warungId } = await getAuthenticatedWarung();
+
+    // Proteksi: HANYA bisa delete jika warung_id cocok dengan user yang sedang login!
     const { error: delError } = await supabase
       .from("cash_advances")
       .delete()
-      .eq("id", transactionId);
+      .eq("id", transactionId)
+      .eq("warung_id", warungId);
 
     if (delError) {
-      return { success: false, error: delError.message || "Gagal membatalkan nota." };
+      return { success: false, error: delError.message };
     }
 
     revalidatePath("/dashboard/warung");
-    return { success: true, message: "Nota berhasil dibatalkan." };
+    return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message || "Terjadi kesalahan." };
   }
