@@ -39,6 +39,7 @@ type FlatMenuItem = {
   subgroupTitle?: string;
 };
 
+// Category SVG Icons
 function getCategoryIcon(groupId: string, className = "h-5 w-5") {
   switch (groupId) {
     case "dashboard":
@@ -146,7 +147,10 @@ export function DashboardShell({
 }: Props) {
   const pathname = usePathname();
 
+  // Workspace Mode State: REGULER vs HAJI vs GUDANG vs SDM
   const [workspace, setWorkspace] = useState<"REGULER" | "HAJI" | "GUDANG" | "SDM">("REGULER");
+
+  // State: Sidebar collapsed, Content width mode, Mobile drawer, Search Palette, Fullscreen
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [contentWide, setContentWide] = useState<boolean>(true);
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
@@ -154,7 +158,6 @@ export function DashboardShell({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState<boolean>(false);
   const [sidebarFilter, setSidebarFilter] = useState<string>("");
-  const [mobileFilter, setMobileFilter] = useState<string>("");
   const [activeFlyoutGroup, setActiveFlyoutGroup] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [mobileOpenGroups, setMobileOpenGroups] = useState<Record<string, boolean>>({});
@@ -163,6 +166,7 @@ export function DashboardShell({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flyoutTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Restore preferences from localStorage on mount
   useEffect(() => {
     try {
       const savedWorkspace = localStorage.getItem("smpt_workspace");
@@ -212,13 +216,22 @@ export function DashboardShell({
   );
 
   const effectiveMenuEntries: MenuEntry[] = useMemo(() => {
-    if (workspace === "REGULER" && regulerEntries && regulerEntries.length > 0) return regulerEntries;
-    if (workspace === "HAJI" && hajiEntries && hajiEntries.length > 0) return hajiEntries;
-    if (workspace === "GUDANG" && gudangEntries && gudangEntries.length > 0) return gudangEntries;
-    if (workspace === "SDM" && sdmEntries && sdmEntries.length > 0) return sdmEntries;
+    if (workspace === "REGULER" && regulerEntries && regulerEntries.length > 0) {
+      return regulerEntries;
+    }
+    if (workspace === "HAJI" && hajiEntries && hajiEntries.length > 0) {
+      return hajiEntries;
+    }
+    if (workspace === "GUDANG" && gudangEntries && gudangEntries.length > 0) {
+      return gudangEntries;
+    }
+    if (workspace === "SDM" && sdmEntries && sdmEntries.length > 0) {
+      return sdmEntries;
+    }
     return menuEntries;
   }, [workspace, regulerEntries, hajiEntries, gudangEntries, sdmEntries, menuEntries]);
 
+  // Save collapsed state
   const handleToggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
       const next = !prev;
@@ -230,6 +243,7 @@ export function DashboardShell({
     setActiveFlyoutGroup(null);
   }, []);
 
+  // Save content wide state
   const handleToggleWide = useCallback(() => {
     setContentWide((prev) => {
       const next = !prev;
@@ -240,6 +254,7 @@ export function DashboardShell({
     });
   }, []);
 
+  // Fullscreen toggle
   const handleToggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
@@ -250,12 +265,16 @@ export function DashboardShell({
     }
   }, []);
 
+  // Listen to fullscreen changes
   useEffect(() => {
-    const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
     document.addEventListener("fullscreenchange", handleFsChange);
     return () => document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
+  // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) {
@@ -266,6 +285,7 @@ export function DashboardShell({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Global Keyboard shortcuts: Ctrl+B (sidebar), Ctrl+K (search), Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
@@ -285,13 +305,14 @@ export function DashboardShell({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleToggleSidebar]);
 
+  // Close mobile drawer on route change
   useEffect(() => {
     setMobileOpen(false);
     setUserDropdownOpen(false);
     setActiveFlyoutGroup(null);
-    setMobileFilter("");
   }, [pathname]);
 
+  // Prevent background scroll when mobile drawer or search is open
   useEffect(() => {
     if (mobileOpen || searchOpen) {
       document.body.style.overflow = "hidden";
@@ -303,34 +324,57 @@ export function DashboardShell({
     };
   }, [mobileOpen, searchOpen]);
 
+  // Focus search input when search modal opens
   useEffect(() => {
     if (searchOpen) {
-      setTimeout(() => searchInputRef.current?.focus(), 50);
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
     }
   }, [searchOpen]);
 
+  // Flattened searchable menu items list
   const flatMenuItems = useMemo<FlatMenuItem[]>(() => {
     const list: FlatMenuItem[] = [];
+
     for (const entry of effectiveMenuEntries) {
       if (entry.type === "item") {
-        list.push({ id: entry.id, title: entry.text, href: entry.href, groupTitle: "Dashboard" });
+        list.push({
+          id: entry.id,
+          title: entry.text,
+          href: entry.href,
+          groupTitle: "Dashboard",
+        });
       } else {
         const groupTitle = entry.text;
         for (const child of entry.children) {
           if (child.type === "item") {
-            list.push({ id: child.id, title: child.text, href: child.href, groupTitle });
+            list.push({
+              id: child.id,
+              title: child.text,
+              href: child.href,
+              groupTitle,
+            });
           } else {
             const subgroupTitle = child.text;
             for (const subChild of child.children) {
-              list.push({ id: subChild.id, title: subChild.text, href: subChild.href, groupTitle, subgroupTitle });
+              list.push({
+                id: subChild.id,
+                title: subChild.text,
+                href: subChild.href,
+                groupTitle,
+                subgroupTitle,
+              });
             }
           }
         }
       }
     }
+
     return list;
   }, [effectiveMenuEntries]);
 
+  // Current breadcrumb info
   const currentBreadcrumb = useMemo(() => {
     const found = flatMenuItems.find((item) => item.href === pathname);
     if (!found) {
@@ -339,9 +383,14 @@ export function DashboardShell({
       if (pathname.startsWith("/dashboard/spk")) return { page: "Surat Perintah Kerja", group: "Produksi" };
       return { page: "SMPT V2", group: "Dashboard" };
     }
-    return { page: found.title, group: found.groupTitle, subgroup: found.subgroupTitle };
+    return {
+      page: found.title,
+      group: found.groupTitle,
+      subgroup: found.subgroupTitle,
+    };
   }, [pathname, flatMenuItems]);
 
+  // Search results in Command Palette
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
 
@@ -360,64 +409,58 @@ export function DashboardShell({
     setSelectedSearchIndex(0);
   }, [searchQuery]);
 
+  // Filtered menu entries for in-sidebar search
   const filteredSidebarEntries = useMemo(() => {
     const q = sidebarFilter.trim().toLowerCase();
     if (!q) return effectiveMenuEntries;
+
     return effectiveMenuEntries
       .map((entry) => {
-        if (entry.type === "item") return entry.text.toLowerCase().includes(q) ? entry : null;
+        if (entry.type === "item") {
+          return entry.text.toLowerCase().includes(q) ? entry : null;
+        }
+
         const filteredChildren: MenuGroupChild[] = [];
         for (const child of entry.children) {
           if (child.type === "item") {
-            if (child.text.toLowerCase().includes(q)) filteredChildren.push(child);
+            if (child.text.toLowerCase().includes(q)) {
+              filteredChildren.push(child);
+            }
           } else {
-            const filteredSubs = child.children.filter((sub) => sub.text.toLowerCase().includes(q));
+            const filteredSubs = child.children.filter((sub) =>
+              sub.text.toLowerCase().includes(q)
+            );
             if (filteredSubs.length > 0 || child.text.toLowerCase().includes(q)) {
-              filteredChildren.push({ ...child, children: filteredSubs.length > 0 ? filteredSubs : child.children });
+              filteredChildren.push({
+                ...child,
+                children: filteredSubs.length > 0 ? filteredSubs : child.children,
+              });
             }
           }
         }
+
         if (filteredChildren.length > 0 || entry.text.toLowerCase().includes(q)) {
-          return { ...entry, children: filteredChildren.length > 0 ? filteredChildren : entry.children };
+          return {
+            ...entry,
+            children: filteredChildren.length > 0 ? filteredChildren : entry.children,
+          };
         }
         return null;
       })
       .filter(Boolean) as MenuEntry[];
   }, [sidebarFilter, effectiveMenuEntries]);
 
-  const filteredMobileEntries = useMemo(() => {
-    const q = mobileFilter.trim().toLowerCase();
-    if (!q) return effectiveMenuEntries;
-    return effectiveMenuEntries
-      .map((entry) => {
-        if (entry.type === "item") return entry.text.toLowerCase().includes(q) ? entry : null;
-        const filteredChildren: MenuGroupChild[] = [];
-        for (const child of entry.children) {
-          if (child.type === "item") {
-            if (child.text.toLowerCase().includes(q)) filteredChildren.push(child);
-          } else {
-            const filteredSubs = child.children.filter((sub) => sub.text.toLowerCase().includes(q));
-            if (filteredSubs.length > 0 || child.text.toLowerCase().includes(q)) {
-              filteredChildren.push({ ...child, children: filteredSubs.length > 0 ? filteredSubs : child.children });
-            }
-          }
-        }
-        if (filteredChildren.length > 0 || entry.text.toLowerCase().includes(q)) {
-          return { ...entry, children: filteredChildren.length > 0 ? filteredChildren : entry.children };
-        }
-        return null;
-      })
-      .filter(Boolean) as MenuEntry[];
-  }, [mobileFilter, effectiveMenuEntries]);
-
   return (
     <div className="min-h-screen bg-slate-50/80 text-slate-900 selection:bg-blue-600 selection:text-white">
-      {/* 1. DESKTOP SIDEBAR */}
+      {/* ========================================================================= */}
+      {/* 1. DESKTOP SIDEBAR (EXPANDED w-72 OR COMPACT RAIL w-20)                   */}
+      {/* ========================================================================= */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-slate-200/80 bg-white transition-[width] duration-300 ease-in-out lg:flex shadow-xs ${
           sidebarCollapsed ? "w-20" : "w-72"
         }`}
       >
+        {/* Brand Header */}
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 px-4">
           <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-blue-700 text-sm font-black text-white shadow-md shadow-blue-500/25">
@@ -426,16 +469,21 @@ export function DashboardShell({
             {!sidebarCollapsed ? (
               <div className="min-w-0 transition-opacity duration-200">
                 <div className="flex items-center gap-1.5">
-                  <span className="truncate text-sm font-black tracking-tight text-slate-900">Kreasi Dinamika</span>
+                  <span className="truncate text-sm font-black tracking-tight text-slate-900">
+                    Kreasi Dinamika
+                  </span>
                   <span className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-white shadow-xs">
                     V2 PRO
                   </span>
                 </div>
-                <p className="truncate text-[11px] font-semibold text-slate-400">Sistem Manufaktur Terpadu</p>
+                <p className="truncate text-[11px] font-semibold text-slate-400">
+                  Sistem Manufaktur Terpadu
+                </p>
               </div>
             ) : null}
           </Link>
 
+          {/* Collapse/Expand Toggle Button in Sidebar */}
           <button
             type="button"
             onClick={handleToggleSidebar}
@@ -443,7 +491,9 @@ export function DashboardShell({
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 transition active:scale-95"
           >
             <svg
-              className={`h-4 w-4 transition-transform duration-300 ${sidebarCollapsed ? "rotate-180" : ""}`}
+              className={`h-4 w-4 transition-transform duration-300 ${
+                sidebarCollapsed ? "rotate-180" : ""
+              }`}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -454,7 +504,7 @@ export function DashboardShell({
           </button>
         </div>
 
-        {/* Desktop Mode Switcher */}
+        {/* Workspace Mode Switcher (Expanded) */}
         {!sidebarCollapsed ? (
           <div className="border-b border-slate-100 bg-slate-50/70 p-2">
             <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/70 p-1 text-[10px] font-bold">
@@ -462,7 +512,9 @@ export function DashboardShell({
                 type="button"
                 onClick={() => handleWorkspaceChange("REGULER")}
                 className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "REGULER" ? "bg-indigo-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
+                  workspace === "REGULER"
+                    ? "bg-indigo-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 <span>🎒</span>
@@ -472,7 +524,9 @@ export function DashboardShell({
                 type="button"
                 onClick={() => handleWorkspaceChange("HAJI")}
                 className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "HAJI" ? "bg-emerald-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
+                  workspace === "HAJI"
+                    ? "bg-emerald-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 <span>🕋</span>
@@ -482,7 +536,9 @@ export function DashboardShell({
                 type="button"
                 onClick={() => handleWorkspaceChange("GUDANG")}
                 className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "GUDANG" ? "bg-sky-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
+                  workspace === "GUDANG"
+                    ? "bg-sky-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 <span>📦</span>
@@ -492,12 +548,36 @@ export function DashboardShell({
                 type="button"
                 onClick={() => handleWorkspaceChange("SDM")}
                 className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "SDM" ? "bg-amber-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
+                  workspace === "SDM"
+                    ? "bg-amber-600 text-white shadow-xs font-extrabold"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 <span>👥</span>
                 <span>SDM</span>
               </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[10px] font-semibold text-slate-500 px-1">
+              <span>Ruang Kerja:</span>
+              <span
+                className={`px-2 py-0.5 rounded-full font-bold ${
+                  workspace === "REGULER"
+                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                    : workspace === "HAJI"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : workspace === "GUDANG"
+                    ? "bg-sky-50 text-sky-700 border border-sky-200"
+                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                }`}
+              >
+                {workspace === "REGULER"
+                  ? "🎒 Proyek Umum"
+                  : workspace === "HAJI"
+                  ? "🕋 Proyek Haji"
+                  : workspace === "GUDANG"
+                  ? "📦 Gudang & Logistik"
+                  : "👥 SDM & Payroll"}
+              </span>
             </div>
           </div>
         ) : (
@@ -505,7 +585,7 @@ export function DashboardShell({
             <button
               type="button"
               onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
-              title={`Beralih mode (${workspace})`}
+              title={`Klik untuk beralih mode (${workspace}). Mode berikutnya: ${getNextWorkspace(workspace)}`}
               className={`flex h-9 w-9 items-center justify-center rounded-xl border text-sm font-bold shadow-xs transition ${
                 workspace === "REGULER"
                   ? "border-indigo-200 bg-indigo-50 text-indigo-700"
@@ -521,7 +601,7 @@ export function DashboardShell({
           </div>
         )}
 
-        {/* Desktop Search Filter */}
+        {/* Search / Quick Filter Bar (Expanded Only) */}
         {!sidebarCollapsed ? (
           <div className="px-3.5 pt-3 pb-1">
             <div className="relative">
@@ -532,20 +612,48 @@ export function DashboardShell({
                 placeholder="Cari menu... (Ctrl+K)"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-1.5 pl-8 pr-8 text-xs text-slate-800 placeholder-slate-400 transition focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
-              <svg className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               {sidebarFilter ? (
-                <button type="button" onClick={() => setSidebarFilter("")} className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600">✕</button>
+                <button
+                  type="button"
+                  onClick={() => setSidebarFilter("")}
+                  className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
               ) : (
-                <kbd className="absolute right-2 top-2 rounded border border-slate-200 bg-white px-1 text-[9px] font-bold text-slate-400">⌘K</kbd>
+                <kbd className="absolute right-2 top-2 rounded border border-slate-200 bg-white px-1 text-[9px] font-bold text-slate-400">
+                  ⌘K
+                </kbd>
               )}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex justify-center pt-3 pb-1">
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              title="Cari Menu (Ctrl+K)"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 transition shadow-xs"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </button>
+          </div>
+        )}
 
-        {/* Desktop Menu Tree */}
+        {/* Scrollable Navigation List */}
         <div className="flex-1 overflow-y-auto px-3 py-3">
           {!sidebarCollapsed ? (
             <nav className="space-y-1.5">
@@ -557,7 +665,9 @@ export function DashboardShell({
                       key={entry.id}
                       href={entry.href}
                       className={`group flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold transition ${
-                        active ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/30" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        active
+                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/30"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                       }`}
                     >
                       <div className={active ? "text-white" : "text-slate-400 group-hover:text-blue-600"}>
@@ -585,11 +695,21 @@ export function DashboardShell({
                   >
                     <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 hover:text-slate-800 transition [&::-webkit-details-marker]:hidden">
                       <div className="flex items-center gap-2.5">
-                        <span className="text-slate-400 group-hover/group:text-slate-600">{getCategoryIcon(entry.id, "h-4 w-4")}</span>
+                        <span className="text-slate-400 group-hover/group:text-slate-600">
+                          {getCategoryIcon(entry.id, "h-4 w-4")}
+                        </span>
                         <span>{entry.text}</span>
                       </div>
-                      <svg className="h-3.5 w-3.5 text-slate-400 transition-transform duration-200 group-open/group:rotate-90" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                      <svg
+                        className="h-3.5 w-3.5 text-slate-400 transition-transform duration-200 group-open/group:rotate-90"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                          clipRule="evenodd"
+                        />
                       </svg>
                     </summary>
 
@@ -603,12 +723,20 @@ export function DashboardShell({
                               key={child.id}
                               href={child.href}
                               className={`group/link flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                                active ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                active
+                                  ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20"
+                                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                               }`}
                             >
                               <span className="truncate">{child.text}</span>
                               {count > 0 ? (
-                                <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${active ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
+                                <span
+                                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                                    active
+                                      ? "bg-white text-blue-700"
+                                      : "bg-amber-100 text-amber-900 border border-amber-300"
+                                  }`}
+                                >
                                   {count}
                                 </span>
                               ) : null}
@@ -618,11 +746,23 @@ export function DashboardShell({
 
                         const subActive = child.children.some((sub) => sub.href === pathname);
                         return (
-                          <details key={child.id} open={subActive || Boolean(sidebarFilter) || undefined} className="group/sub">
+                          <details
+                            key={child.id}
+                            open={subActive || Boolean(sidebarFilter) || undefined}
+                            className="group/sub"
+                          >
                             <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
                               <span>{child.text}</span>
-                              <svg className="h-3 w-3 text-slate-400 transition-transform duration-200 group-open/sub:rotate-90" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                              <svg
+                                className="h-3 w-3 text-slate-400 transition-transform duration-200 group-open/sub:rotate-90"
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                                  clipRule="evenodd"
+                                />
                               </svg>
                             </summary>
                             <div className="mt-0.5 space-y-0.5 pl-2">
@@ -634,12 +774,20 @@ export function DashboardShell({
                                     key={subItem.id}
                                     href={subItem.href}
                                     className={`group/sublink flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs font-medium transition ${
-                                      active ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                      active
+                                        ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20"
+                                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                                     }`}
                                   >
                                     <span className="truncate">{subItem.text}</span>
                                     {count > 0 ? (
-                                      <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${active ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
+                                      <span
+                                        className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                                          active
+                                            ? "bg-white text-blue-700"
+                                            : "bg-amber-100 text-amber-900 border border-amber-300"
+                                        }`}
+                                      >
                                         {count}
                                       </span>
                                     ) : null}
@@ -666,7 +814,9 @@ export function DashboardShell({
                       href={entry.href}
                       title={entry.text}
                       className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
-                        active ? "bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                        active
+                          ? "bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                       }`}
                     >
                       {getCategoryIcon(entry.id, "h-5 w-5")}
@@ -680,7 +830,9 @@ export function DashboardShell({
                 }
 
                 const hasActive = entry.children.some((child) =>
-                  child.type === "item" ? isLinkActive(child.href) : child.children.some((sub) => isLinkActive(sub.href))
+                  child.type === "item"
+                    ? isLinkActive(child.href)
+                    : child.children.some((sub) => isLinkActive(sub.href))
                 );
                 const isFlyoutOpen = activeFlyoutGroup === entry.id;
 
@@ -689,7 +841,9 @@ export function DashboardShell({
                   if (child.type === "item") {
                     flatGroupLinks.push(child);
                   } else {
-                    for (const sub of child.children) flatGroupLinks.push(sub);
+                    for (const sub of child.children) {
+                      flatGroupLinks.push(sub);
+                    }
                   }
                 }
 
@@ -702,7 +856,9 @@ export function DashboardShell({
                       setActiveFlyoutGroup(entry.id);
                     }}
                     onMouseLeave={() => {
-                      flyoutTimeoutRef.current = setTimeout(() => setActiveFlyoutGroup(null), 200);
+                      flyoutTimeoutRef.current = setTimeout(() => {
+                        setActiveFlyoutGroup(null);
+                      }, 200);
                     }}
                   >
                     <button
@@ -710,7 +866,9 @@ export function DashboardShell({
                       onClick={() => setActiveFlyoutGroup(isFlyoutOpen ? null : entry.id)}
                       title={entry.text}
                       className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
-                        hasActive ? "bg-blue-100 text-blue-700 font-bold border border-blue-200" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                        hasActive
+                          ? "bg-blue-100 text-blue-700 font-bold border border-blue-200"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                       }`}
                     >
                       {getCategoryIcon(entry.id, "h-5 w-5")}
@@ -719,7 +877,9 @@ export function DashboardShell({
                     {isFlyoutOpen ? (
                       <div className="absolute left-full top-0 z-50 ml-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-3 shadow-xl animate-in fade-in zoom-in-95 duration-150">
                         <div className="mb-2 border-b border-slate-100 pb-2">
-                          <p className="text-xs font-black uppercase tracking-wider text-slate-800">{entry.text}</p>
+                          <p className="text-xs font-black uppercase tracking-wider text-slate-800">
+                            {entry.text}
+                          </p>
                           <p className="text-[10px] text-slate-400">Pilih modul navigasi</p>
                         </div>
                         <div className="max-h-80 overflow-y-auto space-y-1">
@@ -732,12 +892,20 @@ export function DashboardShell({
                                 href={link.href}
                                 onClick={() => setActiveFlyoutGroup(null)}
                                 className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                                  isItemActive ? "bg-blue-600 text-white font-bold" : "text-slate-700 hover:bg-slate-100"
+                                  isItemActive
+                                    ? "bg-blue-600 text-white font-bold"
+                                    : "text-slate-700 hover:bg-slate-100"
                                 }`}
                               >
                                 <span className="truncate">{link.text}</span>
                                 {count > 0 ? (
-                                  <span className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold ${isItemActive ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
+                                  <span
+                                    className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold ${
+                                      isItemActive
+                                        ? "bg-white text-blue-700"
+                                        : "bg-amber-100 text-amber-900 border border-amber-300"
+                                    }`}
+                                  >
                                     {count}
                                   </span>
                                 ) : null}
@@ -754,7 +922,7 @@ export function DashboardShell({
           )}
         </div>
 
-        {/* Desktop User Footer */}
+        {/* User Card Footer */}
         <div className="border-t border-slate-100 p-3">
           {!sidebarCollapsed ? (
             <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2 border border-slate-100">
@@ -762,19 +930,31 @@ export function DashboardShell({
                 {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-bold text-slate-800">{userProfile.displayName || userProfile.email}</p>
+                <p className="truncate text-xs font-bold text-slate-800">
+                  {userProfile.displayName || userProfile.email}
+                </p>
                 <div className="flex items-center gap-1.5">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <p className="truncate text-[10px] font-semibold text-blue-600">{userProfile.role}</p>
+                  <p className="truncate text-[10px] font-semibold text-blue-600">
+                    {userProfile.role}
+                  </p>
                 </div>
               </div>
-              <Link href="/dashboard/akun" title="Pengaturan Akun" className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700">
+              <Link
+                href="/dashboard/akun"
+                title="Pengaturan Akun"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700"
+              >
                 ⚙️
               </Link>
             </div>
           ) : (
             <div className="flex justify-center">
-              <Link href="/dashboard/akun" title={`${userProfile.displayName || userProfile.email} (${userProfile.role})`} className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-xs">
+              <Link
+                href="/dashboard/akun"
+                title={`${userProfile.displayName || userProfile.email} (${userProfile.role})`}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-xs"
+              >
                 {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
               </Link>
             </div>
@@ -782,10 +962,21 @@ export function DashboardShell({
         </div>
       </aside>
 
-      {/* 2. MAIN LAYOUT */}
-      <div className={`flex min-h-screen flex-col w-full max-w-full min-w-0 overflow-x-clip transition-[padding] duration-300 ease-in-out ${sidebarCollapsed ? "lg:pl-20" : "lg:pl-72"}`}>
+      {/* ========================================================================= */}
+      {/* 2. DYNAMIC MAIN LAYOUT                                                    */}
+      {/* ========================================================================= */}
+      <div
+        className={`flex min-h-screen flex-col w-full max-w-full min-w-0 overflow-x-clip transition-[padding] duration-300 ease-in-out ${
+          sidebarCollapsed ? "lg:pl-20" : "lg:pl-72"
+        }`}
+      >
+        {/* HEADER */}
         <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-md transition-all duration-300 shadow-xs w-full max-w-full">
-          <div className={`mx-auto flex h-16 w-full items-center justify-between gap-2 px-3 sm:px-6 transition-all duration-300 min-w-0 ${contentWide ? "max-w-none" : "max-w-7xl"}`}>
+          <div
+            className={`mx-auto flex h-16 w-full items-center justify-between gap-2 px-3 sm:px-6 transition-all duration-300 min-w-0 ${
+              contentWide ? "max-w-none" : "max-w-7xl"
+            }`}
+          >
             <div className="flex items-center gap-2 min-w-0">
               <button
                 type="button"
@@ -814,7 +1005,10 @@ export function DashboardShell({
               </button>
 
               <nav className="flex items-center gap-1.5 min-w-0 text-xs font-semibold">
-                <Link href="/dashboard" className="flex items-center gap-1 text-slate-400 hover:text-slate-700 transition shrink-0">
+                <Link
+                  href="/dashboard"
+                  className="flex items-center gap-1 text-slate-400 hover:text-slate-700 transition shrink-0"
+                >
                   <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                     <polyline points="9 22 9 12 15 12 15 22" />
@@ -825,12 +1019,25 @@ export function DashboardShell({
                 {currentBreadcrumb.group ? (
                   <>
                     <span className="text-slate-300 hidden md:inline">/</span>
-                    <span className="text-slate-500 truncate hidden md:inline">{currentBreadcrumb.group}</span>
+                    <span className="text-slate-500 truncate hidden md:inline">
+                      {currentBreadcrumb.group}
+                    </span>
+                  </>
+                ) : null}
+
+                {currentBreadcrumb.subgroup ? (
+                  <>
+                    <span className="text-slate-300 hidden lg:inline">/</span>
+                    <span className="text-slate-500 truncate hidden lg:inline">
+                      {currentBreadcrumb.subgroup}
+                    </span>
                   </>
                 ) : null}
 
                 <span className="text-slate-300">/</span>
-                <span className="font-extrabold text-slate-900 truncate">{currentBreadcrumb.page}</span>
+                <span className="font-extrabold text-slate-900 truncate">
+                  {currentBreadcrumb.page}
+                </span>
               </nav>
             </div>
 
@@ -850,7 +1057,13 @@ export function DashboardShell({
                 }`}
               >
                 <span className="text-sm">
-                  {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
+                  {workspace === "REGULER"
+                    ? "🎒"
+                    : workspace === "HAJI"
+                    ? "🕋"
+                    : workspace === "GUDANG"
+                    ? "📦"
+                    : "👥"}
                 </span>
                 <span className="hidden sm:inline">
                   {workspace === "REGULER"
@@ -874,7 +1087,9 @@ export function DashboardShell({
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
                 <span className="hidden md:inline">Cari modul...</span>
-                <kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400">Ctrl+K</kbd>
+                <kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400">
+                  Ctrl+K
+                </kbd>
               </button>
 
               <button
@@ -882,7 +1097,9 @@ export function DashboardShell({
                 onClick={handleToggleWide}
                 title={contentWide ? "Tampilan Terpusat" : "Tampilan Lebar Penuh"}
                 className={`hidden md:flex h-9 w-9 items-center justify-center rounded-xl border shadow-xs transition active:scale-95 ${
-                  contentWide ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  contentWide
+                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                 }`}
               >
                 {contentWide ? (
@@ -926,7 +1143,9 @@ export function DashboardShell({
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                   </span>
                   <span className="hidden sm:inline">Gudang</span>
-                  <span className="rounded-full bg-amber-500 px-1.5 text-[10px] text-white">{pendingGudangCount}</span>
+                  <span className="rounded-full bg-amber-500 px-1.5 text-[10px] text-white">
+                    {pendingGudangCount}
+                  </span>
                 </Link>
               ) : null}
 
@@ -946,33 +1165,68 @@ export function DashboardShell({
                     </p>
                   </div>
                   <svg className="h-3 w-3 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                    <path
+                      fillRule="evenodd"
+                      d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </button>
 
                 {userDropdownOpen ? (
                   <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl z-50">
                     <div className="border-b border-slate-100 p-3">
-                      <p className="text-xs font-bold text-slate-900 truncate">{userProfile.displayName || "Pengguna"}</p>
+                      <p className="text-xs font-bold text-slate-900 truncate">
+                        {userProfile.displayName || "Pengguna"}
+                      </p>
                       <p className="text-[11px] text-slate-500 truncate">{userProfile.email}</p>
                       <span className="mt-1.5 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200/60">
                         Role: {userProfile.role}
                       </span>
                     </div>
+
                     <div className="p-1 space-y-1">
-                      <Link href="/dashboard/akun" onClick={() => setUserDropdownOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                      <Link
+                        href="/dashboard/akun"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
                         👤 Profil & Akun Saya
                       </Link>
-                      <button type="button" onClick={() => { setUserDropdownOpen(false); handleToggleWide(); }} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          handleToggleWide();
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
                         <span>📐 Mode Lebar Penuh</span>
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${contentWide ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
                           {contentWide ? "AKTIF" : "STANDAR"}
                         </span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          handleToggleSidebar();
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <span>📑 Sembunyikan Sidebar</span>
+                        <kbd className="text-[9px] font-bold border border-slate-200 rounded px-1 text-slate-400">Ctrl+B</kbd>
+                      </button>
                     </div>
+
                     <div className="border-t border-slate-100 p-1">
                       <form action={logout}>
-                        <button type="submit" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition">
+                        <button
+                          type="submit"
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition"
+                        >
                           🚪 Keluar Sistem
                         </button>
                       </form>
@@ -984,7 +1238,14 @@ export function DashboardShell({
           </div>
         </header>
 
-        <main className={`w-full max-w-full min-w-0 flex-1 p-3 pb-24 sm:p-6 sm:pb-24 lg:pb-12 transition-all duration-300 ${contentWide ? "max-w-none px-3 sm:px-6 lg:px-8" : "mx-auto max-w-7xl px-3 sm:px-6 lg:px-8"}`}>
+        {/* MAIN BODY CONTENT */}
+        <main
+          className={`w-full max-w-full min-w-0 flex-1 p-3 pb-24 sm:p-6 sm:pb-24 lg:pb-12 transition-all duration-300 ${
+            contentWide
+              ? "max-w-none px-3 sm:px-6 lg:px-8"
+              : "mx-auto max-w-7xl px-3 sm:px-6 lg:px-8"
+          }`}
+        >
           {children}
         </main>
 
@@ -993,10 +1254,16 @@ export function DashboardShell({
         </footer>
       </div>
 
-      {/* 3. COMMAND PALETTE MODAL (CTRL+K) */}
+      {/* ========================================================================= */}
+      {/* 3. COMMAND PALETTE MODAL (CTRL+K SEARCH)                                  */}
+      {/* ========================================================================= */}
       {searchOpen ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-6 pt-16 sm:pt-20">
-          <div onClick={() => setSearchOpen(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" />
+          <div
+            onClick={() => setSearchOpen(false)}
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
+          />
+
           <div className="relative w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3.5">
               <svg className="h-5 w-5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1008,14 +1275,19 @@ export function DashboardShell({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ketik untuk mencari menu atau modul (cth: SPK, Titipan)..."
+                placeholder="Ketik untuk mencari menu atau modul (cth: SPK, Borongan, Slip Gaji)..."
                 className="w-full text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
               />
-              <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-400 shrink-0">ESC</kbd>
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-400 shrink-0">
+                ESC
+              </kbd>
             </div>
+
             <div className="max-h-96 overflow-y-auto p-2 space-y-1">
               {searchResults.length === 0 ? (
-                <div className="py-12 text-center text-xs text-slate-400">Tidak ditemukan menu dengan kata kunci &quot;{searchQuery}&quot;</div>
+                <div className="py-12 text-center text-xs text-slate-400">
+                  Tidak ditemukan menu dengan kata kunci &quot;{searchQuery}&quot;
+                </div>
               ) : (
                 searchResults.map((item, idx) => {
                   const isSelected = idx === selectedSearchIndex;
@@ -1025,11 +1297,15 @@ export function DashboardShell({
                       href={item.href}
                       onClick={() => setSearchOpen(false)}
                       className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-xs transition ${
-                        isSelected ? "bg-blue-600 text-white font-bold shadow-xs" : "text-slate-700 hover:bg-slate-100"
+                        isSelected
+                          ? "bg-blue-600 text-white font-bold shadow-xs"
+                          : "text-slate-700 hover:bg-slate-100"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={isSelected ? "text-white" : "text-slate-400"}>{getCategoryIcon(item.id, "h-4 w-4")}</span>
+                        <span className={isSelected ? "text-white" : "text-slate-400"}>
+                          {getCategoryIcon(item.id, "h-4 w-4")}
+                        </span>
                         <span className="truncate">{item.title}</span>
                       </div>
                       <span className={`text-[10px] font-semibold truncate ${isSelected ? "text-blue-100" : "text-slate-400"}`}>
@@ -1040,221 +1316,216 @@ export function DashboardShell({
                 })
               )}
             </div>
+
+            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-2.5 flex items-center justify-between text-[11px] text-slate-400">
+              <div className="flex items-center gap-3">
+                <span>Tekan <kbd className="font-bold text-slate-600">↵</kbd> untuk memilih</span>
+                <span><kbd className="font-bold text-slate-600">ESC</kbd> untuk tutup</span>
+              </div>
+              <span className="font-semibold text-slate-500">{searchResults.length} modul</span>
+            </div>
           </div>
         </div>
       ) : null}
 
       {/* ========================================================================= */}
-      {/* 4. SEAMLESS MOBILE DRAWER (HEADER & PENCARIAN DILEBUR JADI SATU)          */}
+      {/* 4. ORIGINAL FAMILIAR MOBILE DRAWER (4 TOMBOL BESAR & PROFIL TERPISAH)     */}
       {/* ========================================================================= */}
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300" />
+          <div
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300"
+          />
 
           <aside className="relative flex h-full w-[85vw] max-w-sm flex-col bg-white shadow-2xl transition-transform duration-300 ease-out">
-            {/* 1 BLOK HEADER MENYATU: Profil + Dropdown Mode + Tutup + Input Search */}
-            <div className="border-b border-slate-100 bg-slate-50/90 p-3 space-y-2.5">
-              {/* Baris 1: Profil User + Mode Capsule + Tombol Close */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-black text-white shadow-xs">
-                    {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-extrabold text-slate-900 leading-tight">
-                      {userProfile.displayName || userProfile.email.split("@")[0]}
-                    </p>
-                    <span className="text-[10px] font-bold text-blue-600 uppercase">
-                      {userProfile.role}
-                    </span>
-                  </div>
+            {/* Header KD */}
+            <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-black text-white shadow-xs">
+                  KD
                 </div>
-
-                {/* Pemilih Mode Ramping (Dropdown Langsung) */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <select
-                    value={workspace}
-                    onChange={(e) => handleWorkspaceChange(e.target.value as "REGULER" | "HAJI" | "GUDANG" | "SDM")}
-                    className={`text-[11px] font-extrabold rounded-lg px-2 py-1 border shadow-xs focus:outline-none cursor-pointer transition ${
-                      workspace === "REGULER"
-                        ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                        : workspace === "HAJI"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : workspace === "GUDANG"
-                        ? "border-sky-200 bg-sky-50 text-sky-700"
-                        : "border-amber-200 bg-amber-50 text-amber-700"
-                    }`}
-                  >
-                    <option value="REGULER">🎒 Reguler</option>
-                    <option value="HAJI">🕋 Haji</option>
-                    <option value="GUDANG">📦 Gudang</option>
-                    <option value="SDM">👥 SDM</option>
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={() => setMobileOpen(false)}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 active:scale-95 transition"
-                    aria-label="Tutup menu"
-                  >
-                    ✕
-                  </button>
+                <div>
+                  <p className="text-xs font-extrabold text-slate-900">Kreasi Dinamika</p>
+                  <p className="text-[10px] font-semibold text-blue-600">SMPT V2 Mobile</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
 
-              {/* Baris 2: Input Pencarian Menyatu */}
-              <div className="relative">
-                <input
-                  type="text"
-                  value={mobileFilter}
-                  onChange={(e) => setMobileFilter(e.target.value)}
-                  placeholder="🔍 Ketik menu (spk, qc, barang)..."
-                  className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-3 pr-8 text-xs text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none shadow-2xs"
-                />
-                {mobileFilter && (
-                  <button
-                    type="button"
-                    onClick={() => setMobileFilter("")}
-                    className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600"
-                  >
-                    ✕
-                  </button>
-                )}
+            {/* Profile info in drawer */}
+            <div className="bg-slate-50/80 px-5 py-3 border-b border-slate-100 flex items-center gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xs font-bold text-white shadow-xs">
+                {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold text-slate-800">
+                  {userProfile.displayName || userProfile.email}
+                </p>
+                <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                  {userProfile.role}
+                </span>
               </div>
             </div>
 
-            {/* DAFTAR MENU (ACCORDION RAPI) */}
-            <div className="flex-1 overflow-y-auto px-3.5 py-2.5">
-              {filteredMobileEntries.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  Tidak ada menu yang sesuai dengan &quot;{mobileFilter}&quot;
-                </div>
-              ) : (
-                <nav className="space-y-1">
-                  {filteredMobileEntries.map((entry) => {
-                    if (entry.type === "item") {
-                      const active = isLinkActive(entry.href);
-                      return (
-                        <Link
-                          key={entry.id}
-                          href={entry.href}
-                          onClick={() => setMobileOpen(false)}
-                          className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
-                            active ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
-                          }`}
-                        >
-                          {getCategoryIcon(entry.id, "h-4 w-4")}
-                          <span>{entry.text}</span>
-                        </Link>
-                      );
-                    }
+            {/* 4 Tombol Pilihan Mode */}
+            <div className="p-3 bg-slate-50 border-b border-slate-100">
+              <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/70 p-1 text-[11px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("REGULER")}
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                    workspace === "REGULER"
+                      ? "bg-indigo-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>🎒</span>
+                  <span>Reguler</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("HAJI")}
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                    workspace === "HAJI"
+                      ? "bg-emerald-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>🕋</span>
+                  <span>Haji</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("GUDANG")}
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                    workspace === "GUDANG"
+                      ? "bg-sky-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>📦</span>
+                  <span>Gudang</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("SDM")}
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                    workspace === "SDM"
+                      ? "bg-amber-600 text-white shadow-xs font-extrabold"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>👥</span>
+                  <span>SDM</span>
+                </button>
+              </div>
+            </div>
 
-                    const hasActiveChild = entry.children.some((child) =>
-                      child.type === "item" ? isLinkActive(child.href) : child.children.some((sub) => isLinkActive(sub.href))
-                    );
-                    const isGroupOpen = Boolean(mobileFilter) || (mobileOpenGroups[entry.id] ?? hasActiveChild);
-
+            {/* Scrollable menu */}
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              <nav className="space-y-1.5">
+                {effectiveMenuEntries.map((entry) => {
+                  if (entry.type === "item") {
+                    const active = isLinkActive(entry.href);
                     return (
-                      <details
+                      <Link
                         key={entry.id}
-                        open={isGroupOpen}
-                        onToggle={(e) => {
-                          const isOpen = e.currentTarget.open;
-                          setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
-                        }}
-                        className="group rounded-xl transition"
+                        href={entry.href}
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
+                          active
+                            ? "bg-blue-600 text-white shadow-xs"
+                            : "text-slate-600 hover:bg-slate-100"
+                        }`}
                       >
-                        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition [&::-webkit-details-marker]:hidden">
-                          <div className="flex items-center gap-2">
-                            <span>{getCategoryIcon(entry.id, "h-3.5 w-3.5")}</span>
-                            <span>{entry.text}</span>
-                          </div>
-                          <svg className="h-3.5 w-3.5 text-slate-400 transition-transform duration-200 group-open:rotate-90" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                          </svg>
-                        </summary>
+                        {getCategoryIcon(entry.id, "h-4 w-4")}
+                        <span>{entry.text}</span>
+                      </Link>
+                    );
+                  }
 
-                        <div className="mt-0.5 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-3">
-                          {entry.children.map((child) => {
-                            if (child.type === "item") {
-                              const active = isLinkActive(child.href);
-                              return (
+                  return (
+                    <details
+                      key={entry.id}
+                      open={mobileOpenGroups[entry.id] ?? true}
+                      onToggle={(e) => {
+                        const isOpen = e.currentTarget.open;
+                        setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
+                      }}
+                      className="group rounded-xl"
+                    >
+                      <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
+                        <span>{entry.text}</span>
+                        <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                        </svg>
+                      </summary>
+                      <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-3">
+                        {entry.children.map((child) => {
+                          if (child.type === "item") {
+                            const active = isLinkActive(child.href);
+                            return (
+                              <Link
+                                key={child.id}
+                                href={child.href}
+                                onClick={() => setMobileOpen(false)}
+                                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
+                                  active ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                                }`}
+                              >
+                                <span>{child.text}</span>
+                              </Link>
+                            );
+                          }
+                          return (
+                            <div key={child.id} className="space-y-0.5 py-1">
+                              <p className="px-2 text-[10px] font-bold text-slate-400 uppercase">{child.text}</p>
+                              {child.children.map((sub) => (
                                 <Link
-                                  key={child.id}
-                                  href={child.href}
+                                  key={sub.id}
+                                  href={sub.href}
                                   onClick={() => setMobileOpen(false)}
-                                  className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                                    active ? "bg-blue-600 text-white font-bold shadow-xs" : "text-slate-600 hover:bg-slate-100"
+                                  className={`flex items-center justify-between rounded-lg px-2 py-1 text-xs ${
+                                    isLinkActive(sub.href) ? "bg-blue-600 text-white font-bold" : "text-slate-600 hover:bg-slate-100"
                                   }`}
                                 >
-                                  <span>{child.text}</span>
-                                  {badgeCounts[child.id] ? (
-                                    <span className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold ${active ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
-                                      {badgeCounts[child.id]}
-                                    </span>
-                                  ) : null}
+                                  <span>{sub.text}</span>
                                 </Link>
-                              );
-                            }
-
-                            const subActive = child.children.some((sub) => isLinkActive(sub.href));
-                            return (
-                              <details key={child.id} open={Boolean(mobileFilter) || subActive || undefined} className="group/sub">
-                                <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
-                                  <span>{child.text}</span>
-                                  <svg className="h-3 w-3 text-slate-400 transition-transform duration-200 group-open/sub:rotate-90" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                                  </svg>
-                                </summary>
-                                <div className="mt-0.5 space-y-0.5 pl-2">
-                                  {child.children.map((sub) => (
-                                    <Link
-                                      key={sub.id}
-                                      href={sub.href}
-                                      onClick={() => setMobileOpen(false)}
-                                      className={`flex items-center justify-between rounded-lg px-2 py-1 text-xs transition ${
-                                        isLinkActive(sub.href) ? "bg-blue-600 text-white font-bold" : "text-slate-600 hover:bg-slate-100"
-                                      }`}
-                                    >
-                                      <span>{sub.text}</span>
-                                    </Link>
-                                  ))}
-                                </div>
-                              </details>
-                            );
-                          })}
-                        </div>
-                      </details>
-                    );
-                  })}
-                </nav>
-              )}
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  );
+                })}
+              </nav>
             </div>
 
-            {/* Footer Mobile */}
-            <div className="border-t border-slate-100 p-2.5 bg-slate-50/70 flex items-center gap-2">
+            {/* Mobile drawer quick actions footer */}
+            <div className="border-t border-slate-100 p-4 space-y-2 bg-slate-50/50">
               <Link
                 href="/dashboard/akun"
                 onClick={() => setMobileOpen(false)}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition"
+                className="flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
               >
-                ⚙️ Akun Saya
+                Akun Saya
               </Link>
-              <form action={logout} className="shrink-0">
-                <button
-                  type="submit"
-                  title="Keluar Akun"
-                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition"
-                >
-                  🚪
-                </button>
-              </form>
             </div>
           </aside>
         </div>
       ) : null}
 
-      {/* 5. FLOATING MOBILE BOTTOM NAVIGATION DOCK */}
+      {/* ========================================================================= */}
+      {/* 5. FLOATING MOBILE BOTTOM NAVIGATION DOCK                                 */}
+      {/* ========================================================================= */}
       <nav className="fixed bottom-3 inset-x-3 z-40 mx-auto flex h-14 max-w-sm items-center justify-around rounded-2xl border border-slate-200/90 bg-white/92 px-2 shadow-2xl backdrop-blur-xl ring-1 ring-slate-900/5 lg:hidden">
         <Link
           href="/dashboard"
