@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   createWarungTransactionAction, 
   updateWarungTransactionAction, 
   deleteWarungTransactionAction 
 } from "./actions";
 
+// Ikon Native SVG
 const CloseIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -25,11 +26,17 @@ const EditIcon = () => (
   </svg>
 );
 
-const PRESET_CATALOG = [
-  { name: "Kopi", price: 5000 },
-  { name: "Rokok Magnum", price: 20000 },
-  { name: "Gorengan", price: 1500 },
-  { name: "Nasi Bungkus", price: 12000 },
+const PlusIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+  </svg>
+);
+
+const DEFAULT_CATALOG = [
+  { id: "1", name: "Kopi", price: 5000 },
+  { id: "2", name: "Rokok Magnum", price: 20000 },
+  { id: "3", name: "Gorengan", price: 1500 },
+  { id: "4", name: "Nasi Bungkus", price: 12000 },
 ];
 
 export interface WarungTransaction {
@@ -67,7 +74,31 @@ export function WarungPortal({
   const [activeTab, setActiveTab] = useState<"rekap" | "transaksi">("rekap");
   const [searchQuery, setSearchQuery] = useState("");
   
-  // State Form Input / Edit
+  // State Katalog Produk Dinamis (Tersimpan di Browser HP)
+  const [catalog, setCatalog] = useState(DEFAULT_CATALOG);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductPrice, setNewProductPrice] = useState<number | "">("");
+
+  // Load Katalog dari LocalStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`smpt_catalog_${currentWarung.id}`);
+      if (saved) {
+        setCatalog(JSON.parse(saved));
+      }
+    } catch (e) {}
+  }, [currentWarung.id]);
+
+  // Simpan Katalog ke LocalStorage
+  const saveCatalog = (updatedCatalog: typeof DEFAULT_CATALOG) => {
+    setCatalog(updatedCatalog);
+    try {
+      localStorage.setItem(`smpt_catalog_${currentWarung.id}`, JSON.stringify(updatedCatalog));
+    } catch (e) {}
+  };
+
+  // State Modal Input Nota / Edit
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<WarungTransaction | null>(null);
   const [formWorkerId, setFormWorkerId] = useState("");
@@ -75,10 +106,10 @@ export function WarungPortal({
   const [formNotes, setFormNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // State Modal Detail Riwayat Pekerja
+  // State Modal Riwayat Khusus Pekerja (Klik kartu pekerja)
   const [selectedWorkerForDetail, setSelectedWorkerForDetail] = useState<{ id: string; name: string; worker_code: string; role?: string } | null>(null);
 
-  // REKAP SALDO: DIHITUNG LANGSUNG DARI TRANSAKSI AKTIF (DIJAMIN TIDAK 0)
+  // Rekap Saldo Langsung dari Transaksi Aktif
   const workerBalances = useMemo(() => {
     const map = new Map<string, { worker: { id: string; name: string; worker_code: string; role?: string }; totalDebt: number; transactionCount: number }>();
 
@@ -118,7 +149,7 @@ export function WarungPortal({
 
   const handleOpenCreate = (workerIdPrefill?: string) => {
     setEditingTx(null);
-    setFormWorkerId(workerIdPrefill || initialWorkers[0]?.id || "");
+    setFormWorkerId(workerIdPrefill || (initialWorkers[0]?.id ? String(initialWorkers[0].id) : ""));
     setFormAmount("");
     setFormNotes("");
     setIsFormOpen(true);
@@ -126,11 +157,49 @@ export function WarungPortal({
 
   const handleOpenEdit = (tx: WarungTransaction) => {
     setEditingTx(tx);
-    setFormWorkerId(tx.worker_id);
+    setFormWorkerId(String(tx.worker_id));
     setFormAmount(tx.amount);
     setFormNotes(tx.notes);
     setSelectedWorkerForDetail(null);
     setIsFormOpen(true);
+  };
+
+  // Klik Preset Cepat: Menambahkan nominal dan keterangan otomatis
+  const handleAddPreset = (item: { name: string; price: number }) => {
+    setFormAmount((prev) => (Number(prev) || 0) + item.price);
+    setFormNotes((prev) => {
+      if (!prev) return item.name;
+      return `${prev}, ${item.name}`;
+    });
+  };
+
+  // Tambah Produk Baru ke Katalog
+  const handleAddNewProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProductName || !newProductPrice || Number(newProductPrice) <= 0) {
+      alert("Masukkan nama produk dan harga yang valid.");
+      return;
+    }
+    const updated = [
+      ...catalog,
+      { id: Date.now().toString(), name: newProductName, price: Number(newProductPrice) },
+    ];
+    saveCatalog(updated);
+    setNewProductName("");
+    setNewProductPrice("");
+  };
+
+  // Hapus Produk dari Katalog
+  const handleDeleteProduct = (productId: string) => {
+    if (!confirm("Hapus produk ini dari preset kasir?")) return;
+    saveCatalog(catalog.filter((c) => c.id !== productId));
+  };
+
+  // Ubah Harga Produk di Katalog
+  const handleUpdateProductPrice = (productId: string, newPrice: number) => {
+    saveCatalog(
+      catalog.map((c) => (c.id === productId ? { ...c, price: newPrice } : c))
+    );
   };
 
   const handleSubmitForm = async (e: React.FormEvent) => {
@@ -148,6 +217,7 @@ export function WarungPortal({
           notes: formNotes || "Kasbon",
           is_direct_nominal: true,
           direct_amount: Number(formAmount),
+          items: [],
         });
         if (!res.success) throw new Error(res.error);
       } else {
@@ -156,6 +226,7 @@ export function WarungPortal({
           notes: formNotes || "Kasbon",
           is_direct_nominal: true,
           direct_amount: Number(formAmount),
+          items: [],
         });
         if (!res.success) throw new Error(res.error);
       }
@@ -186,9 +257,10 @@ export function WarungPortal({
         <div className="flex justify-end mb-3">
           <button
             onClick={() => handleOpenCreate()}
-            className="bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold px-4 py-2 rounded-full text-xs shadow-sm active:scale-95 transition"
+            className="flex items-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold px-4 py-2 rounded-full text-xs shadow-sm active:scale-95 transition"
           >
-            + Catat Nota Baru
+            <PlusIcon />
+            <span>Catat Nota Baru</span>
           </button>
         </div>
 
@@ -438,36 +510,43 @@ export function WarungPortal({
                 >
                   <option value="">-- Pilih Nama Pekerja --</option>
                   {initialWorkers.map((w) => (
-                    <option key={w.id} value={w.id}>
+                    <option key={w.id} value={String(w.id)}>
                       {w.name} ({w.worker_code})
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Preset Cepat */}
+              {/* Preset Cepat dengan Tombol Kelola / Ubah Harga */}
               <div>
-                <span className="text-[11px] font-bold text-slate-700 uppercase block mb-1">
-                  Preset Cepat (+1 Klik)
-                </span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[11px] font-bold text-slate-700 uppercase">
+                    Preset Cepat (+1 Klik)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsCatalogModalOpen(true)}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200 transition"
+                  >
+                    ⚙️ Atur Menu / Ganti Harga
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
-                  {PRESET_CATALOG.map((preset, idx) => (
+                  {catalog.map((item) => (
                     <button
-                      key={idx}
+                      key={item.id}
                       type="button"
-                      onClick={() => {
-                        setFormAmount((prev) => (Number(prev) || 0) + preset.price);
-                        setFormNotes((prev) => prev ? `${prev}, ${preset.name}` : preset.name);
-                      }}
+                      onClick={() => handleAddPreset(item)}
                       className="flex items-center justify-between bg-orange-50 border border-orange-200 p-2 rounded-xl text-left hover:bg-orange-100 active:scale-95 transition"
                     >
-                      <div>
-                        <span className="text-xs font-bold text-slate-800 block">{preset.name}</span>
+                      <div className="truncate mr-1">
+                        <span className="text-xs font-bold text-slate-800 block truncate">{item.name}</span>
                         <span className="text-[11px] text-[#ea580c] font-semibold">
-                          Rp {preset.price.toLocaleString("id-ID")}
+                          Rp {item.price.toLocaleString("id-ID")}
                         </span>
                       </div>
-                      <span className="text-[#ea580c] font-bold">+</span>
+                      <span className="text-[#ea580c] font-bold text-sm shrink-0">+</span>
                     </button>
                   ))}
                 </div>
@@ -517,6 +596,90 @@ export function WarungPortal({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KELOLA PRODUK & GANTI HARGA KATALOG */}
+      {isCatalogModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex justify-center items-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl p-4 shadow-2xl space-y-3.5 animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900">⚙️ Atur Produk & Harga</h3>
+                <p className="text-[11px] text-slate-500">Preset kasir khusus warung Anda</p>
+              </div>
+              <button
+                onClick={() => setIsCatalogModalOpen(false)}
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            {/* Form Tambah Produk Baru */}
+            <form onSubmit={handleAddNewProduct} className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl space-y-2">
+              <span className="text-[11px] font-bold text-slate-700 block uppercase">+ Tambah Produk Baru</span>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Nama barang..."
+                  value={newProductName}
+                  onChange={(e) => setNewProductName(e.target.value)}
+                  className="flex-1 bg-white border border-slate-200 px-2 py-1.5 rounded-lg text-xs"
+                />
+                <input
+                  type="number"
+                  placeholder="Harga"
+                  value={newProductPrice}
+                  onChange={(e) => setNewProductPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                  className="w-20 bg-white border border-slate-200 px-2 py-1.5 rounded-lg text-xs"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-xs transition"
+              >
+                Simpan Produk Baru
+              </button>
+            </form>
+
+            {/* Daftar Produk & Edit Harga */}
+            <div>
+              <span className="text-[11px] font-bold text-slate-700 block uppercase mb-1.5">
+                Daftar Produk & Ubah Harga ({catalog.length})
+              </span>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {catalog.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2 bg-white border border-slate-200 p-2 rounded-xl">
+                    <span className="flex-1 text-xs font-semibold text-slate-800 truncate">{item.name}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] text-slate-400">Rp</span>
+                      <input
+                        type="number"
+                        value={item.price}
+                        onChange={(e) => handleUpdateProductPrice(item.id, Number(e.target.value) || 0)}
+                        className="w-16 bg-slate-50 border border-slate-200 px-1 py-1 rounded text-xs font-bold text-[#ea580c] text-right"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProduct(item.id)}
+                      className="p-1 text-slate-400 hover:text-red-500 rounded"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsCatalogModalOpen(false)}
+              className="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded-xl text-xs transition"
+            >
+              Selesai & Tutup
+            </button>
           </div>
         </div>
       )}
