@@ -8,9 +8,7 @@ export default async function WarungPage() {
   if (!user) redirect("/login");
 
   const warungId = user.id;
-  const userMeta = (user.user_metadata?.warung_name as string) || (user.user_metadata?.full_name as string) || "";
-  const isWarungLain = userMeta && !userMeta.toLowerCase().includes("dandi");
-  const warungName = isWarungLain ? userMeta : "Dandi Store";
+  const warungName = user.user_metadata?.warung_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "Warung Mitra";
 
   // 1. Ambil data pekerja
   let workers: any[] = [];
@@ -24,27 +22,15 @@ export default async function WarungPage() {
     workers = data || [];
   }
 
-  // 2. Ambil transaksi kasbon warung
-  const { data: rawTx } = await supabase
+  // 2. ISOLASI MUTLAK: HANYA ambil data yang warung_id-nya SAMA PERSIS dengan ID user yang login!
+  const { data: transactionsData } = await supabase
     .from("cash_advances")
     .select("id, worker_id, amount, notes, created_at, status, installments_paid, warung_name, warung_id")
     .eq("category", "KASBON_WARUNG")
+    .eq("warung_id", warungId)
     .order("created_at", { ascending: false });
 
-  // 3. Filter: Akun Dandi melihat nota miliknya + 14 nota lama. Warung lain hanya melihat nota miliknya sendiri.
-  const myTx = (rawTx || []).filter((t: any) => {
-    if (isWarungLain) {
-      return (t.warung_id && t.warung_id === warungId) || 
-             (t.warung_name && t.warung_name.toLowerCase() === warungName.toLowerCase());
-    }
-    // Akun Dandi
-    if (t.warung_id === warungId) return true;
-    if (!t.warung_id && (t.warung_name || "dandi").toLowerCase().includes("dandi")) return true;
-    if (!t.warung_id && !isWarungLain) return true;
-    return false;
-  });
-
-  const transactions = myTx.map((t: any) => {
+  const transactions = (transactionsData || []).map((t: any) => {
     const w = workers.find((item: any) => String(item.id) === String(t.worker_id));
     return {
       id: String(t.id),
