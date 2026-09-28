@@ -8,7 +8,7 @@ import {
   TransactionItemInput 
 } from "./actions";
 
-// Ikon Native SVG (Tidak butuh library tambahan sama sekali)
+// Ikon Native SVG
 const SearchIcon = () => (
   <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -61,7 +61,7 @@ export interface ItemDetail {
 }
 
 export interface WarungTransaction {
-  id: string | number;
+  id: string;
   worker_id: string;
   worker_name: string;
   worker_code: string;
@@ -107,7 +107,7 @@ export function WarungPortal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // State Modal Detail Riwayat Pekerja (Klik kartu pekerja)
+  // State Modal Detail Riwayat Pekerja
   const [selectedWorkerForDetail, setSelectedWorkerForDetail] = useState<Worker | null>(null);
 
   // Rekap saldo per pekerja
@@ -233,7 +233,7 @@ export function WarungPortal({
 
     try {
       if (editingTransaction) {
-        const res = await updateWarungTransactionAction(editingTransaction.id, {
+        const res = await updateWarungTransactionAction(String(editingTransaction.id), {
           worker_id: selectedWorkerId,
           notes,
           is_direct_nominal: isDirectNominal,
@@ -259,10 +259,10 @@ export function WarungPortal({
     }
   };
 
-  const handleDeleteTransaction = async (txId: string | number) => {
+  const handleDeleteTransaction = async (txId: string) => {
     if (!confirm("Apakah Anda yakin ingin membatalkan nota ini?")) return;
     try {
-      const res = await deleteWarungTransactionAction(txId);
+      const res = await deleteWarungTransactionAction(String(txId));
       if (!res.success) {
         alert(res.error);
       } else {
@@ -288,7 +288,7 @@ export function WarungPortal({
           </button>
         </div>
 
-        {/* Tab Switcher (Oranye jika aktif, Putih jika non-aktif) */}
+        {/* Tab Switcher */}
         <div className="grid grid-cols-2 gap-2 mb-3">
           <button
             onClick={() => setActiveTab("rekap")}
@@ -313,7 +313,7 @@ export function WarungPortal({
           </button>
         </div>
 
-        {/* Search Bar Sesuai Screenshot */}
+        {/* Search Bar */}
         <div className="relative mb-3">
           <input
             type="text"
@@ -324,7 +324,7 @@ export function WarungPortal({
           />
         </div>
 
-        {/* TAB 1: KARTU PEKERJA (BISA DIKLIK UNTUK LIHAT RINCIAN & EDIT) */}
+        {/* TAB 1: KARTU PEKERJA (BISA DIKLIK) */}
         {activeTab === "rekap" && (
           <div className="space-y-3">
             {workerBalances.map(({ worker, totalDebt, transactionCount }) => {
@@ -369,7 +369,7 @@ export function WarungPortal({
           </div>
         )}
 
-        {/* TAB 2: TABEL RIWAYAT TRANSAKSI (SESUAI SCREENSHOT) */}
+        {/* TAB 2: TABEL RIWAYAT TRANSAKSI */}
         {activeTab === "transaksi" && (
           <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
@@ -498,7 +498,7 @@ export function WarungPortal({
                           <span>Edit Nota</span>
                         </button>
                         <button
-                          onClick={() => handleDeleteTransaction(tx.id)}
+                          onClick={() => handleDeleteTransaction(String(tx.id))}
                           disabled={tx.installments_paid > 0}
                           className="flex items-center gap-1 text-[11px] text-red-600 font-semibold px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 disabled:opacity-40 transition"
                         >
