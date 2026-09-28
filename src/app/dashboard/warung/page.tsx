@@ -15,7 +15,10 @@ export default async function WarungPage() {
   }
 
   const warungId = user.id;
-  const warungName = "Dandi Store";
+  const warungName = (user.user_metadata?.warung_name as string) || 
+                     (user.user_metadata?.full_name as string) || 
+                     user.email?.split("@")[0] || 
+                     "Warung Mitra";
 
   // 1. Ambil data pekerja
   let workers: any[] = [];
@@ -34,7 +37,7 @@ export default async function WarungPage() {
     workers = directWorkers || [];
   }
 
-  // 2. Ambil data kasbon warung
+  // 2. ISOLASI DATA: HANYA ambil transaksi milik akun warung yang sedang login!
   const { data: transactionsData } = await supabase
     .from("cash_advances")
     .select(`
@@ -49,17 +52,10 @@ export default async function WarungPage() {
       warung_id
     `)
     .eq("category", "KASBON_WARUNG")
+    .eq("warung_id", warungId)
     .order("created_at", { ascending: false });
 
-  // 3. Filter multi-tenant: pisahkan per warung
-  const myTransactions = (transactionsData || []).filter((t: any) => {
-    if (t.warung_id && t.warung_id === warungId) return true;
-    const wName = (t.warung_name || "").toLowerCase();
-    if (wName.includes("dandi") || !t.warung_id) return true;
-    return false;
-  });
-
-  const transactions = myTransactions.map((t: any) => {
+  const transactions = (transactionsData || []).map((t: any) => {
     const matchedWorker = workers.find((w: any) => String(w.id) === String(t.worker_id));
     return {
       id: String(t.id),
@@ -73,7 +69,6 @@ export default async function WarungPage() {
       status: t.status === "LUNAS" || t.installments_paid > 0 ? "LUNAS" : "BELUM LUNAS",
       installments_paid: t.installments_paid || 0,
       warung_name: t.warung_name || warungName,
-      items: [],
     };
   });
 
