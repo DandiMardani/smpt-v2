@@ -93,7 +93,7 @@ function item(id: string, text: string, customHref?: string): MenuLeaf {
   };
 }
 
-// POHON MENU LENGKAP (SEMUA MENU DISUSUN VERTIKAL KE BAWAH TANPA SUBGROUP SAMPING)
+// 1. POHON MENU UTAMA (STRUKTUR VERTIKAL LURUS KE BAWAH TANPA SUBGROUP)
 export const SMPT_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard"),
   {
@@ -107,7 +107,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("masterKebutuhan", "Master Kebutuhan Bahan"),
       item("masterBahan", "Master Bahan Baku"),
       item("masterPekerja", "Master Pekerja"),
-      item("masterBarangJadi", "Master Barang Jadi"), // <-- Pasti ada
+      item("masterBarangJadi", "Master Barang Jadi"),
       item("masterLokasi", "Master Lokasi"),
       item("masterVendor", "Master Supplier / Vendor"),
       item("masterEmbarkasi", "Master Embarkasi"),
@@ -144,7 +144,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
   {
     type: "group",
     id: "qcLogistik",
-    text: "QC & Barang Jadi",
+    text: "QC & Logistik",
     children: [
       item("qc", "Quality Control"),
       item("stokBarangJadi", "Stok Barang Jadi"),
@@ -158,7 +158,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
   {
     type: "group",
     id: "distribusiGroup",
-    text: "Distribusi & Pengiriman",
+    text: "Distribusi Embarkasi & Klien",
     children: [
       item("targetEmbarkasi", "Target Embarkasi"),
       item("pengirimanEmbarkasi", "Pengiriman & Tracking"),
@@ -171,6 +171,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
     id: "sdmPayroll",
     text: "SDM & Payroll",
     children: [
+      item("masterPekerja", "Master Pekerja"),
       item("setoran", "Gaji & Pekerjaan Saya"),
       item("payroll", "Payroll & Slip Gaji"),
       item("absensi", "Presensi & Absensi"),
@@ -201,7 +202,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
 
 export type WorkspaceMode = "HAJI" | "REGULER" | "GUDANG" | "SDM";
 
-// WORKSPACE KHUSUS HAJI
+// 2. WORKSPACE KHUSUS HAJI (MURNI OPERASIONAL HAJI, KAS KECIL DIHAPUS TOTAL DARI SINI)
 export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Haji"),
   {
@@ -213,7 +214,7 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
       item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=HAJI"),
       item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=HAJI"),
       item("masterProdukProyek", "Master Produk Proyek", "/dashboard/masterProdukProyek?category=HAJI"),
-      item("masterBarangJadi", "Master Barang Jadi"), // <-- Pasti ada
+      item("masterBarangJadi", "Master Barang Jadi"),
       item("masterEmbarkasi", "Master Embarkasi"),
     ],
   },
@@ -246,19 +247,9 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
       item("rejectEmbarkasi", "Reject & Kekurangan"),
     ],
   },
-  {
-    type: "group",
-    id: "keuanganGroup",
-    text: "Keuangan & Kas",
-    children: [
-      item("kasKecil", "Kas Kecil"),
-      item("keuangan", "Keuangan"),
-      item("laporan", "Laporan"),
-    ],
-  },
 ];
 
-// WORKSPACE KHUSUS REGULER
+// 3. WORKSPACE KHUSUS REGULER (KAS KECIL DIHAPUS DARI SINI)
 export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Reguler"),
   {
@@ -270,7 +261,7 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
       item("masterProdukProyek", "Produk & Spesifikasi", "/dashboard/masterProdukProyek?category=REGULER"),
       item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=REGULER"),
       item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=REGULER"),
-      item("masterBarangJadi", "Master Barang Jadi"), // <-- Pasti ada
+      item("masterBarangJadi", "Master Barang Jadi"),
     ],
   },
   {
@@ -280,8 +271,8 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     children: [
       item("cutting", "Cutting / Potong"),
       item("sablon", "Sablon"),
-      item("produksiReguler", "⚡ Setoran Jahit Cepat"),
-      item("qc", "🔍 Quality Control (QC)", "/dashboard/qc?category=REGULER"),
+      item("produksiReguler", "Setoran Jahit Cepat"),
+      item("qc", "Quality Control (QC)", "/dashboard/qc?category=REGULER"),
       item("hasilProduksi", "Rekap Hasil Produksi"),
       item("manufaktur", "Subkon & Maklon Luar"),
     ],
@@ -291,23 +282,13 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
     id: "qcLogistik",
     text: "QC, Packing & Kirim Klien",
     children: [
-      item("qc", "🔍 Quality Control (QC)", "/dashboard/qc?category=REGULER"),
-      item("pengirimanKlien", "🚚 Surat Jalan & Kirim Klien"),
-    ],
-  },
-  {
-    type: "group",
-    id: "keuanganGroup",
-    text: "Keuangan & Kas",
-    children: [
-      item("kasKecil", "Kas Kecil"),
-      item("keuangan", "Keuangan"),
-      item("laporan", "Laporan"),
+      item("qc", "Quality Control (QC)", "/dashboard/qc?category=REGULER"),
+      item("pengirimanKlien", "Surat Jalan & Kirim Klien"),
     ],
   },
 ];
 
-// WORKSPACE GUDANG
+// 4. WORKSPACE GUDANG
 export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Gudang"),
   {
@@ -344,7 +325,7 @@ export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
   },
 ];
 
-// WORKSPACE SDM
+// 5. WORKSPACE SDM
 export const SMPT_SDM_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard SDM"),
   {
