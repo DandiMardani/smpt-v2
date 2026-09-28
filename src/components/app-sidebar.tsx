@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type {
   MenuEntry,
   MenuGroupChild,
@@ -30,7 +30,6 @@ function childContainsActive(
   if (child.type === "item") {
     return itemIsActive(child, pathname);
   }
-
   return child.children.some((item) => itemIsActive(item, pathname));
 }
 
@@ -38,7 +37,6 @@ function entryContainsActive(entry: MenuEntry, pathname: string): boolean {
   if (entry.type === "item") {
     return itemIsActive(entry, pathname);
   }
-
   return entry.children.some((child) => childContainsActive(child, pathname));
 }
 
@@ -61,7 +59,7 @@ function MenuLink({
     <Link
       href={item.href}
       onClick={onNavigate}
-      className={`group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition-all duration-150 ${
+      className={`group flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-150 ${
         nested ? "ml-2.5" : ""
       } ${
         active
@@ -70,10 +68,10 @@ function MenuLink({
       }`}
     >
       <span
-        className={`h-2 w-2 shrink-0 rounded-full transition-transform ${
+        className={`h-1.5 w-1.5 shrink-0 rounded-full transition-transform ${
           active
-            ? "bg-white scale-110"
-            : "bg-slate-300 group-hover:bg-blue-500 group-hover:scale-110"
+            ? "bg-white scale-125"
+            : "bg-slate-300 group-hover:bg-blue-500 group-hover:scale-125"
         }`}
       />
       <span className="min-w-0 flex-1 truncate">{item.text}</span>
@@ -84,7 +82,7 @@ function MenuLink({
               ? "bg-white text-blue-700"
               : "bg-amber-100 text-amber-800 border border-amber-300"
           }`}
-          title={`${badgeCount} permintaan Gudang menunggu`}
+          title={`${badgeCount} item menunggu`}
         >
           {badgeCount > 99 ? "99+" : badgeCount}
         </span>
@@ -98,14 +96,16 @@ function MenuTree({
   pathname,
   onNavigate,
   badgeCounts,
+  isSearching,
 }: {
   entries: MenuEntry[];
   pathname: string;
   onNavigate?: () => void;
   badgeCounts: Record<string, number>;
+  isSearching: boolean;
 }) {
   return (
-    <nav className="space-y-1.5">
+    <nav className="space-y-1">
       {entries.map((entry) => {
         if (entry.type === "item") {
           return (
@@ -120,17 +120,19 @@ function MenuTree({
         }
 
         const groupActive = entryContainsActive(entry, pathname);
+        // Jika sedang mencari kata kunci, accordion otomatis terbuka
+        const shouldOpen = isSearching || groupActive;
 
         return (
           <details
             key={entry.id}
             className="group rounded-xl transition"
-            open={groupActive || undefined}
+            open={shouldOpen || undefined}
           >
-            <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
-              <span>{entry.text}</span>
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
+              <span className="truncate">{entry.text}</span>
               <svg
-                className="h-3.5 w-3.5 text-slate-400 transition-transform duration-200 group-open:rotate-90"
+                className="h-3 w-3 shrink-0 text-slate-400 transition-transform duration-200 group-open:rotate-90"
                 viewBox="0 0 20 20"
                 fill="currentColor"
               >
@@ -142,7 +144,7 @@ function MenuTree({
               </svg>
             </summary>
 
-            <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2">
+            <div className="mt-0.5 space-y-0.5 border-l-2 border-slate-200/80 pl-2">
               {entry.children.map((child) => {
                 if (child.type === "item") {
                   return (
@@ -158,17 +160,18 @@ function MenuTree({
                 }
 
                 const subgroupActive = childContainsActive(child, pathname);
+                const subShouldOpen = isSearching || subgroupActive;
 
                 return (
                   <details
                     key={child.id}
                     className="group/sub"
-                    open={subgroupActive || undefined}
+                    open={subShouldOpen || undefined}
                   >
-                    <summary className="ml-2 flex cursor-pointer list-none items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400 hover:bg-slate-100 hover:text-slate-600 [&::-webkit-details-marker]:hidden">
-                      <span>{child.text}</span>
+                    <summary className="ml-2 flex cursor-pointer list-none items-center justify-between rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 hover:bg-slate-100 hover:text-slate-600 [&::-webkit-details-marker]:hidden">
+                      <span className="truncate">{child.text}</span>
                       <svg
-                        className="h-3 w-3 text-slate-400 transition-transform duration-200 group-open/sub:rotate-90"
+                        className="h-2.5 w-2.5 shrink-0 text-slate-400 transition-transform duration-200 group-open/sub:rotate-90"
                         viewBox="0 0 20 20"
                         fill="currentColor"
                       >
@@ -210,13 +213,14 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Close mobile drawer on route change
+  // Tutup drawer saat rute berpindah
   useEffect(() => {
     setMobileOpen(false);
+    setSearchQuery("");
   }, [pathname]);
 
-  // Prevent body scrolling when mobile drawer is open
   useEffect(() => {
     if (mobileOpen) {
       document.body.style.overflow = "hidden";
@@ -228,48 +232,110 @@ export function AppSidebar({
     };
   }, [mobileOpen]);
 
+  // Filter pencarian menu dinamis
+  const filteredEntries = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return entries;
+
+    const filterChild = (child: MenuGroupChild): MenuGroupChild | null => {
+      if (child.type === "item") {
+        return child.text.toLowerCase().includes(q) ? child : null;
+      }
+      const matched = child.children.filter((item) =>
+        item.text.toLowerCase().includes(q)
+      );
+      if (matched.length > 0) {
+        return { ...child, children: matched };
+      }
+      return null;
+    };
+
+    return entries
+      .map((entry) => {
+        if (entry.type === "item") {
+          return entry.text.toLowerCase().includes(q) ? entry : null;
+        }
+        const matchedChildren = entry.children
+          .map(filterChild)
+          .filter((c): c is MenuGroupChild => c !== null);
+
+        if (matchedChildren.length > 0) {
+          return { ...entry, children: matchedChildren };
+        }
+        return null;
+      })
+      .filter((e): e is MenuEntry => e !== null);
+  }, [entries, searchQuery]);
+
   return (
     <>
       {/* DESKTOP SIDEBAR */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-slate-200/80 bg-white shadow-[1px_0_10px_rgba(0,0,0,0.02)] lg:flex">
-        {/* Brand header */}
-        <div className="border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-sm font-black text-white shadow-sm shadow-blue-500/20">
+        {/* Brand Header */}
+        <div className="border-b border-slate-100 px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-black text-white shadow-xs">
               KD
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-extrabold text-slate-900">
+              <p className="truncate text-xs font-extrabold text-slate-900">
                 Kreasi Dinamika
               </p>
-              <p className="truncate text-[11px] font-semibold text-blue-600">
-                Sistem Terpadu (SMPT V2)
+              <p className="truncate text-[10px] font-semibold text-blue-600">
+                SMPT V2 Desktop
               </p>
             </div>
+          </div>
+
+          {/* Kotak Pencarian Desktop */}
+          <div className="mt-3 relative">
+            <input
+              type="text"
+              placeholder="Cari menu kerja..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-2 text-xs text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
 
         {/* Navigation list */}
-        <div className="flex-1 overflow-y-auto px-3.5 py-4">
-          <MenuTree
-            entries={entries}
-            pathname={pathname}
-            badgeCounts={badgeCounts}
-          />
+        <div className="flex-1 overflow-y-auto px-3.5 py-3">
+          {filteredEntries.length === 0 ? (
+            <div className="py-6 text-center text-xs text-slate-400">
+              Menu tidak ditemukan.
+            </div>
+          ) : (
+            <MenuTree
+              entries={filteredEntries}
+              pathname={pathname}
+              badgeCounts={badgeCounts}
+              isSearching={Boolean(searchQuery.trim())}
+            />
+          )}
         </div>
 
         {/* User footer on desktop */}
         {userProfile ? (
-          <div className="border-t border-slate-100 p-3.5">
-            <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2.5 border border-slate-100">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-xs font-bold text-blue-700">
+          <div className="border-t border-slate-100 p-3">
+            <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-2 border border-slate-100">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-xs font-bold text-blue-700">
                 {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-bold text-slate-800">
                   {userProfile.displayName || userProfile.email}
                 </p>
-                <p className="truncate text-[11px] font-semibold text-blue-600">
+                <p className="truncate text-[10px] font-semibold text-blue-600">
                   {userProfile.role}
                 </p>
               </div>
@@ -278,88 +344,97 @@ export function AppSidebar({
         ) : null}
       </aside>
 
-      {/* MOBILE TRIGGER BUTTON (DISPATCH EVENT FOR HEADER) */}
       <div id="mobileSidebarControls" className="hidden" data-open={mobileOpen ? "1" : "0"} />
 
       {/* MOBILE DRAWER */}
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
-          {/* Backdrop blur */}
           <div
             onClick={() => setMobileOpen(false)}
             className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300"
           />
 
-          {/* Drawer container */}
           <aside className="relative flex h-full w-[85vw] max-w-sm flex-col bg-white shadow-2xl transition-transform duration-300 ease-out">
-            {/* Drawer Header */}
-            <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-black text-white shadow-xs">
-                  KD
+            {/* Header Mobile Ramping: Brand + User Info + Tombol Close */}
+            <div className="border-b border-slate-100 px-4 py-3 bg-slate-50/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-xs">
+                    {userProfile?.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "K"}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold text-slate-900 leading-tight">
+                      {userProfile?.displayName || userProfile?.email || "Kreasi Dinamika"}
+                    </p>
+                    <span className="text-[10px] font-semibold text-blue-600 uppercase">
+                      {userProfile?.role || "ADMIN"}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-extrabold text-slate-900">
-                    Kreasi Dinamika
-                  </p>
-                  <p className="text-[10px] font-semibold text-blue-600">
-                    SMPT V2 Mobile
-                  </p>
-                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100"
+                  aria-label="Tutup menu"
+                >
+                  ✕
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setMobileOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
-                aria-label="Tutup menu"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* User profile card inside mobile drawer */}
-            {userProfile ? (
-              <div className="bg-slate-50/80 px-5 py-3 border-b border-slate-100 flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xs font-bold text-white shadow-xs">
-                  {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-bold text-slate-800">
-                    {userProfile.displayName || userProfile.email}
-                  </p>
-                  <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
-                    {userProfile.role}
-                  </span>
-                </div>
+              {/* Kotak Pencarian Menu Mobile */}
+              <div className="mt-2.5 relative">
+                <input
+                  type="text"
+                  placeholder="🔍 Ketik nama menu (spk, qc, barang)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none shadow-2xs"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
-            ) : null}
-
-            {/* Scrollable menu inside mobile drawer */}
-            <div className="flex-1 overflow-y-auto px-4 py-4">
-              <MenuTree
-                entries={entries}
-                pathname={pathname}
-                onNavigate={() => setMobileOpen(false)}
-                badgeCounts={badgeCounts}
-              />
             </div>
 
-            {/* Mobile drawer quick actions footer */}
-            <div className="border-t border-slate-100 p-4 space-y-2 bg-slate-50/50">
+            {/* Scrollable Menu Area */}
+            <div className="flex-1 overflow-y-auto px-3.5 py-3">
+              {filteredEntries.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  Tidak ada menu yang sesuai dengan "{searchQuery}".
+                </div>
+              ) : (
+                <MenuTree
+                  entries={filteredEntries}
+                  pathname={pathname}
+                  onNavigate={() => setMobileOpen(false)}
+                  badgeCounts={badgeCounts}
+                  isSearching={Boolean(searchQuery.trim())}
+                />
+              )}
+            </div>
+
+            {/* Footer Mobile Sederhana */}
+            <div className="border-t border-slate-100 p-3 bg-slate-50/60">
               <Link
                 href="/dashboard/akun"
                 onClick={() => setMobileOpen(false)}
-                className="flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
+                className="flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition"
               >
-                Akun Saya
+                ⚙️ Pengaturan Akun
               </Link>
             </div>
           </aside>
         </div>
       ) : null}
 
-      {/* MOBILE BOTTOM DOCK (Native App Style Navigation) */}
+      {/* MOBILE BOTTOM DOCK */}
       <nav className="fixed bottom-0 inset-x-0 z-30 flex h-16 items-center justify-around border-t border-slate-200/80 bg-white/95 px-3 backdrop-blur-md shadow-lg lg:hidden">
         <Link
           href="/dashboard"
