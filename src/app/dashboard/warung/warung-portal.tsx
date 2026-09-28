@@ -8,7 +8,6 @@ import {
   TransactionItemInput 
 } from "./actions";
 import { 
-  Store, 
   Search, 
   Plus, 
   Receipt, 
@@ -19,12 +18,9 @@ import {
   Edit3, 
   X, 
   Check, 
-  ChevronRight, 
-  AlertCircle,
-  FileText
+  AlertCircle 
 } from "lucide-react";
 
-// PRESET KATALOG BARANG CEPAT
 const PRESET_CATALOG = [
   { name: "Kopi", price: 5000 },
   { name: "Rokok Magnum", price: 20000 },
@@ -41,15 +37,17 @@ export interface ItemDetail {
 }
 
 export interface WarungTransaction {
-  id: string;
+  id: string | number;
   worker_id: string;
   worker_name: string;
   worker_code: string;
+  worker_role?: string;
   amount: number;
   notes: string;
   created_at: string;
   status: string;
   installments_paid: number;
+  warung_name: string;
   items: ItemDetail[];
 }
 
@@ -85,10 +83,10 @@ export function WarungPortal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // State Modal Detail Riwayat Pekerja
+  // State Modal Detail Riwayat Pekerja (Ketika kartu diklik)
   const [selectedWorkerForDetail, setSelectedWorkerForDetail] = useState<Worker | null>(null);
 
-  // Perhitungan Rekap Saldo Per Pekerja
+  // Rekap saldo per pekerja
   const workerBalances = useMemo(() => {
     const map = new Map<string, { worker: Worker; totalDebt: number; transactionCount: number }>();
 
@@ -110,21 +108,20 @@ export function WarungPortal({
     );
   }, [initialWorkers, initialTransactions, searchQuery]);
 
-  // Total Keseluruhan Tagihan Warung
-  const totalWarungReceivables = useMemo(() => {
-    return initialTransactions.reduce((acc, t) => acc + t.amount, 0);
-  }, [initialTransactions]);
-
-  // Transaksi yang difilter untuk tab Riwayat Transaksi
+  // Transaksi aktif dengan filter pencarian
   const filteredTransactions = useMemo(() => {
     return initialTransactions.filter((tx) =>
       tx.worker_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.worker_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.notes.toLowerCase().includes(searchQuery.toLowerCase())
+      tx.notes.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tx.warung_name.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [initialTransactions, searchQuery]);
 
-  // Handle Buka Form Tambah Baru
+  const activeWorkersWithDebtCount = useMemo(() => {
+    return workerBalances.filter((b) => b.transactionCount > 0).length;
+  }, [workerBalances]);
+
   const handleOpenCreateForm = (prefillWorkerId?: string) => {
     setEditingTransaction(null);
     setSelectedWorkerId(prefillWorkerId || initialWorkers[0]?.id || "");
@@ -136,7 +133,6 @@ export function WarungPortal({
     setIsFormOpen(true);
   };
 
-  // Handle Buka Form Edit Nota
   const handleOpenEditForm = (tx: WarungTransaction) => {
     setEditingTransaction(tx);
     setSelectedWorkerId(tx.worker_id);
@@ -151,11 +147,10 @@ export function WarungPortal({
       setCartItems(tx.items.map((i) => ({ ...i })));
     }
     setErrorMessage("");
-    setSelectedWorkerForDetail(null); // Tutup drawer detail
+    setSelectedWorkerForDetail(null);
     setIsFormOpen(true);
   };
 
-  // Tambah item dari preset
   const handleAddPresetItem = (preset: { name: string; price: number }) => {
     setCartItems((prev) => {
       const existingIndex = prev.findIndex((i) => i.item_name === preset.name);
@@ -169,7 +164,6 @@ export function WarungPortal({
     });
   };
 
-  // Tambah item manual baru
   const handleAddManualItem = () => {
     setCartItems((prev) => [
       ...prev,
@@ -177,7 +171,6 @@ export function WarungPortal({
     ]);
   };
 
-  // Update item di keranjang
   const handleUpdateItem = (index: number, field: keyof TransactionItemInput, val: any) => {
     setCartItems((prev) => {
       const next = [...prev];
@@ -190,12 +183,10 @@ export function WarungPortal({
     });
   };
 
-  // Hapus item dari keranjang
   const handleRemoveItem = (index: number) => {
     setCartItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  // Hitung total di form
   const computedFormTotal = useMemo(() => {
     if (isDirectNominal) {
       return Number(directAmount) || 0;
@@ -203,7 +194,6 @@ export function WarungPortal({
     return cartItems.reduce((acc, it) => acc + (it.subtotal || 0), 0);
   }, [isDirectNominal, directAmount, cartItems]);
 
-  // Submit Simpan / Update
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedWorkerId) {
@@ -246,9 +236,8 @@ export function WarungPortal({
     }
   };
 
-  // Hapus Transaksi
-  const handleDeleteTransaction = async (txId: string) => {
-    if (!confirm("Apakah Anda yakin ingin membatalkan dan menghapus nota ini?")) return;
+  const handleDeleteTransaction = async (txId: string | number) => {
+    if (!confirm("Apakah Anda yakin ingin membatalkan nota ini?")) return;
     try {
       const res = await deleteWarungTransactionAction(txId);
       if (!res.success) {
@@ -262,232 +251,171 @@ export function WarungPortal({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-28 text-slate-800">
-      {/* Header Sticky Mobile */}
-      <div className="bg-orange-500 text-white px-4 pt-6 pb-4 shadow-md sticky top-0 z-20">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Store className="w-6 h-6" />
-            <div>
-              <h1 className="text-lg font-bold leading-tight">Portal Warung</h1>
-              <p className="text-xs text-orange-100 font-medium">{currentWarung.name}</p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-[#f8fafc] pb-24 text-slate-800">
+      <div className="max-w-xl mx-auto px-4 pt-3">
+        
+        {/* Tombol Buat Nota Cepat */}
+        <div className="flex justify-end mb-3">
           <button
             onClick={() => handleOpenCreateForm()}
-            className="flex items-center gap-1.5 bg-white text-orange-600 font-semibold px-3 py-1.5 rounded-full text-xs shadow-sm hover:bg-orange-50 active:scale-95 transition"
+            className="flex items-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow-sm active:scale-95 transition"
           >
             <Plus className="w-4 h-4" />
-            Catat Nota
+            + Catat Nota Baru
           </button>
         </div>
 
-        {/* Ringkasan Total Tagihan */}
-        <div className="bg-orange-600/60 rounded-xl p-3 backdrop-blur-sm border border-orange-400/30 flex justify-between items-center">
-          <div>
-            <span className="text-[11px] text-orange-100 uppercase tracking-wider block">Total Piutang Berjalan</span>
-            <span className="text-xl font-extrabold tracking-tight">
-              Rp {totalWarungReceivables.toLocaleString("id-ID")}
-            </span>
-          </div>
-          <div className="text-right">
-            <span className="text-[11px] text-orange-100 block">Total Nota</span>
-            <span className="text-base font-bold">{initialTransactions.length} Nota</span>
-          </div>
-        </div>
-
-        {/* Tab Switcher Oranye */}
-        <div className="grid grid-cols-2 gap-2 mt-4 bg-orange-600/40 p-1 rounded-xl">
+        {/* Tab Switcher (Sesuai Screenshot: Oranye jika aktif, Putih jika non-aktif) */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
           <button
             onClick={() => setActiveTab("rekap")}
-            className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+            className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
               activeTab === "rekap"
-                ? "bg-white text-orange-600 shadow-sm"
-                : "text-orange-100 hover:text-white"
+                ? "bg-[#ea580c] text-white"
+                : "bg-white text-slate-700 border border-slate-200"
             }`}
           >
-            <Users className="w-4 h-4" />
-            Rekap Saldo per Orang
+            <Users className="w-4 h-4 shrink-0" />
+            <span>Rekap Saldo Total per Orang ({activeWorkersWithDebtCount})</span>
           </button>
+
           <button
             onClick={() => setActiveTab("transaksi")}
-            className={`py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+            className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
               activeTab === "transaksi"
-                ? "bg-white text-orange-600 shadow-sm"
-                : "text-orange-100 hover:text-white"
+                ? "bg-[#ea580c] text-white"
+                : "bg-white text-slate-700 border border-slate-200"
             }`}
           >
-            <Receipt className="w-4 h-4" />
-            Riwayat Transaksi
+            <Receipt className="w-4 h-4 shrink-0" />
+            <span>Riwayat Transaksi Harian ({initialTransactions.length})</span>
           </button>
         </div>
-      </div>
 
-      {/* Konten Halaman */}
-      <div className="max-w-xl mx-auto px-4 mt-4">
-        {/* Search Bar */}
-        <div className="relative mb-4">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+        {/* Search Bar Sesuai Screenshot */}
+        <div className="relative mb-3">
           <input
             type="text"
-            placeholder={activeTab === "rekap" ? "Cari nama pekerja atau ID..." : "Cari nota, barang, atau nama..."}
+            placeholder="Cari nama pekerja / menu..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white border border-slate-200 pl-10 pr-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-sm"
+            className="w-full bg-white border border-slate-200 pl-3.5 pr-4 py-2.5 rounded-xl text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#ea580c] shadow-xs"
           />
         </div>
 
-        {/* TAB 1: REKAP SALDO PER PEKERJA */}
+        {/* TAB 1: KARTU PEKERJA (KLIK UNTUK LIHAT RINCIAN & EDIT) */}
         {activeTab === "rekap" && (
-          <div className="space-y-2.5">
-            {workerBalances.map(({ worker, totalDebt, transactionCount }) => (
-              <div
-                key={worker.id}
-                onClick={() => setSelectedWorkerForDetail(worker)}
-                className="bg-white border border-slate-100 rounded-xl p-3.5 shadow-sm hover:border-orange-300 active:scale-[0.99] transition cursor-pointer flex items-center justify-between"
-              >
-                <div className="flex-1 min-w-0 pr-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-slate-900 text-sm truncate">{worker.name}</h3>
-                    <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono font-medium">
-                      {worker.worker_code}
+          <div className="space-y-3">
+            {workerBalances.map(({ worker, totalDebt, transactionCount }) => {
+              if (transactionCount === 0 && searchQuery === "") return null;
+
+              return (
+                <div
+                  key={worker.id}
+                  onClick={() => setSelectedWorkerForDetail(worker)}
+                  className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs hover:border-[#ea580c] active:scale-[0.99] transition cursor-pointer"
+                >
+                  {/* Baris Atas: Nama Pekerja & Badge Kuning X Nota */}
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-slate-900 text-sm tracking-tight">{worker.name}</h3>
+                    <span className="bg-[#fef3c7] text-[#92400e] text-[11px] font-semibold px-2.5 py-0.5 rounded-full">
+                      {transactionCount} Nota
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-slate-500">{transactionCount} transaksi</span>
-                    {transactionCount > 0 && (
-                      <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-medium">
-                        Ada Bon Aktif
-                      </span>
-                    )}
-                  </div>
-                </div>
 
-                <div className="text-right flex items-center gap-2">
-                  <div>
-                    <span className="text-xs text-slate-400 block font-normal">Total Bon</span>
-                    <span className={`text-sm font-extrabold ${totalDebt > 0 ? "text-orange-600" : "text-slate-400"}`}>
+                  {/* Baris Kedua: Kode Pekerja & Role */}
+                  <div className="text-[11px] text-slate-500 font-medium mt-1">
+                    {worker.worker_code} · {worker.role || "PRODUKSI (BULANAN)"}
+                  </div>
+
+                  {/* Baris Ketiga: Total Tagihan */}
+                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-50">
+                    <span className="text-xs text-slate-600 font-normal">Total Tagihan:</span>
+                    <span className="text-base font-bold text-[#e11d48]">
                       Rp {totalDebt.toLocaleString("id-ID")}
                     </span>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-slate-300" />
-                </div>
-              </div>
-            ))}
 
-            {workerBalances.length === 0 && (
-              <div className="text-center py-12 text-slate-400 text-xs">
-                Tidak ada data pekerja yang cocok dengan pencarian.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 2: RIWAYAT SEMUA TRANSAKSI NOTA */}
-        {activeTab === "transaksi" && (
-          <div className="space-y-3">
-            {filteredTransactions.map((tx) => {
-              const dt = new Date(tx.created_at);
-              const formattedDate = dt.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-              const formattedTime = dt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-
-              return (
-                <div key={tx.id} className="bg-white border border-slate-100 rounded-xl p-3.5 shadow-sm space-y-2.5">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 text-sm">{tx.worker_name}</span>
-                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">
-                          {tx.worker_code}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" /> {formattedDate}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {formattedTime} WIB
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-sm font-extrabold text-orange-600">
-                        Rp {tx.amount.toLocaleString("id-ID")}
-                      </span>
-                      <span className="block text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold mt-0.5">
-                        {tx.items.length > 0 ? `${tx.items.length} Item` : "Nominal Langsung"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Rincian item jika ada */}
-                  {tx.items.length > 0 && (
-                    <div className="bg-slate-50 rounded-lg p-2 text-xs space-y-1">
-                      {tx.items.map((it, idx) => (
-                        <div key={idx} className="flex justify-between text-slate-600">
-                          <span>
-                            {it.item_name} <span className="text-slate-400">x{it.qty}</span>
-                          </span>
-                          <span className="font-medium text-slate-700">
-                            Rp {it.subtotal.toLocaleString("id-ID")}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {tx.notes && tx.notes !== "Rincian Item" && (
-                    <p className="text-xs text-slate-500 italic bg-amber-50/50 p-1.5 rounded border border-amber-100">
-                      Catatan: {tx.notes}
-                    </p>
-                  )}
-
-                  {/* Tombol Aksi */}
-                  <div className="flex justify-end gap-2 pt-1 border-t border-slate-100">
-                    <button
-                      onClick={() => handleOpenEditForm(tx)}
-                      disabled={tx.installments_paid > 0}
-                      className="flex items-center gap-1 text-xs text-slate-600 hover:text-orange-600 font-medium px-2.5 py-1 rounded bg-slate-50 hover:bg-orange-50 disabled:opacity-40 transition"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      Edit Nota
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTransaction(tx.id)}
-                      disabled={tx.installments_paid > 0}
-                      className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-medium px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 disabled:opacity-40 transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Batalkan
-                    </button>
+                  {/* Banner Kuning di Bagian Bawah Kartu */}
+                  <div className="bg-[#fefce8] border border-[#fef08a]/80 text-[#854d0e] text-[11px] py-1.5 px-3 rounded-lg mt-2.5">
+                    Otomatis masuk potongan slip gaji pada payroll berikutnya.
                   </div>
                 </div>
               );
             })}
 
-            {filteredTransactions.length === 0 && (
-              <div className="text-center py-12 text-slate-400 text-xs">
-                Belum ada nota yang tercatat untuk warung ini.
+            {activeWorkersWithDebtCount === 0 && (
+              <div className="text-center py-12 text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-slate-200">
+                Tidak ada pekerja yang memiliki saldo bon aktif saat ini.
               </div>
             )}
           </div>
         )}
+
+        {/* TAB 2: TABEL RIWAYAT TRANSAKSI (SESUAI SCREENSHOT) */}
+        {activeTab === "transaksi" && (
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50/50">
+                    <th className="py-3 px-3">Warung</th>
+                    <th className="py-3 px-2">Menu / Keterangan</th>
+                    <th className="py-3 px-2">Nominal</th>
+                    <th className="py-3 px-3 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredTransactions.map((tx) => (
+                    <tr 
+                      key={tx.id} 
+                      onClick={() => handleOpenEditForm(tx)}
+                      className="hover:bg-orange-50/40 cursor-pointer transition"
+                    >
+                      <td className="py-3 px-3 font-semibold text-[#b45309] whitespace-nowrap">
+                        {tx.warung_name || currentWarung.name}
+                      </td>
+                      <td className="py-3 px-2 text-slate-700">
+                        <div className="font-medium text-slate-800">{tx.notes || "Kasbon"}</div>
+                        <div className="text-[10px] text-slate-400">{tx.worker_name}</div>
+                      </td>
+                      <td className="py-3 px-2 font-bold text-slate-900 whitespace-nowrap">
+                        Rp {tx.amount.toLocaleString("id-ID")}
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        <span className="bg-[#fef3c7] text-[#92400e] text-[10px] font-bold px-2 py-0.5 rounded-full inline-block">
+                          {tx.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredTransactions.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-slate-400 text-xs">
+                        Belum ada riwayat transaksi yang tercatat.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* DRAWER / MODAL: RINCIAN RIWAYAT PEKERJA KHUSUS WARUNG INI */}
+      {/* DRAWER / MODAL: RINCIAN RIWAYAT KHUSUS PEKERJA */}
       {selectedWorkerForDetail && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
-            {/* Header Drawer */}
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
+            <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-base text-slate-900">{selectedWorkerForDetail.name}</h2>
-                  <span className="text-xs bg-orange-100 text-orange-800 font-mono font-bold px-1.5 py-0.5 rounded">
+                  <h2 className="font-bold text-sm text-slate-900">{selectedWorkerForDetail.name}</h2>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 font-mono font-bold px-1.5 py-0.5 rounded">
                     {selectedWorkerForDetail.worker_code}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">Riwayat Bon & Ambilan di {currentWarung.name}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Rincian Nota di {currentWarung.name}</p>
               </div>
               <button
                 onClick={() => setSelectedWorkerForDetail(null)}
@@ -497,14 +425,13 @@ export function WarungPortal({
               </button>
             </div>
 
-            {/* List Riwayat Nota Pekerja */}
             <div className="p-4 overflow-y-auto space-y-3 flex-1">
               {(() => {
                 const workerTx = initialTransactions.filter((t) => t.worker_id === selectedWorkerForDetail.id);
                 if (workerTx.length === 0) {
                   return (
                     <div className="text-center py-8 text-slate-400 text-xs">
-                      Pekerja ini belum memiliki riwayat bon di warung Anda.
+                      Belum ada nota untuk pekerja ini di warung Anda.
                     </div>
                   );
                 }
@@ -521,15 +448,15 @@ export function WarungPortal({
                           <span className="text-xs font-semibold text-slate-700 block">
                             {fDate} • {fTime} WIB
                           </span>
-                          <span className="text-[11px] text-slate-400">ID Nota: {tx.id.substring(0, 8)}</span>
+                          <span className="text-[11px] text-slate-400">Keterangan: {tx.notes}</span>
                         </div>
-                        <span className="text-sm font-extrabold text-orange-600">
+                        <span className="text-sm font-bold text-[#e11d48]">
                           Rp {tx.amount.toLocaleString("id-ID")}
                         </span>
                       </div>
 
-                      {/* Detail Items */}
-                      {tx.items.length > 0 ? (
+                      {/* Detail Items jika ada */}
+                      {tx.items.length > 0 && (
                         <div className="bg-slate-50 rounded-lg p-2 text-xs divide-y divide-slate-100">
                           {tx.items.map((item, idx) => (
                             <div key={idx} className="py-1 flex justify-between text-slate-600">
@@ -543,18 +470,13 @@ export function WarungPortal({
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <div className="text-xs text-slate-500 bg-amber-50 p-2 rounded border border-amber-100">
-                          <span className="font-medium text-amber-800">Input Nominal Langsung</span>: {tx.notes || "-"}
-                        </div>
                       )}
 
-                      {/* Tombol Aksi per Nota */}
                       <div className="flex justify-end gap-2 pt-1 border-t border-slate-100">
                         <button
                           onClick={() => handleOpenEditForm(tx)}
                           disabled={tx.installments_paid > 0}
-                          className="flex items-center gap-1 text-xs text-slate-700 hover:text-orange-600 font-semibold px-2 py-1 rounded bg-slate-100 hover:bg-orange-50 disabled:opacity-40 transition"
+                          className="flex items-center gap-1 text-[11px] text-slate-700 hover:text-orange-600 font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-orange-50 disabled:opacity-40 transition"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                           Edit Nota
@@ -562,7 +484,7 @@ export function WarungPortal({
                         <button
                           onClick={() => handleDeleteTransaction(tx.id)}
                           disabled={tx.installments_paid > 0}
-                          className="flex items-center gap-1 text-xs text-red-600 font-semibold px-2 py-1 rounded bg-red-50 hover:bg-red-100 disabled:opacity-40 transition"
+                          className="flex items-center gap-1 text-[11px] text-red-600 font-semibold px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 disabled:opacity-40 transition"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           Hapus
@@ -574,7 +496,6 @@ export function WarungPortal({
               })()}
             </div>
 
-            {/* Footer Tambah Nota Baru Langsung untuk Pekerja Ini */}
             <div className="p-4 border-t border-slate-100 bg-white">
               <button
                 onClick={() => {
@@ -582,7 +503,7 @@ export function WarungPortal({
                   setSelectedWorkerForDetail(null);
                   handleOpenCreateForm(wId);
                 }}
-                className="w-full bg-orange-500 text-white font-bold py-2.5 rounded-xl hover:bg-orange-600 transition flex items-center justify-center gap-1.5 text-sm shadow-md"
+                className="w-full bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-md"
               >
                 <Plus className="w-4 h-4" />
                 Catat Nota Baru untuk {selectedWorkerForDetail.name.split(" ")[0]}
@@ -592,14 +513,14 @@ export function WarungPortal({
         </div>
       )}
 
-      {/* MODAL INPUT / EDIT NOTA */}
+      {/* MODAL INPUT / EDIT NOTA DENGAN PRESET & FLEKSIBEL NOMINAL */}
       {isFormOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-orange-500 text-white rounded-t-2xl">
+            <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between bg-[#ea580c] text-white rounded-t-2xl">
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5" />
-                <h2 className="font-bold text-base">
+                <h2 className="font-bold text-sm">
                   {editingTransaction ? "Koreksi / Edit Nota Warung" : "Catat Nota Kasbon Baru"}
                 </h2>
               </div>
@@ -611,9 +532,9 @@ export function WarungPortal({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitForm} className="overflow-y-auto p-4 space-y-4 flex-1">
+            <form onSubmit={handleSubmitForm} className="overflow-y-auto p-4 space-y-3.5 flex-1">
               {errorMessage && (
-                <div className="bg-red-50 text-red-700 text-xs p-3 rounded-xl border border-red-200 flex items-center gap-2">
+                <div className="bg-red-50 text-red-700 text-xs p-2.5 rounded-xl border border-red-200 flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{errorMessage}</span>
                 </div>
@@ -621,13 +542,13 @@ export function WarungPortal({
 
               {/* 1. Pilih Pekerja */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                   Pilih Pekerja
                 </label>
                 <select
                   value={selectedWorkerId}
                   onChange={(e) => setSelectedWorkerId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-medium focus:ring-2 focus:ring-orange-500"
+                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-medium focus:ring-1 focus:ring-[#ea580c]"
                   required
                 >
                   <option value="">-- Pilih Nama Pekerja --</option>
@@ -639,11 +560,11 @@ export function WarungPortal({
                 </select>
               </div>
 
-              {/* 2. Toggle Input Langsung Nominal vs Rincian Barang */}
+              {/* 2. Checkbox Input Langsung Nominal (Misal: Kuota, Token, Uang Tunai) */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between">
                 <div>
                   <span className="text-xs font-bold text-amber-900 block">Input Langsung Nominal Saja?</span>
-                  <span className="text-[11px] text-amber-700">Gunakan jika kasir tidak ingin merinci item barang.</span>
+                  <span className="text-[10px] text-amber-700">Untuk transaksi seperti Kuota, Token Listrik, atau Bon Tunai.</span>
                 </div>
                 <input
                   type="checkbox"
@@ -653,29 +574,27 @@ export function WarungPortal({
                 />
               </div>
 
-              {/* JIKA INPUT LANGSUNG NOMINAL */}
               {isDirectNominal ? (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                     Total Nominal Transaksi (Rp)
                   </label>
                   <input
                     type="number"
                     min="1"
-                    placeholder="Contoh: 35000"
+                    placeholder="Contoh: 30000"
                     value={directAmount}
                     onChange={(e) => setDirectAmount(e.target.value === "" ? "" : Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-lg font-extrabold text-orange-600 focus:ring-2 focus:ring-orange-500"
+                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-base font-extrabold text-[#ea580c] focus:ring-1 focus:ring-[#ea580c]"
                     required
                   />
                 </div>
               ) : (
-                /* JIKA MENGGUNAKAN RINCIAN ITEM & PRESET */
                 <div className="space-y-3">
-                  {/* Preset Cepat */}
+                  {/* Katalog Preset Cepat */}
                   <div>
-                    <span className="text-xs font-bold text-slate-700 uppercase block mb-1.5">
-                      Katalog Preset Cepat (+1 Klik)
+                    <span className="text-[11px] font-bold text-slate-700 uppercase block mb-1">
+                      Katalog Preset (+1 Klik)
                     </span>
                     <div className="grid grid-cols-2 gap-2">
                       {PRESET_CATALOG.map((preset, idx) => (
@@ -683,72 +602,68 @@ export function WarungPortal({
                           key={idx}
                           type="button"
                           onClick={() => handleAddPresetItem(preset)}
-                          className="flex items-center justify-between bg-orange-50/70 border border-orange-200/80 p-2 rounded-xl hover:bg-orange-100 active:scale-95 transition text-left"
+                          className="flex items-center justify-between bg-orange-50/70 border border-orange-200 p-2 rounded-xl hover:bg-orange-100 active:scale-95 transition text-left"
                         >
                           <div>
                             <span className="text-xs font-bold text-slate-800 block">{preset.name}</span>
-                            <span className="text-[11px] text-orange-600 font-semibold">
+                            <span className="text-[11px] text-[#ea580c] font-semibold">
                               Rp {preset.price.toLocaleString("id-ID")}
                             </span>
                           </div>
-                          <Plus className="w-4 h-4 text-orange-500" />
+                          <Plus className="w-4 h-4 text-[#ea580c]" />
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* Daftar Keranjang Barang Nota */}
+                  {/* Rincian Keranjang Barang */}
                   <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-xs font-bold text-slate-700 uppercase">
-                        Rincian Barang Belanja ({cartItems.length})
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase">
+                        Rincian Barang ({cartItems.length})
                       </span>
                       <button
                         type="button"
                         onClick={handleAddManualItem}
-                        className="text-xs text-orange-600 font-bold hover:underline flex items-center gap-1"
+                        className="text-xs text-[#ea580c] font-bold hover:underline flex items-center gap-1"
                       >
                         <Plus className="w-3.5 h-3.5" /> Item Manual
                       </button>
                     </div>
 
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                       {cartItems.map((item, idx) => (
-                        <div key={idx} className="bg-slate-50 border border-slate-200 p-2 rounded-xl flex items-center gap-2">
+                        <div key={idx} className="bg-slate-50 border border-slate-200 p-2 rounded-xl flex items-center gap-1.5">
                           <input
                             type="text"
-                            placeholder="Nama Barang"
+                            placeholder="Nama Item"
                             value={item.item_name}
                             onChange={(e) => handleUpdateItem(idx, "item_name", e.target.value)}
-                            className="flex-1 bg-white border border-slate-200 px-2 py-1.5 rounded-lg text-xs font-medium focus:ring-1 focus:ring-orange-500"
+                            className="flex-1 bg-white border border-slate-200 px-2 py-1.5 rounded-lg text-xs font-medium focus:ring-1 focus:ring-[#ea580c]"
                             required
                           />
-                          <div className="w-16">
-                            <input
-                              type="number"
-                              min="1"
-                              placeholder="Qty"
-                              value={item.qty}
-                              onChange={(e) => handleUpdateItem(idx, "qty", Number(e.target.value))}
-                              className="w-full bg-white border border-slate-200 px-2 py-1.5 rounded-lg text-xs font-medium text-center focus:ring-1 focus:ring-orange-500"
-                              required
-                            />
-                          </div>
-                          <div className="w-24">
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="Harga"
-                              value={item.unit_price || ""}
-                              onChange={(e) => handleUpdateItem(idx, "unit_price", Number(e.target.value))}
-                              className="w-full bg-white border border-slate-200 px-2 py-1.5 rounded-lg text-xs font-medium text-right focus:ring-1 focus:ring-orange-500"
-                              required
-                            />
-                          </div>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="Qty"
+                            value={item.qty}
+                            onChange={(e) => handleUpdateItem(idx, "qty", Number(e.target.value))}
+                            className="w-14 bg-white border border-slate-200 px-1 py-1.5 rounded-lg text-xs font-medium text-center focus:ring-1 focus:ring-[#ea580c]"
+                            required
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Harga"
+                            value={item.unit_price || ""}
+                            onChange={(e) => handleUpdateItem(idx, "unit_price", Number(e.target.value))}
+                            className="w-20 bg-white border border-slate-200 px-1.5 py-1.5 rounded-lg text-xs font-medium text-right focus:ring-1 focus:ring-[#ea580c]"
+                            required
+                          />
                           <button
                             type="button"
                             onClick={() => handleRemoveItem(idx)}
-                            className="p-1.5 text-slate-400 hover:text-red-500 rounded transition"
+                            className="p-1 text-slate-400 hover:text-red-500 rounded transition"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -756,8 +671,8 @@ export function WarungPortal({
                       ))}
 
                       {cartItems.length === 0 && (
-                        <div className="text-center py-5 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
-                          Belum ada barang dipilih. Klik preset di atas atau tambah item manual.
+                        <div className="text-center py-4 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                          Belum ada item dipilih.
                         </div>
                       )}
                     </div>
@@ -765,35 +680,35 @@ export function WarungPortal({
                 </div>
               )}
 
-              {/* Catatan Opsional */}
+              {/* Catatan / Keterangan (seperti Kuota, Token, dll) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Catatan Tambahan (Opsional)
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Menu / Keterangan
                 </label>
                 <input
                   type="text"
-                  placeholder="Misal: Titip teman, rokok belum lunas, dll."
+                  placeholder="Misal: Kuota, Token, Kasbon, dll."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-orange-500"
+                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs focus:ring-1 focus:ring-[#ea580c]"
                 />
               </div>
 
-              {/* Total Kalkulasi Otomatis */}
-              <div className="bg-slate-900 text-white p-3.5 rounded-xl flex items-center justify-between">
+              {/* Footer Grand Total */}
+              <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] text-slate-400 block uppercase font-medium">Grand Total Nota</span>
-                  <span className="text-xl font-extrabold text-orange-400">
+                  <span className="text-[10px] text-slate-400 block uppercase font-medium">Grand Total</span>
+                  <span className="text-lg font-bold text-orange-400">
                     Rp {computedFormTotal.toLocaleString("id-ID")}
                   </span>
                 </div>
                 <button
                   type="submit"
                   disabled={isSubmitting || computedFormTotal <= 0}
-                  className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition"
+                  className="bg-[#ea580c] hover:bg-[#c2410c] disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition"
                 >
                   <Check className="w-4 h-4" />
-                  {isSubmitting ? "Menyimpan..." : editingTransaction ? "Simpan Perubahan" : "Simpan Nota"}
+                  {isSubmitting ? "Menyimpan..." : "Simpan Nota"}
                 </button>
               </div>
             </form>
