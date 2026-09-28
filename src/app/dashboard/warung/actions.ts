@@ -3,19 +3,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
-async function getAuthenticatedWarung() {
+async function getAuth() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Sesi login telah habis. Silakan login kembali.");
-  }
-
-  const warungName = (user.user_metadata?.warung_name as string) || 
-                     (user.user_metadata?.full_name as string) || 
-                     user.email?.split("@")[0] || 
-                     "Warung Mitra";
-
+  if (!user) throw new Error("Silakan login kembali.");
+  const warungName = user.user_metadata?.warung_name || user.email?.split("@")[0] || "Warung Mitra";
   return { supabase, user, warungId: user.id, warungName };
 }
 
@@ -27,36 +19,28 @@ export async function createWarungTransactionAction(payload: {
   items?: Array<{ item_name: string; qty: number; unit_price: number; subtotal: number }>;
 }) {
   try {
-    const { supabase, warungId, warungName } = await getAuthenticatedWarung();
+    const { supabase, warungId, warungName } = await getAuth();
     const totalAmount = Number(payload.direct_amount) || 0;
+    if (totalAmount <= 0) return { success: false, error: "Nominal harus lebih dari 0." };
 
-    if (totalAmount <= 0) {
-      return { success: false, error: "Nominal harus lebih dari Rp 0." };
-    }
+    const { error } = await supabase.from("cash_advances").insert({
+      worker_id: payload.worker_id,
+      amount: totalAmount,
+      category: "KASBON_WARUNG",
+      status: "AKTIF",
+      notes: payload.notes || "Kasbon",
+      warung_id: warungId,
+      warung_name: warungName,
+      installment_count: 1,
+      installment_amount: totalAmount,
+      installments_paid: 0,
+    });
 
-    const { error: advanceError } = await supabase
-      .from("cash_advances")
-      .insert({
-        worker_id: payload.worker_id,
-        amount: totalAmount,
-        category: "KASBON_WARUNG",
-        status: "AKTIF",
-        notes: payload.notes || "Kasbon",
-        warung_id: warungId,
-        warung_name: warungName,
-        installment_count: 1,
-        installment_amount: totalAmount,
-        installments_paid: 0,
-      });
-
-    if (advanceError) {
-      return { success: false, error: advanceError.message };
-    }
-
+    if (error) return { success: false, error: error.message };
     revalidatePath("/dashboard/warung");
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || "Terjadi kesalahan." };
+    return { success: false, error: err.message };
   }
 }
 
@@ -71,11 +55,11 @@ export async function updateWarungTransactionAction(
   }
 ) {
   try {
-    const { supabase, warungId } = await getAuthenticatedWarung();
+    const { supabase, warungId } = await getAuth();
     const totalAmount = Number(payload.direct_amount) || 0;
 
-    // Proteksi: HANYA bisa update jika warung_id cocok dengan user yang sedang login!
-    const { error: updateError } = await supabase
+    // HANYA BISA UPDATE JIKA WARUNG_ID COCOK DENGAN USER LOGIN!
+    const { error } = await supabase
       .from("cash_advances")
       .update({
         worker_id: payload.worker_id,
@@ -86,35 +70,29 @@ export async function updateWarungTransactionAction(
       .eq("id", transactionId)
       .eq("warung_id", warungId);
 
-    if (updateError) {
-      return { success: false, error: updateError.message };
-    }
-
+    if (error) return { success: false, error: error.message };
     revalidatePath("/dashboard/warung");
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || "Terjadi kesalahan." };
+    return { success: false, error: err.message };
   }
 }
 
 export async function deleteWarungTransactionAction(transactionId: string) {
   try {
-    const { supabase, warungId } = await getAuthenticatedWarung();
+    const { supabase, warungId } = await getAuth();
 
-    // Proteksi: HANYA bisa delete jika warung_id cocok dengan user yang sedang login!
-    const { error: delError } = await supabase
+    // HANYA BISA HAPUS JIKA WARUNG_ID COCOK DENGAN USER LOGIN!
+    const { error } = await supabase
       .from("cash_advances")
       .delete()
       .eq("id", transactionId)
       .eq("warung_id", warungId);
 
-    if (delError) {
-      return { success: false, error: delError.message };
-    }
-
+    if (error) return { success: false, error: error.message };
     revalidatePath("/dashboard/warung");
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || "Terjadi kesalahan." };
+    return { success: false, error: err.message };
   }
 }
