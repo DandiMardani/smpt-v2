@@ -9,7 +9,6 @@ export const metadata = {
 export default async function WarungPage() {
   const supabase = await createClient();
 
-  // 1. Verifikasi User & Sesi
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     redirect("/login");
@@ -18,10 +17,9 @@ export default async function WarungPage() {
   const warungId = user.id;
   const warungName = (user.user_metadata?.warung_name as string) || 
                      (user.user_metadata?.full_name as string) || 
-                     user.email?.split("@")[0] || 
-                     "Warung Mitra";
+                     "Dandi Store";
 
-  // 2. Query Pekerja Aktif
+  // 1. Ambil data pekerja aktif
   const { data: workersData } = await supabase
     .from("workers")
     .select("id, name, worker_code, role, status")
@@ -30,7 +28,7 @@ export default async function WarungPage() {
 
   const workers = workersData || [];
 
-  // 3. Query Transaksi Khusus Warung Ini Saja (Multi-Tenant Filter)
+  // 2. Ambil transaksi khusus warung ini (Multi-Tenant)
   const { data: transactionsData } = await supabase
     .from("cash_advances")
     .select(`
@@ -46,7 +44,8 @@ export default async function WarungPage() {
       workers (
         id,
         name,
-        worker_code
+        worker_code,
+        role
       ),
       warung_transaction_items (
         id,
@@ -65,11 +64,13 @@ export default async function WarungPage() {
     worker_id: t.worker_id,
     worker_name: t.workers?.name || "Tanpa Nama",
     worker_code: t.workers?.worker_code || "-",
+    worker_role: t.workers?.role || "PRODUKSI (BULANAN)",
     amount: Number(t.amount) || 0,
-    notes: t.notes || "",
+    notes: t.notes || "Kasbon",
     created_at: t.created_at,
-    status: t.status,
+    status: t.installments_paid > 0 ? "LUNAS" : "BELUM LUNAS",
     installments_paid: t.installments_paid || 0,
+    warung_name: t.warung_name || warungName,
     items: (t.warung_transaction_items || []).map((item: any) => ({
       id: item.id,
       item_name: item.item_name,
