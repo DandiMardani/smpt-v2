@@ -3,6 +3,7 @@
 import React, { useState, useTransition } from "react";
 import { 
   updatePayrollItemAction, 
+  updateOperatorPayrollItemAction,
   togglePayrollPaymentStatusAction, 
   syncPayrollAdvancesAction 
 } from "@/lib/final/actions";
@@ -19,11 +20,13 @@ import {
   Sparkles, 
   Unlock, 
   Users, 
+  Wrench, 
   X, 
-  Zap 
+  Zap,
+  Printer
 } from "lucide-react";
 
-interface PayrollRunItem {
+export interface PayrollRunItem {
   id: number;
   payroll_run_id: number;
   worker_id: number;
@@ -57,7 +60,35 @@ interface PayrollRunItem {
   };
 }
 
-interface PayrollRun {
+export interface OperatorItemRow {
+  id: number;
+  run_id?: number;
+  payroll_run_id?: number;
+  worker_id?: number;
+  worker_name?: string;
+  worker_name_snapshot?: string;
+  spk_no?: string;
+  order_no?: string;
+  work_item_name?: string;
+  item_name?: string;
+  qty_assigned?: number;
+  qty_approved?: number;
+  operator_price_snapshot?: number;
+  submission_price_snapshot?: number;
+  operator_value?: number;
+  operatorValue?: number;
+  submission_value?: number;
+  submissionValue?: number;
+  notes?: string;
+  workers?: {
+    name?: string;
+    department?: string;
+    code?: string;
+    phone?: string;
+  };
+}
+
+export interface PayrollRun {
   id: number;
   payout_no?: string;
   payroll_type: string;
@@ -67,6 +98,8 @@ interface PayrollRun {
   total_gross?: number;
   total_deduction?: number;
   total_net?: number;
+  total_operator_value?: number;
+  total_submission_value?: number;
   config_snapshot?: {
     payment_status?: string;
     payment_status_code?: string;
@@ -74,23 +107,25 @@ interface PayrollRun {
   };
 }
 
-interface Props {
+export interface Props {
   runs?: PayrollRun[];
   currentRunId?: number;
   items?: PayrollRunItem[];
+  operatorRuns?: PayrollRun[];
+  operatorItems?: OperatorItemRow[];
   [key: string]: any;
 }
 
-export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Props) {
+export function PayrollSlipManager(props: Props) {
+  const { runs = [], currentRunId, items = [], operatorRuns = [], operatorItems = [] } = props;
   const [isPending, startTransition] = useTransition();
-  const [selectedRunId, setSelectedRunId] = useState<number>(
-    currentRunId || runs[0]?.id || 0
-  );
-  const [activeTab, setActiveTab] = useState<"HARIAN" | "BULANAN">("HARIAN");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [editingItem, setEditingItem] = useState<PayrollRunItem | null>(null);
 
-  // State Form Modal Koreksi
+  const [activeTab, setActiveTab] = useState<"HARIAN" | "BULANAN" | "BORONGAN">("HARIAN");
+  const [selectedRunId, setSelectedRunId] = useState<number>(currentRunId || runs[0]?.id || 0);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Modal Koreksi Harian & Bulanan
+  const [editingItem, setEditingItem] = useState<PayrollRunItem | null>(null);
   const [editDays, setEditDays] = useState<string>("0");
   const [editMealAmount, setEditMealAmount] = useState<number>(0);
   const [editBaseAmount, setEditBaseAmount] = useState<number>(0);
@@ -103,38 +138,52 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
   const [editKasbonP, setEditKasbonP] = useState<number>(0);
   const [editKasbonW, setEditKasbonW] = useState<number>(0);
 
+  // Modal Koreksi Operator Borongan
+  const [editingOpItem, setEditingOpItem] = useState<OperatorItemRow | null>(null);
+  const [editOpQty, setEditOpQty] = useState<number>(0);
+  const [editOpPrice, setEditOpPrice] = useState<number>(0);
+  const [editOpSubPrice, setEditOpSubPrice] = useState<number>(0);
+
+  // Modal Slip Cetak
+  const [viewingSlipItem, setViewingSlipItem] = useState<PayrollRunItem | null>(null);
+
   const activeRun = runs.find((r) => r.id === selectedRunId) || runs[0];
   const isPaid =
     activeRun?.config_snapshot?.payment_status_code === "SUDAH_DIBAYAR" ||
-    activeRun?.config_snapshot?.payment_status === "SUDAH DIBAYAR";
+    activeRun?.config_snapshot?.payment_status === "SUDAH DIBAYAR" ||
+    (activeRun?.notes || "").includes("SUDAH_DIBAYAR");
 
   const runItems = items.filter((it) => it.payroll_run_id === activeRun?.id);
 
+  // Filter Harian & Bulanan
   const filteredItems = runItems.filter((it) => {
-    const paySystem = (
-      it.pay_system_snapshot ||
-      it.workers?.pay_system ||
-      ""
-    ).toUpperCase();
-    const isMatchingType =
-      activeTab === "BULANAN" ? paySystem === "BULANAN" : paySystem !== "BULANAN";
-
+    const paySystem = (it.pay_system_snapshot || it.workers?.pay_system || "").toUpperCase();
+    const isMatchingType = activeTab === "BULANAN" ? paySystem === "BULANAN" : paySystem !== "BULANAN";
     const name = it.worker_name_snapshot || it.workers?.name || "";
     const code = it.worker_code_snapshot || it.workers?.code || "";
-    const isMatchingSearch =
-      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      code.toLowerCase().includes(searchQuery.toLowerCase());
-
-    return isMatchingType && isMatchingSearch;
+    return isMatchingType && (name.toLowerCase().includes(searchQuery.toLowerCase()) || code.toLowerCase().includes(searchQuery.toLowerCase()));
   });
 
-  const countHarian = runItems.filter(
-    (i) => (i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() !== "BULANAN"
-  ).length;
+  // Filter Operator Borongan
+  const allOperatorItems: OperatorItemRow[] = [
+    ...operatorItems,
+    ...((items.filter((it: any) => it.work_item_name || it.spk_no || it.qty_approved !== undefined) as unknown) as OperatorItemRow[])
+  ];
 
-  const countBulanan = runItems.filter(
-    (i) => (i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() === "BULANAN"
-  ).length;
+  const filteredOpItems = allOperatorItems.filter((op) => {
+    const name = op.worker_name_snapshot || op.worker_name || op.workers?.name || "";
+    const spk = op.spk_no || op.order_no || "";
+    const item = op.work_item_name || op.item_name || "";
+    return (
+      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      spk.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  });
+
+  const countHarian = runItems.filter((i) => (i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() !== "BULANAN").length;
+  const countBulanan = runItems.filter((i) => (i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() === "BULANAN").length;
+  const countBorongan = filteredOpItems.length;
 
   const formatRupiah = (val: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -144,6 +193,7 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
     }).format(val || 0);
   };
 
+  // Handler Buka Edit Harian / Bulanan
   const handleOpenEdit = (item: PayrollRunItem) => {
     setEditingItem(item);
     const existingMeal = Number(item.meal_amount || 0);
@@ -152,9 +202,7 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
     setEditDays(String(calculatedDays));
     setEditMealAmount(existingMeal);
     setEditBaseAmount(Number(item.base_amount || 0));
-    setEditOtHours(
-      item.overtime_minutes ? Math.round((item.overtime_minutes / 60) * 10) / 10 : 0
-    );
+    setEditOtHours(item.overtime_minutes ? Math.round((item.overtime_minutes / 60) * 10) / 10 : 0);
     setEditOtAmount(Number(item.overtime_amount || 0));
     setEditManualOtHours(Number(item.manual_overtime_hours || 0));
     setEditManualOtAmount(Number(item.manual_overtime_amount || 0));
@@ -188,14 +236,7 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
     setEditMealAmount(nextDays * 50000);
   };
 
-  const calculatedTotalGross =
-    editBaseAmount +
-    editMealAmount +
-    editOtAmount +
-    editManualOtAmount +
-    editOtBonus +
-    editHolidayBonus;
-
+  const calculatedTotalGross = editBaseAmount + editMealAmount + editOtAmount + editManualOtAmount + editOtBonus + editHolidayBonus;
   const calculatedTotalDeduction = editKasbonP + editKasbonW;
   const calculatedNet = Math.max(0, calculatedTotalGross - calculatedTotalDeduction);
 
@@ -223,11 +264,37 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
     });
   };
 
+  // Handler Buka Edit Operator Borongan
+  const handleOpenEditOp = (item: OperatorItemRow) => {
+    setEditingOpItem(item);
+    setEditOpQty(Number(item.qty_approved || 0));
+    setEditOpPrice(Number(item.operator_price_snapshot || 0));
+    setEditOpSubPrice(Number(item.submission_price_snapshot || 0));
+  };
+
+  const handleSaveOpCorrection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOpItem) return;
+
+    const fd = new FormData();
+    fd.set("item_id", String(editingOpItem.id));
+    fd.set("qty_approved", String(editOpQty));
+    fd.set("operator_price", String(editOpPrice));
+    fd.set("submission_price", String(editOpSubPrice));
+    fd.set("operator_value", String(Math.round(editOpQty * editOpPrice * 100) / 100));
+    fd.set("submission_value", String(Math.round(editOpQty * editOpSubPrice * 100) / 100));
+
+    startTransition(async () => {
+      await updateOperatorPayrollItemAction(fd);
+      setEditingOpItem(null);
+    });
+  };
+
   const handleToggleStatus = () => {
     if (!activeRun) return;
     const fd = new FormData();
     fd.set("run_id", String(activeRun.id));
-    fd.set("run_type", "GENERAL");
+    fd.set("run_type", activeTab === "BORONGAN" ? "OPERATOR" : "GENERAL");
     fd.set("payment_status", isPaid ? "BELUM_DIBAYAR" : "SUDAH_DIBAYAR");
 
     startTransition(async () => {
@@ -247,45 +314,67 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Switcher Kategori Upah */}
-      <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+      {/* 3 PILIHAN TAB KATEGORI PENGGAJIAN */}
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
         <button
           type="button"
           onClick={() => setActiveTab("HARIAN")}
-          className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm transition-all ${
+          className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm transition-all ${
             activeTab === "HARIAN"
               ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Users className="w-4 h-4" />
-          <span>HARIAN ({countHarian} Slip)</span>
+          <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span className="truncate">HARIAN ({countHarian})</span>
         </button>
+
         <button
           type="button"
           onClick={() => setActiveTab("BULANAN")}
-          className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm transition-all ${
+          className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm transition-all ${
             activeTab === "BULANAN"
               ? "bg-purple-600 text-white shadow-md shadow-purple-500/20"
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Building2 className="w-4 h-4" />
-          <span>Karyawan BULANAN ({countBulanan} Slip)</span>
+          <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span className="truncate">BULANAN ({countBulanan})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("BORONGAN")}
+          className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm transition-all ${
+            activeTab === "BORONGAN"
+              ? "bg-amber-600 text-white shadow-md shadow-amber-500/20"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Wrench className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span className="truncate">BORONGAN ({countBorongan})</span>
         </button>
       </div>
 
-      {/* Ringkasan Payout Aktif */}
+      {/* RINGKASAN PAYOUT AKTIF */}
       <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-1">
-            <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-              <span>{activeTab === "BULANAN" ? "Uang Makan Staf Bulanan" : "Rincian Slip Gaji Harian"}</span>
+            <h2 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
+              <span>
+                {activeTab === "BULANAN"
+                  ? "Uang Makan Staf Bulanan"
+                  : activeTab === "BORONGAN"
+                  ? "Rincian Slip Operator Borongan"
+                  : "Rincian Slip Gaji Harian"}
+              </span>
             </h2>
             <p className="text-xs text-slate-500">
               {activeTab === "BULANAN"
-                ? "Isi jumlah hari kehadiran untuk pengajuan uang makan mingguan (Rp 50.000/hari)."
-                : "Gaji master & kasbon otomatis disinkronkan sebelum berstatus Sudah Dibayar."}
+                ? "Isi jumlah hari kehadiran untuk uang makan mingguan (Rp 50.000/hari)."
+                : activeTab === "BORONGAN"
+                ? "Dihitung dari Qty Sah Checker + Harga Satuan Borongan."
+                : "Upah kehadiran, lembur, dan potongan kasbon otomatis tersinkron."}
             </p>
           </div>
 
@@ -305,7 +394,7 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
           )}
         </div>
 
-        {/* Kartu Status Payout */}
+        {/* KARTU STATUS PAYOUT */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
           <div>
             <span className="text-[10px] font-bold text-slate-400 block uppercase">No. Payout</span>
@@ -322,7 +411,7 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
           <div>
             <span className="text-[10px] font-bold text-slate-400 block uppercase">Total Nilai Bersih</span>
             <span className="text-xs font-black text-emerald-600">
-              {formatRupiah(activeRun?.total_net || 0)}
+              {formatRupiah(activeRun?.total_net || activeRun?.total_operator_value || 0)}
             </span>
           </div>
           <div>
@@ -340,7 +429,7 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* ACTION BUTTONS */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <button
             type="button"
@@ -356,176 +445,258 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
             {isPaid ? "Set Belum" : "Set Lunas"}
           </button>
 
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={handleSyncData}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isPending ? "animate-spin" : ""}`} />
-            <span>Sinkronkan Gaji Master & Kasbon</span>
-          </button>
+          {activeTab !== "BORONGAN" && (
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={handleSyncData}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isPending ? "animate-spin" : ""}`} />
+              <span>Sinkronkan Gaji & Kasbon</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Pencarian Pekerja */}
+      {/* PENCARIAN */}
       <div className="relative">
         <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={`Cari nama staf / pekerja ${activeTab.toLowerCase()}...`}
+          placeholder={`Cari nama staf / borongan / SPK...`}
           className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
-      {/* Daftar Kartu Pekerja */}
-      <div className="space-y-3">
-        {filteredItems.length === 0 ? (
-          <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-2">
-            <Users className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="text-xs font-bold text-slate-600">Tidak ada pekerja dalam kategori ini</p>
-            <p className="text-[11px] text-slate-400">
-              {activeTab === "BULANAN"
-                ? "Gunakan query SQL tadi untuk memasukkan staf bulanan ke slip mingguan."
-                : "Pastikan absensi mingguan pekerja harian sudah difinalisasi."}
-            </p>
-          </div>
-        ) : (
-          filteredItems.map((item) => {
-            const workerName = item.worker_name_snapshot || item.workers?.name || "Tanpa Nama";
-            const code = item.worker_code_snapshot || item.workers?.code || "-";
-            const dept = item.department_snapshot || item.workers?.department || "PRODUKSI";
-            const isBulanan =
-              (item.pay_system_snapshot || item.workers?.pay_system || "").toUpperCase() === "BULANAN";
+      {/* DAFTAR PEKERJA: HARIAN & BULANAN */}
+      {activeTab !== "BORONGAN" && (
+        <div className="space-y-3">
+          {filteredItems.length === 0 ? (
+            <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-2">
+              <Users className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">Tidak ada pekerja dalam kategori ini</p>
+            </div>
+          ) : (
+            filteredItems.map((item) => {
+              const workerName = item.worker_name_snapshot || item.workers?.name || "Tanpa Nama";
+              const code = item.worker_code_snapshot || item.workers?.code || "-";
+              const dept = item.department_snapshot || item.workers?.department || "PRODUKSI";
+              const isBulanan = (item.pay_system_snapshot || item.workers?.pay_system || "").toUpperCase() === "BULANAN";
 
-            const fullDays = item.full_days || 0;
-            const halfDays = item.half_days || 0;
-            const mealAmt = Number(item.meal_amount || 0);
-            const netAmt = Number(item.net_amount || 0);
+              const fullDays = item.full_days || 0;
+              const halfDays = item.half_days || 0;
+              const mealAmt = Number(item.meal_amount || 0);
+              const netAmt = Number(item.net_amount || 0);
 
-            return (
-              <div
-                key={item.id}
-                className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-3 hover:border-slate-300 transition-all"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-sm text-slate-800">{workerName}</span>
-                      <span
-                        className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                          isBulanan ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
-                        {isBulanan ? "BULANAN" : "HARIAN"}
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-3 hover:border-slate-300 transition-all"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-sm text-slate-800">{workerName}</span>
+                        <span
+                          className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                            isBulanan ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                          }`}
+                        >
+                          {isBulanan ? "BULANAN" : "HARIAN"}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-400 block">
+                        {dept} • {code}
                       </span>
                     </div>
-                    <span className="text-[11px] font-bold text-slate-400 block">
-                      {dept} • {code}
-                    </span>
+
+                    <div className="text-right">
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Gaji Bersih (Net)</span>
+                      <span className="text-base font-black text-emerald-600">{formatRupiah(netAmt)}</span>
+                    </div>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-[9px] font-bold text-slate-400 block uppercase">Gaji Bersih (Net)</span>
-                    <span className="text-base font-black text-emerald-600">{formatRupiah(netAmt)}</span>
+                  {/* Rincian Komponen Upah */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">
+                        {isBulanan ? "Uang Makan Mingguan:" : "Upah Pokok Hadir:"}
+                      </span>
+                      <span className="font-bold text-slate-700">
+                        {isBulanan ? formatRupiah(mealAmt) : formatRupiah(Number(item.base_amount || 0))}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        {isBulanan
+                          ? `(${mealAmt > 0 ? mealAmt / 50000 : 0} Hari Masuk)`
+                          : `(${fullDays} Full • ${halfDays} Half)`}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Lembur:</span>
+                      <span className="font-bold text-slate-700">
+                        {formatRupiah(Number(item.overtime_amount || 0) + Number(item.manual_overtime_amount || 0))}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        {Math.round(((item.overtime_minutes || 0) / 60) * 10) / 10 + Number(item.manual_overtime_hours || 0)} Jam
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Bonus & Insentif:</span>
+                      <span className="font-bold text-slate-700">
+                        {formatRupiah(Number(item.overtime_bonus || 0) + Number(item.holiday_bonus || 0))}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        {Number(item.holiday_bonus || 0) > 0 ? "Insentif Minggu" : "Reguler"}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Potongan Kasbon:</span>
+                      <span className="font-bold text-rose-600">
+                        {Number(item.deduction_amount || 0) > 0 ? `-${formatRupiah(Number(item.deduction_amount || 0))}` : "-"}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        {Number(item.deduction_amount || 0) > 0 ? "Kantor / Warung" : "Bebas Kasbon"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Tombol Aksi */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(item)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Koreksi</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setViewingSlipItem(item)}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Cetak Slip</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = `Halo ${workerName}, rincian slip upah periode ${activeRun?.period_start} s/d ${activeRun?.period_end}: Total Bersih ${formatRupiah(netAmt)}.`;
+                        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Share WA</span>
+                    </button>
                   </div>
                 </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
-                {/* Rincian Komponen Upah */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-medium">
-                      {isBulanan ? "Uang Makan Mingguan:" : "Upah Pokok Hadir:"}
-                    </span>
-                    <span className="font-bold text-slate-700">
-                      {isBulanan ? formatRupiah(mealAmt) : formatRupiah(Number(item.base_amount || 0))}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">
-                      {isBulanan
-                        ? `(${mealAmt > 0 ? mealAmt / 50000 : 0} Hari Masuk)`
-                        : `(${fullDays} Full • ${halfDays} Half)`}
-                    </span>
+      {/* DAFTAR PEKERJA: OPERATOR BORONGAN */}
+      {activeTab === "BORONGAN" && (
+        <div className="space-y-3">
+          {filteredOpItems.length === 0 ? (
+            <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-2">
+              <Wrench className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">Tidak ada item operator borongan</p>
+              <p className="text-[11px] text-slate-400">Pastikan Qty Sah Checker sudah difinalisasi.</p>
+            </div>
+          ) : (
+            filteredOpItems.map((op) => {
+              const opName = op.worker_name_snapshot || op.worker_name || op.workers?.name || "Operator";
+              const spk = op.spk_no || op.order_no || "SPK-REGULER";
+              const itemWork = op.work_item_name || op.item_name || "Pekerjaan Borongan";
+              const qty = Number(op.qty_approved || 0);
+              const price = Number(op.operator_price_snapshot || 0);
+              const opVal = Number(op.operator_value ?? op.operatorValue ?? qty * price);
+
+              return (
+                <div
+                  key={op.id}
+                  className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-3 hover:border-slate-300 transition-all"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-sm text-slate-800">{opName}</span>
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          BORONGAN
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-400 block">
+                        {spk} • {itemWork}
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Total Nilai Borongan</span>
+                      <span className="text-base font-black text-amber-600">{formatRupiah(opVal)}</span>
+                    </div>
                   </div>
 
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-medium">Lembur:</span>
-                    <span className="font-bold text-slate-700">
-                      {formatRupiah(Number(item.overtime_amount || 0) + Number(item.manual_overtime_amount || 0))}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">
-                      {Math.round(((item.overtime_minutes || 0) / 60) * 10) / 10 +
-                        Number(item.manual_overtime_hours || 0)}{" "}
-                      Jam
-                    </span>
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Qty Sah Checker:</span>
+                      <span className="font-black text-slate-700">{qty.toLocaleString("id-ID")} PCS</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Tarif Satuan:</span>
+                      <span className="font-black text-slate-700">{formatRupiah(price)} / PCS</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Harga Setoran:</span>
+                      <span className="font-bold text-slate-500">
+                        {formatRupiah(Number(op.submission_price_snapshot || 0))}
+                      </span>
+                    </div>
                   </div>
 
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-medium">Bonus & Insentif:</span>
-                    <span className="font-bold text-slate-700">
-                      {formatRupiah(Number(item.overtime_bonus || 0) + Number(item.holiday_bonus || 0))}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">
-                      {Number(item.holiday_bonus || 0) > 0 ? "Insentif Minggu" : "Reguler"}
-                    </span>
-                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditOp(op)}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Koreksi Qty / Harga</span>
+                    </button>
 
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-medium">Potongan Kasbon:</span>
-                    <span className="font-bold text-rose-600">
-                      {Number(item.deduction_amount || 0) > 0
-                        ? `-${formatRupiah(Number(item.deduction_amount || 0))}`
-                        : "-"}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">
-                      {Number(item.deduction_amount || 0) > 0 ? "Kantor / Warung" : "Bebas Kasbon"}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = `Halo ${opName}, slip borongan ${spk} (${itemWork}): Qty Sah ${qty} PCS @ ${formatRupiah(price)} = Total ${formatRupiah(opVal)}.`;
+                        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Share WA</span>
+                    </button>
                   </div>
                 </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
-                {/* Tombol Aksi */}
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEdit(item)}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Koreksi</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => alert(`Cetak slip untuk ${workerName}`)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Cetak Slip</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const text = `Halo ${workerName}, berikut rincian slip penggajian periode ${activeRun?.period_start} s/d ${activeRun?.period_end}: Total Bersih ${formatRupiah(netAmt)}.`;
-                      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-                    }}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Share WA</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* MODAL KOREKSI: CUKUP INPUT HARI ATAU TAP PRESET */}
+      {/* MODAL KOREKSI HARIAN & BULANAN (DENGAN INPUT HARI & PRESET CEPAT) */}
       {editingItem && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-5 animate-in slide-in-from-bottom-5 duration-200">
+          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-5">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -550,7 +721,7 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
             </div>
 
             <form onSubmit={handleSaveCorrection} className="space-y-4">
-              {/* UANG MAKAN: CUKUP INPUT HARI / TAP TOMBOL */}
+              {/* UANG MAKAN: CUKUP KETIK HARI / TAP TOMBOL */}
               <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <label htmlFor="modal-input-hari-masuk" className="text-xs font-black text-amber-900 flex items-center gap-1.5">
@@ -776,6 +947,149 @@ export function PayrollSlipManager({ runs = [], currentRunId, items = [] }: Prop
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KOREKSI OPERATOR BORONGAN */}
+      {editingOpItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4">
+            <div className="flex items-start justify-between border-b pb-3">
+              <div>
+                <h3 className="font-black text-base text-slate-800">
+                  Koreksi Borongan: {editingOpItem.worker_name_snapshot || editingOpItem.worker_name}
+                </h3>
+                <span className="text-xs text-slate-400">
+                  {editingOpItem.spk_no} • {editingOpItem.work_item_name}
+                </span>
+              </div>
+              <button onClick={() => setEditingOpItem(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOpCorrection} className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-600 block">Qty Sah Checker (PCS)</label>
+                <input
+                  type="number"
+                  step="1"
+                  value={editOpQty}
+                  onChange={(e) => setEditOpQty(Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-black text-sm rounded-xl px-3 py-2 mt-1"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block">Tarif Satuan Borongan (Rp/PCS)</label>
+                <input
+                  type="number"
+                  value={editOpPrice}
+                  onChange={(e) => setEditOpPrice(Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-black text-sm rounded-xl px-3 py-2 mt-1"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block">Harga Setoran (Rp/PCS)</label>
+                <input
+                  type="number"
+                  value={editOpSubPrice}
+                  onChange={(e) => setEditOpSubPrice(Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-bold text-sm rounded-xl px-3 py-2 mt-1"
+                />
+              </div>
+
+              <div className="bg-slate-900 text-white p-3.5 rounded-2xl flex justify-between items-center">
+                <span className="text-xs text-slate-400 font-bold uppercase">Total Nilai Borongan</span>
+                <span className="text-base font-black text-amber-400">
+                  {formatRupiah(editOpQty * editOpPrice)}
+                </span>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingOpItem(null)}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-slate-100 text-slate-700"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="flex-2 w-full py-2.5 rounded-xl font-black text-xs bg-amber-600 text-white hover:bg-amber-700 shadow-md"
+                >
+                  {isPending ? "Menyimpan..." : "💾 Simpan Borongan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CETAK SLIP GAJI */}
+      {viewingSlipItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 space-y-4 shadow-xl">
+            <div className="text-center border-b pb-3 space-y-1">
+              <h3 className="font-black text-base text-slate-800">SLIP PEMBAYARAN UPAH</h3>
+              <p className="text-xs text-slate-500">
+                {activeRun?.payout_no} • {activeRun?.period_start} s/d {activeRun?.period_end}
+              </p>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between py-1 border-b border-dashed">
+                <span className="text-slate-500">Nama Pekerja</span>
+                <span className="font-black text-slate-800">{viewingSlipItem.worker_name_snapshot || viewingSlipItem.workers?.name}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-dashed">
+                <span className="text-slate-500">Sistem Upah</span>
+                <span className="font-bold text-slate-800">{viewingSlipItem.pay_system_snapshot}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-dashed">
+                <span className="text-slate-500">Gaji Pokok / Upah Hadir</span>
+                <span className="font-bold text-slate-800">{formatRupiah(Number(viewingSlipItem.base_amount || 0))}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-dashed">
+                <span className="text-slate-500">Uang Makan</span>
+                <span className="font-bold text-slate-800">{formatRupiah(Number(viewingSlipItem.meal_amount || 0))}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-dashed">
+                <span className="text-slate-500">Lembur & Insentif</span>
+                <span className="font-bold text-slate-800">
+                  {formatRupiah(Number(viewingSlipItem.overtime_amount || 0) + Number(viewingSlipItem.manual_overtime_amount || 0) + Number(viewingSlipItem.holiday_bonus || 0))}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
+                <span>Potongan Kasbon</span>
+                <span className="font-bold">-{formatRupiah(Number(viewingSlipItem.deduction_amount || 0))}</span>
+              </div>
+              <div className="flex justify-between pt-2 text-sm font-black text-emerald-600">
+                <span>TOTAL DITERIMA (NET)</span>
+                <span>{formatRupiah(Number(viewingSlipItem.net_amount || 0))}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setViewingSlipItem(null)}
+                className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-slate-100 text-slate-700"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-bold text-xs bg-blue-600 text-white shadow-md"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Sekarang</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
