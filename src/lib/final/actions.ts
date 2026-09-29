@@ -750,6 +750,44 @@ export async function verifyBulkAttendanceAction(f: FormData) {
   );
 }
 
+export async function autoFixMissingOutAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(
+    path,
+    "absensi.write",
+    async () => {
+      const s = await createClient();
+      const startDate = date(f, "start_date", true);
+      const endDate = date(f, "end_date", true);
+
+      let query = s.from("attendance_records").select("id, actual_in, actual_out, notes");
+      if (startDate) query = query.gte("attendance_date", startDate);
+      if (endDate) query = query.lte("attendance_date", endDate);
+
+      const { data: records, error } = await query;
+      if (error) throw error;
+
+      const toFix = (records || []).filter((r) => !r.actual_out || r.actual_out === "--:--" || r.actual_out.trim() === "");
+      if (!toFix.length) return;
+
+      const now = new Date().toISOString();
+      for (const rec of toFix) {
+        await s
+          .from("attendance_records")
+          .update({
+            actual_out: "17:00:00",
+            overtime_minutes: 0,
+            day_class: "FULL_DAY",
+            notes: rec.notes ? `${rec.notes} (Otomatis pulang 17:00)` : "Otomatis pulang normal 17:00 (lupa finger)",
+            updated_at: now,
+          })
+          .eq("id", rec.id);
+      }
+    },
+    "Absen pulang bolong berhasil di-set pulang normal jam 17:00 (lembur 0)."
+  );
+}
+
 export async function unverifyAttendanceAction(f: FormData) {
   const path = "/dashboard/absensi";
   await mutate(
@@ -786,7 +824,7 @@ export async function finalizePayrollAction(f: FormData) {
         p_notes: t(f, "notes") || null,
       });
     },
-    "Payroll difinalisasi dari absensi terverifikasi."
+    "Payroll berhasil dibuat dari absensi terverifikasi."
   );
 }
 
@@ -862,78 +900,121 @@ export async function syncPayrollAdvancesAction(f: FormData) {
       const s = await createClient();
       const runId = id(f, "run_id");
 
-      const { error: rpcErr } = await s.rpc("smpt_sync_payroll_run_advances", { p_run_id: runId });
-      if (rpcErr) {
-        const { data: runItems, error: itemsErr } = await s
-          .from("payroll_run_items")
-          .select("id, worker_id, base_amount, meal_amount, overtime_amount, manual_overtime_amount, overtime_bonus, holiday_bonus")
-          .eq("payroll_run_id", runId);
+      // Jalankan RPC sinkronisasi jika tersedia di database
+      try {
+        await s.rpc("smpt_sync_payroll_run_advances", { p_run_id: runId });
+      } catch {
+        // Lanjut ke sinkronisasi terpadu di bawah
+      }
 
-        if (itemsErr || !runItems) throw new Error(itemsErr?.message || "Gagal memuat rincian payroll.");
+      // Ambil seluruh rincian item payroll periode ini
+      const { data: runItems, error: itemsErr } = await s
+        .from("payroll_run_items")
+        .select("*")
+        .eq("payroll_run_id", runId);
 
-        const workerIds = runItems.map((i) => i.worker_id);
-        const { data: advances } = await s
-          .from("cash_advances")
-          .select("id, worker_id, amount, paid_amount, category, installment_amount")
-          .in("worker_id", workerIds)
-          .eq("status", "AKTIF");
+      if (itemsErr || !runItems || !runItems.length) {
+        throw new Error(itemsErr?.message || "Rincian payroll tidak ditemukan.");
+      }
 
-        const advList = advances ?? [];
-        let totalRunGross = 0;
-        let totalRunDeduction = 0;
-        let totalRunNet = 0;
+      const workerIds = runItems.map((i) => i.worker_id);
 
-        for (const it of runItems) {
-          const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
-          const kasbonP = workerAdvs
-            .filter((a) => a.category === "KASBON_PERUSAHAAN")
-            .reduce((sum, a) => {
-              const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
-              const inst = Number(a.installment_amount || 0);
-              return sum + (inst > 0 ? Math.min(inst, rem) : rem);
-            }, 0);
+      // Tarik master pekerja terkini untuk otomatis sinkronkan perubahan gaji pokok
+      const { data: workersList } = await s
+        .from("workers")
+        .select("*")
+        .in("id", workerIds);
 
-          const kasbonW = workerAdvs
-            .filter((a) => a.category === "KASBON_WARUNG")
-            .reduce((sum, a) => sum + Math.max(0, Number(a.amount) - Number(a.paid_amount)), 0);
+      const workerMap = new Map((workersList ?? []).map((w: any) => [w.id, w]));
 
-          const gross =
-            Number(it.base_amount || 0) +
-            Number(it.meal_amount || 0) +
-            Number(it.overtime_amount || 0) +
-            Number(it.manual_overtime_amount || 0) +
-            Number(it.overtime_bonus || 0) +
-            Number(it.holiday_bonus || 0);
-          const deduction = kasbonP + kasbonW;
-          const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
+      // Tarik seluruh kasbon & hutang warung aktif
+      const { data: advances } = await s
+        .from("cash_advances")
+        .select("id, worker_id, amount, paid_amount, category, installment_amount, status")
+        .in("worker_id", workerIds)
+        .eq("status", "AKTIF");
 
-          totalRunGross += gross;
-          totalRunDeduction += deduction;
-          totalRunNet += net;
+      const advList = advances ?? [];
+      let totalRunGross = 0;
+      let totalRunDeduction = 0;
+      let totalRunNet = 0;
 
-          await s
-            .from("payroll_run_items")
-            .update({
-              kasbon_perusahaan_amount: kasbonP,
-              kasbon_warung_amount: kasbonW,
-              deduction_amount: deduction,
-              net_amount: net,
-            })
-            .eq("id", it.id);
+      for (const it of runItems) {
+        const w = workerMap.get(it.worker_id);
+        let baseAmt = Number(it.base_amount || 0);
+
+        // Jika gaji pokok di Master Pekerja diubah, otomatis terapkan ke payroll periode ini
+        if (w) {
+          const paySystem = String(w.pay_system || "").toUpperCase();
+          if (paySystem === "BULANAN") {
+            const masterMonthly = Number(w.monthly_salary ?? w.base_salary ?? 0);
+            if (masterMonthly > 0) {
+              baseAmt = masterMonthly;
+            }
+          } else if (paySystem === "HARIAN") {
+            const dailyRate = Number(w.daily_salary ?? w.daily_rate ?? w.rate_per_day ?? 0);
+            const fullDays = Number((it as any).full_days ?? 0);
+            const halfDays = Number((it as any).half_days ?? 0);
+            if (dailyRate > 0 && (fullDays > 0 || halfDays > 0)) {
+              baseAmt = Math.round((fullDays + halfDays * 0.5) * dailyRate);
+            }
+          }
         }
 
+        const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
+        const kasbonP = workerAdvs
+          .filter((a) => a.category === "KASBON_PERUSAHAAN")
+          .reduce((sum, a) => {
+            const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
+            const inst = Number(a.installment_amount || 0);
+            return sum + (inst > 0 ? Math.min(inst, rem) : rem);
+          }, 0);
+
+        const kasbonW = workerAdvs
+          .filter((a) => a.category === "KASBON_WARUNG")
+          .reduce((sum, a) => sum + Math.max(0, Number(a.amount) - Number(a.paid_amount)), 0);
+
+        const gross =
+          baseAmt +
+          Number(it.meal_amount || 0) +
+          Number(it.overtime_amount || 0) +
+          Number(it.manual_overtime_amount || 0) +
+          Number(it.overtime_bonus || 0) +
+          Number(it.holiday_bonus || 0);
+        const deduction = kasbonP + kasbonW;
+        const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
+
+        totalRunGross += gross;
+        totalRunDeduction += deduction;
+        totalRunNet += net;
+
         await s
-          .from("payroll_runs")
+          .from("payroll_run_items")
           .update({
-            total_gross: totalRunGross,
-            total_deduction: totalRunDeduction,
-            total_net: totalRunNet,
+            base_amount: baseAmt,
+            kasbon_perusahaan_amount: kasbonP,
+            kasbon_warung_amount: kasbonW,
+            deduction_amount: deduction,
+            net_amount: net,
           })
-          .eq("id", runId);
+          .eq("id", it.id);
       }
+
+      await s
+        .from("payroll_runs")
+        .update({
+          total_gross: totalRunGross,
+          total_deduction: totalRunDeduction,
+          total_net: totalRunNet,
+        })
+        .eq("id", runId);
     },
-    "Berhasil menyinkronkan saldo kasbon kantor & warung terbaru ke slip gaji periode ini."
+    "Berhasil menyinkronkan gaji master dan saldo kasbon terbaru ke slip gaji periode ini."
   );
+}
+
+export async function syncPayrollMasterSalaryAction(f: FormData) {
+  return syncPayrollAdvancesAction(f);
 }
 
 export async function updateOperatorPayrollItemAction(f: FormData) {
@@ -1001,7 +1082,7 @@ export async function togglePayrollPaymentStatusAction(f: FormData) {
         const { data: run, error: rErr } = await s.from("operator_payroll_runs").select("*").eq("id", runId).single();
         if (rErr || !run) throw new Error("Run operator tidak ditemukan.");
         let notes = run.notes || "";
-        notes = notes.replace(/\[STATUS:\s*(SUDAH_DIBAYAR\vert{}BELUM_DIBAYAR)\]/gi, "").trim();
+        notes = notes.replace(/\[STATUS:\s*(SUDAH_DIBAYAR\vert{}BELUM_DIBAYAR\vert{}SUDAH DIBAYAR\vert{}BELUM DIBAYAR)\]/gi, "").trim();
         const newNotes = `[STATUS: ${targetStatus}] ${notes}`.trim();
         const { error } = await s.from("operator_payroll_runs").update({ notes: newNotes }).eq("id", runId);
         if (error) throw error;
@@ -1009,7 +1090,9 @@ export async function togglePayrollPaymentStatusAction(f: FormData) {
         const { data: run, error: rErr } = await s.from("payroll_runs").select("*").eq("id", runId).single();
         if (rErr || !run) throw new Error("Run payroll tidak ditemukan.");
         const cfg = typeof run.config_snapshot === "object" && run.config_snapshot !== null ? { ...run.config_snapshot } : {};
-        cfg.payment_status = targetStatus;
+        const normalizedStatus = targetStatus.replace(/_/g, " ").trim();
+        cfg.payment_status = normalizedStatus;
+        cfg.payment_status_code = targetStatus;
         cfg.payment_updated_at = new Date().toISOString();
         const { error } = await s.from("payroll_runs").update({ config_snapshot: cfg }).eq("id", runId);
         if (error) throw error;
@@ -1150,7 +1233,6 @@ export async function addPettyCashAction(f: FormData) {
     async () => {
       const s = await createClient();
 
-      // Tangkap file bukti nota baik dari kamera langsung maupun galeri
       const file = (f.get("receipt_file") as File | null) || (f.get("receipt_file_gallery") as File | null);
       let receiptUrl: string | null = null;
 
