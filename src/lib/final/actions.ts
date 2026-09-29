@@ -681,6 +681,52 @@ export async function verifyAttendanceAction(f: FormData) {
   );
 }
 
+export async function autoFixMissingOutAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(
+    path,
+    "absensi.write",
+    async () => {
+      const s = await createClient();
+      const startDate = date(f, "start_date", true);
+      const endDate = date(f, "end_date", true);
+
+      let query = s.from("attendance_records").select("id, actual_out");
+      if (startDate) query = query.gte("attendance_date", startDate);
+      if (endDate) query = query.lte("attendance_date", endDate);
+
+      const { data: records, error } = await query;
+      if (error) throw error;
+
+      const idsToFix = (records || [])
+        .filter((r) => !r.actual_out || r.actual_out === "--:--" || r.actual_out.trim() === "")
+        .map((r) => r.id);
+
+      if (!idsToFix.length) return;
+
+      const now = new Date().toISOString();
+      
+      // Update serentak per 100 ID agar instan dalam milidetik
+      for (let i = 0; i < idsToFix.length; i += 100) {
+        const chunk = idsToFix.slice(i, i + 100);
+        const { error: updateError } = await s
+          .from("attendance_records")
+          .update({
+            actual_out: "17:00:00",
+            overtime_minutes: 0,
+            day_class: "FULL_DAY",
+            notes: "Otomatis pulang normal 17:00 (lupa finger)",
+            updated_at: now,
+          })
+          .in("id", chunk);
+
+        if (updateError) throw updateError;
+      }
+    },
+    "Absen pulang bolong berhasil di-set pulang normal jam 17:00 (lembur 0)."
+  );
+}
+
 export async function verifyBulkAttendanceAction(f: FormData) {
   const path = "/dashboard/absensi";
   await mutate(
@@ -725,66 +771,42 @@ export async function verifyBulkAttendanceAction(f: FormData) {
       }
 
       const now = new Date().toISOString();
+
+      // Kelompokkan ID berdasarkan kombinasi day_class & lembur agar tidak looping ratusan kali
+      const groups = new Map<string, { dayClass: string; otMin: number; ids: number[] }>();
+
       for (const it of itemsToVerify) {
-        const dayClass = (it.day_class || "FULL_DAY").toUpperCase();
-        const otMin = Math.max(0, Math.round(Number(it.overtime_minutes || 0)));
-        const updatePayload: Record<string, unknown> = {
-          day_class: dayClass,
-          overtime_minutes: otMin,
-          verification_status: "TERVERIFIKASI",
-          verified_by: user?.id,
-          verified_at: now,
-          updated_at: now,
-        };
-        if (it.notes && it.notes.trim()) {
-          updatePayload.notes = it.notes.trim();
-        }
+        const dClass = (it.day_class || "FULL_DAY").toUpperCase();
+        const ot = Math.max(0, Math.round(Number(it.overtime_minutes || 0)));
+        const key = `${dClass}__${ot}`;
 
-        const { error } = await s.from("attendance_records").update(updatePayload).eq("id", it.id);
-        if (error) {
-          throw new Error(`Gagal verifikasi absensi #${it.id}: ${error.message}`);
+        if (!groups.has(key)) {
+          groups.set(key, { dayClass: dClass, otMin: ot, ids: [] });
+        }
+        groups.get(key)!.ids.push(it.id);
+      }
+
+      // Eksekusi batch kilat per kelompok data
+      for (const grp of groups.values()) {
+        for (let i = 0; i < grp.ids.length; i += 100) {
+          const chunk = grp.ids.slice(i, i + 100);
+          const { error: batchErr } = await s
+            .from("attendance_records")
+            .update({
+              day_class: grp.dayClass,
+              overtime_minutes: grp.otMin,
+              verification_status: "TERVERIFIKASI",
+              verified_by: user?.id,
+              verified_at: now,
+              updated_at: now,
+            })
+            .in("id", chunk);
+
+          if (batchErr) throw batchErr;
         }
       }
     },
-    "Berhasil memverifikasi data absensi sekaligus."
-  );
-}
-
-export async function autoFixMissingOutAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const startDate = date(f, "start_date", true);
-      const endDate = date(f, "end_date", true);
-
-      let query = s.from("attendance_records").select("id, actual_in, actual_out, notes");
-      if (startDate) query = query.gte("attendance_date", startDate);
-      if (endDate) query = query.lte("attendance_date", endDate);
-
-      const { data: records, error } = await query;
-      if (error) throw error;
-
-      const toFix = (records || []).filter((r) => !r.actual_out || r.actual_out === "--:--" || r.actual_out.trim() === "");
-      if (!toFix.length) return;
-
-      const now = new Date().toISOString();
-      for (const rec of toFix) {
-        await s
-          .from("attendance_records")
-          .update({
-            actual_out: "17:00:00",
-            overtime_minutes: 0,
-            day_class: "FULL_DAY",
-            notes: rec.notes ? `${rec.notes} (Otomatis pulang 17:00)` : "Otomatis pulang normal 17:00 (lupa finger)",
-            updated_at: now,
-          })
-          .eq("id", rec.id);
-      }
-    },
-    "Absen pulang bolong berhasil di-set pulang normal jam 17:00 (lembur 0)."
+    "Berhasil memverifikasi seluruh data absensi sekaligus."
   );
 }
 
@@ -900,14 +922,12 @@ export async function syncPayrollAdvancesAction(f: FormData) {
       const s = await createClient();
       const runId = id(f, "run_id");
 
-      // Jalankan RPC sinkronisasi jika tersedia di database
       try {
         await s.rpc("smpt_sync_payroll_run_advances", { p_run_id: runId });
       } catch {
-        // Lanjut ke sinkronisasi terpadu di bawah
+        // Lanjut ke sinkronisasi terpadu
       }
 
-      // Ambil seluruh rincian item payroll periode ini
       const { data: runItems, error: itemsErr } = await s
         .from("payroll_run_items")
         .select("*")
@@ -919,7 +939,6 @@ export async function syncPayrollAdvancesAction(f: FormData) {
 
       const workerIds = runItems.map((i) => i.worker_id);
 
-      // Tarik master pekerja terkini untuk otomatis sinkronkan perubahan gaji pokok
       const { data: workersList } = await s
         .from("workers")
         .select("*")
@@ -927,7 +946,6 @@ export async function syncPayrollAdvancesAction(f: FormData) {
 
       const workerMap = new Map((workersList ?? []).map((w: any) => [w.id, w]));
 
-      // Tarik seluruh kasbon & hutang warung aktif
       const { data: advances } = await s
         .from("cash_advances")
         .select("id, worker_id, amount, paid_amount, category, installment_amount, status")
@@ -943,14 +961,11 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         const w = workerMap.get(it.worker_id);
         let baseAmt = Number(it.base_amount || 0);
 
-        // Jika gaji pokok di Master Pekerja diubah, otomatis terapkan ke payroll periode ini
         if (w) {
           const paySystem = String(w.pay_system || "").toUpperCase();
           if (paySystem === "BULANAN") {
             const masterMonthly = Number(w.monthly_salary ?? w.base_salary ?? 0);
-            if (masterMonthly > 0) {
-              baseAmt = masterMonthly;
-            }
+            if (masterMonthly > 0) baseAmt = masterMonthly;
           } else if (paySystem === "HARIAN") {
             const dailyRate = Number(w.daily_salary ?? w.daily_rate ?? w.rate_per_day ?? 0);
             const fullDays = Number((it as any).full_days ?? 0);
