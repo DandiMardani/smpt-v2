@@ -3,7 +3,105 @@
 import React, { useState, useTransition } from "react";
 import * as payrollActions from "@/lib/final/actions";
 
-// Ikon Native SVG Mandiri (Bebas Error Module / Zero Dependencies)
+// 1. Tipe Data Wajib yang Diimpor oleh page.tsx
+export interface WorkerInfo {
+  id?: number;
+  name?: string;
+  department?: string;
+  code?: string;
+  pay_system?: string;
+  phone?: string;
+  base_salary?: number | string;
+  monthly_salary?: number | string;
+  daily_salary?: number | string;
+  [key: string]: any;
+}
+
+export interface PayrollItemRow {
+  id: number;
+  payroll_run_id?: number;
+  worker_id?: number;
+  worker_name_snapshot?: string;
+  pay_system_snapshot?: string;
+  department_snapshot?: string;
+  worker_code_snapshot?: string;
+  full_days?: number | string;
+  half_days?: number | string;
+  base_amount?: number | string;
+  meal_amount?: number | string;
+  overtime_minutes?: number | string;
+  overtime_amount?: number | string;
+  manual_overtime_hours?: number | string;
+  manual_overtime_amount?: number | string;
+  overtime_bonus?: number | string;
+  holiday_bonus?: number | string;
+  kasbon_perusahaan_amount?: number | string;
+  kasbon_warung_amount?: number | string;
+  deduction_amount?: number | string;
+  net_amount?: number | string;
+  workers?: WorkerInfo;
+  [key: string]: any;
+}
+
+export type PayrollRunItem = PayrollItemRow;
+
+export interface PayrollRunRow {
+  id: number;
+  payout_no?: string;
+  payroll_type?: string;
+  period_start?: string;
+  period_end?: string;
+  notes?: string;
+  total_gross?: number | string;
+  total_deduction?: number | string;
+  total_net?: number | string;
+  total_operator_value?: number | string;
+  total_submission_value?: number | string;
+  config_snapshot?: any;
+  [key: string]: any;
+}
+
+export type PayrollRun = PayrollRunRow;
+
+export interface OperatorItemRow {
+  id: number;
+  run_id?: number;
+  payroll_run_id?: number;
+  worker_id?: number;
+  worker_name?: string;
+  worker_name_snapshot?: string;
+  spk_no?: string;
+  order_no?: string;
+  work_item_name?: string;
+  item_name?: string;
+  qty_assigned?: number | string;
+  qty_approved?: number | string;
+  operator_price_snapshot?: number | string;
+  submission_price_snapshot?: number | string;
+  operator_value?: number | string;
+  operatorValue?: number | string;
+  submission_value?: number | string;
+  submissionValue?: number | string;
+  notes?: string;
+  workers?: WorkerInfo;
+  [key: string]: any;
+}
+
+export type OperatorItem = OperatorItemRow;
+export type OperatorRun = PayrollRunRow;
+
+export interface Props {
+  runs?: any[];
+  currentRunId?: number;
+  items?: any[];
+  operatorRuns?: any[];
+  operatorItems?: any[];
+  [key: string]: any;
+}
+
+export type PayrollSlipManagerProps = Props;
+
+// 2. Ikon Native SVG Mandiri (Bebas Dependency)
 const Users = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -108,94 +206,7 @@ const Printer = ({ className = "w-4 h-4" }: { className?: string }) => (
   </svg>
 );
 
-export interface PayrollRunItem {
-  id: number;
-  payroll_run_id: number;
-  worker_id: number;
-  worker_name_snapshot?: string;
-  pay_system_snapshot?: string;
-  department_snapshot?: string;
-  worker_code_snapshot?: string;
-  full_days?: number;
-  half_days?: number;
-  base_amount?: number;
-  meal_amount?: number;
-  overtime_minutes?: number;
-  overtime_amount?: number;
-  manual_overtime_hours?: number;
-  manual_overtime_amount?: number;
-  overtime_bonus?: number;
-  holiday_bonus?: number;
-  kasbon_perusahaan_amount?: number;
-  kasbon_warung_amount?: number;
-  deduction_amount?: number;
-  net_amount?: number;
-  workers?: {
-    name?: string;
-    department?: string;
-    code?: string;
-    pay_system?: string;
-    phone?: string;
-    base_salary?: number;
-    monthly_salary?: number;
-    daily_salary?: number;
-  };
-}
-
-export interface OperatorItemRow {
-  id: number;
-  run_id?: number;
-  payroll_run_id?: number;
-  worker_id?: number;
-  worker_name?: string;
-  worker_name_snapshot?: string;
-  spk_no?: string;
-  order_no?: string;
-  work_item_name?: string;
-  item_name?: string;
-  qty_assigned?: number;
-  qty_approved?: number;
-  operator_price_snapshot?: number;
-  submission_price_snapshot?: number;
-  operator_value?: number;
-  submission_value?: number;
-  notes?: string;
-  workers?: {
-    name?: string;
-    department?: string;
-    code?: string;
-    phone?: string;
-  };
-}
-
-export interface PayrollRun {
-  id: number;
-  payout_no?: string;
-  payroll_type: string;
-  period_start: string;
-  period_end: string;
-  notes?: string;
-  total_gross?: number;
-  total_deduction?: number;
-  total_net?: number;
-  total_operator_value?: number;
-  total_submission_value?: number;
-  config_snapshot?: {
-    payment_status?: string;
-    payment_status_code?: string;
-    payment_updated_at?: string;
-  };
-}
-
-export interface Props {
-  runs?: PayrollRun[];
-  currentRunId?: number;
-  items?: PayrollRunItem[];
-  operatorRuns?: PayrollRun[];
-  operatorItems?: OperatorItemRow[];
-  [key: string]: any;
-}
-
+// 3. Komponen Utama
 export function PayrollSlipManager(props: Props) {
   const { runs = [], currentRunId, items = [], operatorRuns = [], operatorItems = [] } = props;
   const [isPending, startTransition] = useTransition();
@@ -205,7 +216,7 @@ export function PayrollSlipManager(props: Props) {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modal Koreksi Harian & Bulanan
-  const [editingItem, setEditingItem] = useState<PayrollRunItem | null>(null);
+  const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null);
   const [editDays, setEditDays] = useState<string>("0");
   const [editMealAmount, setEditMealAmount] = useState<number>(0);
   const [editBaseAmount, setEditBaseAmount] = useState<number>(0);
@@ -224,24 +235,28 @@ export function PayrollSlipManager(props: Props) {
   const [editOpPrice, setEditOpPrice] = useState<number>(0);
   const [editOpSubPrice, setEditOpSubPrice] = useState<number>(0);
 
-  // Modal Cetak Slip
-  const [viewingSlipItem, setViewingSlipItem] = useState<PayrollRunItem | null>(null);
+  // Modal Slip Cetak
+  const [viewingSlipItem, setViewingSlipItem] = useState<PayrollItemRow | null>(null);
 
   const activeRun = runs.find((r) => r.id === selectedRunId) || runs[0];
   const isPaid =
     activeRun?.config_snapshot?.payment_status_code === "SUDAH_DIBAYAR" ||
     activeRun?.config_snapshot?.payment_status === "SUDAH DIBAYAR" ||
-    (activeRun?.notes || "").includes("SUDAH_DIBAYAR");
+    String(activeRun?.notes || "").includes("SUDAH_DIBAYAR");
 
-  const runItems = items.filter((it) => it.payroll_run_id === activeRun?.id);
+  const runItems: PayrollItemRow[] = items.filter((it: any) => it.payroll_run_id === activeRun?.id);
 
   // Filter Harian & Bulanan
   const filteredItems = runItems.filter((it) => {
-    const paySystem = (it.pay_system_snapshot || it.workers?.pay_system || "").toUpperCase();
+    const paySystem = String(it.pay_system_snapshot || it.workers?.pay_system || "").toUpperCase();
     const isMatchingType = activeTab === "BULANAN" ? paySystem === "BULANAN" : paySystem !== "BULANAN";
-    const name = it.worker_name_snapshot || it.workers?.name || "";
-    const code = it.worker_code_snapshot || it.workers?.code || "";
-    return isMatchingType && (name.toLowerCase().includes(searchQuery.toLowerCase()) || code.toLowerCase().includes(searchQuery.toLowerCase()));
+    const name = String(it.worker_name_snapshot || it.workers?.name || "");
+    const code = String(it.worker_code_snapshot || it.workers?.code || "");
+    return (
+      isMatchingType &&
+      (name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        code.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
   });
 
   // Filter Operator Borongan
@@ -251,9 +266,9 @@ export function PayrollSlipManager(props: Props) {
   ];
 
   const filteredOpItems = allOperatorItems.filter((op) => {
-    const name = op.worker_name_snapshot || op.worker_name || op.workers?.name || "";
-    const spk = op.spk_no || op.order_no || "";
-    const item = op.work_item_name || op.item_name || "";
+    const name = String(op.worker_name_snapshot || op.worker_name || op.workers?.name || "");
+    const spk = String(op.spk_no || op.order_no || "");
+    const item = String(op.work_item_name || op.item_name || "");
     return (
       name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       spk.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -261,27 +276,28 @@ export function PayrollSlipManager(props: Props) {
     );
   });
 
-  const countHarian = runItems.filter((i) => (i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() !== "BULANAN").length;
-  const countBulanan = runItems.filter((i) => (i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() === "BULANAN").length;
+  const countHarian = runItems.filter((i) => String(i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() !== "BULANAN").length;
+  const countBulanan = runItems.filter((i) => String(i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() === "BULANAN").length;
   const countBorongan = filteredOpItems.length;
 
-  const formatRupiah = (val: number) => {
+  const formatRupiah = (val: number | string) => {
+    const num = Number(val || 0);
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
       maximumFractionDigits: 0,
-    }).format(val || 0);
+    }).format(num);
   };
 
-  const handleOpenEdit = (item: PayrollRunItem) => {
+  const handleOpenEdit = (item: PayrollItemRow) => {
     setEditingItem(item);
     const existingMeal = Number(item.meal_amount || 0);
-    const calculatedDays = existingMeal > 0 ? Math.round(existingMeal / 50000) : (item.full_days || 0);
+    const calculatedDays = existingMeal > 0 ? Math.round(existingMeal / 50000) : Number(item.full_days || 0);
     
     setEditDays(String(calculatedDays));
     setEditMealAmount(existingMeal);
     setEditBaseAmount(Number(item.base_amount || 0));
-    setEditOtHours(item.overtime_minutes ? Math.round((item.overtime_minutes / 60) * 10) / 10 : 0);
+    setEditOtHours(item.overtime_minutes ? Math.round((Number(item.overtime_minutes) / 60) * 10) / 10 : 0);
     setEditOtAmount(Number(item.overtime_amount || 0));
     setEditManualOtHours(Number(item.manual_overtime_hours || 0));
     setEditManualOtAmount(Number(item.manual_overtime_amount || 0));
@@ -472,7 +488,7 @@ export function PayrollSlipManager(props: Props) {
               aria-label="Pilih Periode Payroll"
               className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {runs.map((r) => (
+              {runs.map((r: any) => (
                 <option key={r.id} value={r.id}>
                   {r.payout_no || `PAY-${String(r.id).padStart(6, "0")}`} • {r.period_start} s/d {r.period_end}
                 </option>
@@ -571,7 +587,7 @@ export function PayrollSlipManager(props: Props) {
               const workerName = item.worker_name_snapshot || item.workers?.name || "Tanpa Nama";
               const code = item.worker_code_snapshot || item.workers?.code || "-";
               const dept = item.department_snapshot || item.workers?.department || "PRODUKSI";
-              const isBulanan = (item.pay_system_snapshot || item.workers?.pay_system || "").toUpperCase() === "BULANAN";
+              const isBulanan = String(item.pay_system_snapshot || item.workers?.pay_system || "").toUpperCase() === "BULANAN";
 
               const fullDays = item.full_days || 0;
               const halfDays = item.half_days || 0;
@@ -627,7 +643,7 @@ export function PayrollSlipManager(props: Props) {
                         {formatRupiah(Number(item.overtime_amount || 0) + Number(item.manual_overtime_amount || 0))}
                       </span>
                       <span className="text-[10px] text-slate-400 block">
-                        {Math.round(((item.overtime_minutes || 0) / 60) * 10) / 10 + Number(item.manual_overtime_hours || 0)} Jam
+                        {Math.round(((Number(item.overtime_minutes) || 0) / 60) * 10) / 10 + Number(item.manual_overtime_hours || 0)} Jam
                       </span>
                     </div>
 
@@ -706,7 +722,7 @@ export function PayrollSlipManager(props: Props) {
               const itemWork = op.work_item_name || op.item_name || "Pekerjaan Borongan";
               const qty = Number(op.qty_approved || 0);
               const price = Number(op.operator_price_snapshot || 0);
-              const opVal = Number(op.operator_value ?? qty * price);
+              const opVal = Number(op.operator_value ?? op.operatorValue ?? qty * price);
 
               return (
                 <div
@@ -925,7 +941,7 @@ export function PayrollSlipManager(props: Props) {
                       onChange={(e) => {
                         const h = parseFloat(e.target.value) || 0;
                         setEditManualOtHours(h);
-                        const rate = (editingItem?.workers?.monthly_salary || 0) / 190;
+                        const rate = (Number(editingItem?.workers?.monthly_salary) || 0) / 190;
                         setEditManualOtAmount(Math.round(h * rate));
                       }}
                       className="w-full bg-white border border-slate-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
