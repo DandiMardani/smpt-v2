@@ -1,30 +1,112 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { 
-  updatePayrollItemAction, 
-  updateOperatorPayrollItemAction,
-  togglePayrollPaymentStatusAction, 
-  syncPayrollAdvancesAction 
-} from "@/lib/final/actions";
-import { 
-  Building2, 
-  CheckCircle2, 
-  Clock, 
-  Edit3, 
-  FileText, 
-  Lock, 
-  RefreshCw, 
-  Search, 
-  Send, 
-  Sparkles, 
-  Unlock, 
-  Users, 
-  Wrench, 
-  X, 
-  Zap,
-  Printer
-} from "lucide-react";
+import * as payrollActions from "@/lib/final/actions";
+
+// Ikon Native SVG Mandiri (Bebas Error Module / Zero Dependencies)
+const Users = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+  </svg>
+);
+
+const Building2 = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+  </svg>
+);
+
+const Wrench = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
+  </svg>
+);
+
+const CheckCircle2 = ({ className = "w-3 h-3" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const Clock = ({ className = "w-3 h-3" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <circle cx="12" cy="12" r="10" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+  </svg>
+);
+
+const Unlock = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M7 11V7a5 5 0 019.9-1" />
+  </svg>
+);
+
+const Lock = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M7 11V7a5 5 0 0110 0v4" />
+  </svg>
+);
+
+const RefreshCw = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+
+const Search = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+
+const Edit3 = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+const FileText = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+
+const Send = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+  </svg>
+);
+
+const Sparkles = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.286L13 21l-2.286-6.857L5 12l5.714-2.286L13 3z" />
+  </svg>
+);
+
+const Zap = ({ className = "w-3.5 h-3.5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  </svg>
+);
+
+const X = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+const Printer = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
+    <rect x="6" y="14" width="12" height="8" />
+  </svg>
+);
 
 export interface PayrollRunItem {
   id: number;
@@ -76,9 +158,7 @@ export interface OperatorItemRow {
   operator_price_snapshot?: number;
   submission_price_snapshot?: number;
   operator_value?: number;
-  operatorValue?: number;
   submission_value?: number;
-  submissionValue?: number;
   notes?: string;
   workers?: {
     name?: string;
@@ -144,7 +224,7 @@ export function PayrollSlipManager(props: Props) {
   const [editOpPrice, setEditOpPrice] = useState<number>(0);
   const [editOpSubPrice, setEditOpSubPrice] = useState<number>(0);
 
-  // Modal Slip Cetak
+  // Modal Cetak Slip
   const [viewingSlipItem, setViewingSlipItem] = useState<PayrollRunItem | null>(null);
 
   const activeRun = runs.find((r) => r.id === selectedRunId) || runs[0];
@@ -193,7 +273,6 @@ export function PayrollSlipManager(props: Props) {
     }).format(val || 0);
   };
 
-  // Handler Buka Edit Harian / Bulanan
   const handleOpenEdit = (item: PayrollRunItem) => {
     setEditingItem(item);
     const existingMeal = Number(item.meal_amount || 0);
@@ -259,12 +338,13 @@ export function PayrollSlipManager(props: Props) {
     fd.set("deduction_amount", String(calculatedTotalDeduction));
 
     startTransition(async () => {
-      await updatePayrollItemAction(fd);
+      if (payrollActions.updatePayrollItemAction) {
+        await payrollActions.updatePayrollItemAction(fd);
+      }
       setEditingItem(null);
     });
   };
 
-  // Handler Buka Edit Operator Borongan
   const handleOpenEditOp = (item: OperatorItemRow) => {
     setEditingOpItem(item);
     setEditOpQty(Number(item.qty_approved || 0));
@@ -285,7 +365,10 @@ export function PayrollSlipManager(props: Props) {
     fd.set("submission_value", String(Math.round(editOpQty * editOpSubPrice * 100) / 100));
 
     startTransition(async () => {
-      await updateOperatorPayrollItemAction(fd);
+      const opAction = (payrollActions as any).updateOperatorPayrollItemAction || payrollActions.updatePayrollItemAction;
+      if (opAction) {
+        await opAction(fd);
+      }
       setEditingOpItem(null);
     });
   };
@@ -298,7 +381,9 @@ export function PayrollSlipManager(props: Props) {
     fd.set("payment_status", isPaid ? "BELUM_DIBAYAR" : "SUDAH_DIBAYAR");
 
     startTransition(async () => {
-      await togglePayrollPaymentStatusAction(fd);
+      if (payrollActions.togglePayrollPaymentStatusAction) {
+        await payrollActions.togglePayrollPaymentStatusAction(fd);
+      }
     });
   };
 
@@ -308,7 +393,9 @@ export function PayrollSlipManager(props: Props) {
     fd.set("run_id", String(activeRun.id));
 
     startTransition(async () => {
-      await syncPayrollAdvancesAction(fd);
+      if (payrollActions.syncPayrollAdvancesAction) {
+        await payrollActions.syncPayrollAdvancesAction(fd);
+      }
     });
   };
 
@@ -519,7 +606,6 @@ export function PayrollSlipManager(props: Props) {
                     </div>
                   </div>
 
-                  {/* Rincian Komponen Upah */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">
@@ -566,7 +652,6 @@ export function PayrollSlipManager(props: Props) {
                     </div>
                   </div>
 
-                  {/* Tombol Aksi */}
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
@@ -621,7 +706,7 @@ export function PayrollSlipManager(props: Props) {
               const itemWork = op.work_item_name || op.item_name || "Pekerjaan Borongan";
               const qty = Number(op.qty_approved || 0);
               const price = Number(op.operator_price_snapshot || 0);
-              const opVal = Number(op.operator_value ?? op.operatorValue ?? qty * price);
+              const opVal = Number(op.operator_value ?? qty * price);
 
               return (
                 <div
@@ -693,7 +778,7 @@ export function PayrollSlipManager(props: Props) {
         </div>
       )}
 
-      {/* MODAL KOREKSI HARIAN & BULANAN (DENGAN INPUT HARI & PRESET CEPAT) */}
+      {/* MODAL KOREKSI: CUKUP KETIK HARI / TAP TOMBOL */}
       {editingItem && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-5">
@@ -721,7 +806,6 @@ export function PayrollSlipManager(props: Props) {
             </div>
 
             <form onSubmit={handleSaveCorrection} className="space-y-4">
-              {/* UANG MAKAN: CUKUP KETIK HARI / TAP TOMBOL */}
               <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <label htmlFor="modal-input-hari-masuk" className="text-xs font-black text-amber-900 flex items-center gap-1.5">
@@ -804,7 +888,6 @@ export function PayrollSlipManager(props: Props) {
                   </div>
                 </div>
 
-                {/* Shortcut Shift Hari Minggu */}
                 <button
                   type="button"
                   onClick={handleApplySundayShift}
@@ -815,7 +898,6 @@ export function PayrollSlipManager(props: Props) {
                 </button>
               </div>
 
-              {/* Gaji Pokok (Tetap 0 di Mingguan) */}
               <div className="space-y-1">
                 <label htmlFor="modal-input-gaji-pokok" className="text-xs font-bold text-slate-600">Gaji Pokok (Rp)</label>
                 <input
@@ -830,7 +912,6 @@ export function PayrollSlipManager(props: Props) {
                 </span>
               </div>
 
-              {/* Lembur & Manual */}
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
                 <span className="text-xs font-black text-slate-700 block">Lembur & Jam Tambahan</span>
                 <div className="grid grid-cols-2 gap-2">
@@ -886,7 +967,6 @@ export function PayrollSlipManager(props: Props) {
                 </div>
               </div>
 
-              {/* Potongan Kasbon */}
               <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-3.5 space-y-2">
                 <span className="text-xs font-black text-rose-800 block">Potongan Kasbon</span>
                 <div className="grid grid-cols-2 gap-2">
@@ -913,15 +993,10 @@ export function PayrollSlipManager(props: Props) {
                 </div>
               </div>
 
-              {/* Preview Total Net */}
               <div className="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase">
-                    Take Home Pay (Bersih)
-                  </span>
-                  <span className="text-lg font-black text-emerald-400">
-                    {formatRupiah(calculatedNet)}
-                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Take Home Pay (Bersih)</span>
+                  <span className="text-lg font-black text-emerald-400">{formatRupiah(calculatedNet)}</span>
                 </div>
                 <div className="text-right text-[11px] text-slate-400">
                   <span>Bruto: {formatRupiah(calculatedTotalGross)}</span>
@@ -929,7 +1004,6 @@ export function PayrollSlipManager(props: Props) {
                 </div>
               </div>
 
-              {/* Tombol Simpan */}
               <div className="flex items-center gap-2 pt-2">
                 <button
                   type="button"
