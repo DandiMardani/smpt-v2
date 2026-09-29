@@ -21,7 +21,7 @@ export default async function StokBarangJadiPage({ searchParams }: Props) {
       .order("quantity", { ascending: false }),
     supabase
       .from("finished_goods")
-      .select("id, name, unit, finished_good_code, product_id, source, category"),
+      .select("id, name, unit, finished_good_code, product_id, source, category, project_products(name)"),
     supabase
       .from("locations")
       .select("id, name"),
@@ -50,7 +50,7 @@ export default async function StokBarangJadiPage({ searchParams }: Props) {
       id: b.id,
       finished_good_id: b.finished_good_id,
       code: fg?.finished_good_code || `BJ-${String(b.finished_good_id).padStart(6, "0")}`,
-      name: fg?.name || "Barang Jadi",
+      name: (fg?.project_products as any)?.name || fg?.name || "Barang Jadi",
       sourceKind,
       locationName: locName,
       quantity: Number(b.quantity || 0),
@@ -141,7 +141,7 @@ export default async function StokBarangJadiPage({ searchParams }: Props) {
         </Link>
       </div>
 
-      {/* Daftar Saldo Fisik Barang Jadi (Responsif di Layar HP) */}
+      {/* Daftar Saldo Fisik Barang Jadi */}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-xs">
         <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2.5">
           <b className="text-sm font-extrabold text-slate-900">
@@ -224,7 +224,7 @@ export default async function StokBarangJadiPage({ searchParams }: Props) {
                     <div className="flex items-center gap-1.5">
                       <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${isPlus ? "bg-emerald-500" : "bg-rose-500"}`} />
                       <b className="text-xs font-bold text-slate-800 truncate">
-                        {fg?.name || "Barang Jadi"}
+                        {(fg?.project_products as any)?.name || fg?.name || "Barang Jadi"}
                       </b>
                     </div>
                     <p className="text-[11px] text-slate-500 leading-tight">
