@@ -56,15 +56,14 @@ export function ProduksiRegulerClient({
   const [selectedWorkItemId, setSelectedWorkItemId] = useState<number>(0);
   const [qty, setQty] = useState<number>(100);
 
-  // Products filtered by selected project
+  // Filter produk berdasarkan proyek yang dipilih
   const filteredProducts = useMemo(() => {
     return products.filter((p) => p.project_id === selectedProjectId);
   }, [products, selectedProjectId]);
 
-  // Set default product when project changes
   const activeProductId = selectedProductId || filteredProducts[0]?.id || 0;
 
-  // Work items filtered by selected project and product
+  // Filter bagian pekerjaan jahit
   const filteredWorkItems = useMemo(() => {
     return workItems.filter(
       (w) => w.project_id === selectedProjectId && (!w.product_id || w.product_id === activeProductId)
@@ -84,7 +83,6 @@ export function ProduksiRegulerClient({
   const operatorPrice = currentWorkItem?.operator_price || 0;
   const proposedPrice = currentWorkItem?.proposed_price || operatorPrice;
 
-  // Upah riil operator: jika HARIAN maka Rp 0 di borongan (karena digaji harian). Nilai pengajuan borongan tetap tercatat penuh!
   const totalWage = isHarian ? 0 : (qty || 0) * operatorPrice;
   const totalProposed = (qty || 0) * proposedPrice;
 
@@ -92,31 +90,30 @@ export function ProduksiRegulerClient({
 
   return (
     <div className="space-y-6">
-      {/* Banner Edukasi Jalur Cepat Reguler */}
+      {/* Banner Edukasi Alur Baru: Masuk QC Terlebih Dahulu */}
       <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/90 to-blue-50/90 p-4 sm:p-5 shadow-xs">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-lg text-white shadow-xs">
-            ⚡
+            🔍
           </span>
           <div>
             <b className="text-sm font-bold text-indigo-950">
-              Jalur Cepat Produksi Reguler (Tanpa SPV & Tanpa Checker)
+              Alur Setoran Jahit Reguler (Melalui Verifikasi QC)
             </b>
             <p className="mt-1 text-xs text-indigo-800 leading-relaxed">
-              Khusus untuk pesanan biasa, tas seminar, sekolah, dan maklon umum. Sekali klik simpan:
-              <b className="text-indigo-950"> Upah penjahit langsung tercatat di Payroll</b> dan
-              <b className="text-indigo-950"> stok Barang Jadi langsung bertambah di Gudang PUSAT</b> siap kirim.
+              Setoran jahit akan langsung mencatat estimasi upah di antrean Payroll dan diteruskan ke
+              <b className="text-indigo-950"> Antrean QC</b>. Stok fisik baru resmi bertambah di Gudang PUSAT setelah dinyatakan lolos pemeriksaan oleh tim QC.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Formulir Setoran Jahit Cepat */}
+      {/* Formulir Setoran Jahit */}
       {canWrite ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
           <h3 className="text-sm font-extrabold text-slate-900 border-b border-slate-100 pb-3 mb-4 flex items-center justify-between">
-            <span>Form Setoran Jahit Langsung</span>
-            <span className="text-[11px] font-semibold text-slate-500">1 Langkah Langsung Cair & Masuk Gudang</span>
+            <span>Form Setoran Jahit</span>
+            <span className="text-[11px] font-semibold text-slate-500">Masuk Antrean QC & Payroll</span>
           </h3>
 
           <form action={recordDirectSewingResultAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -155,7 +152,7 @@ export function ProduksiRegulerClient({
               </select>
             </div>
 
-            {/* Pilih Produk / Tas */}
+            {/* Pilih Produk */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Pilih Produk / Tas</label>
               <select
@@ -180,7 +177,7 @@ export function ProduksiRegulerClient({
               </select>
             </div>
 
-            {/* Pilih Penjahit / Operator */}
+            {/* Pilih Operator */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Penjahit / Operator</label>
               <select
@@ -199,7 +196,7 @@ export function ProduksiRegulerClient({
               </select>
             </div>
 
-            {/* Pekerjaan Jahit / Operasi (2 Versi Ongkos) */}
+            {/* Bagian Jahit */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Bagian Pekerjaan Jahit</label>
               <select
@@ -225,10 +222,10 @@ export function ProduksiRegulerClient({
               </select>
             </div>
 
-            {/* Jumlah Selesai & Bagus (Repakan) */}
+            {/* Jumlah Setoran */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Jumlah Selesai Bagus / Repakan (Pcs)
+                Jumlah Setoran Jahit (Pcs)
               </label>
               <input
                 type="number"
@@ -241,10 +238,10 @@ export function ProduksiRegulerClient({
               />
             </div>
 
-            {/* Jumlah Cacat / Reject */}
+            {/* Reject Awal */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Jumlah Cacat / Reject (Pcs) <span className="text-slate-400 font-normal">(opsional)</span>
+                Jumlah Cacat Awal / Afkir (Pcs) <span className="text-slate-400 font-normal">(opsional)</span>
               </label>
               <input
                 type="number"
@@ -263,32 +260,31 @@ export function ProduksiRegulerClient({
               <input
                 type="text"
                 name="notes"
-                placeholder="Contoh: Jahitan rapi, borongan shift 1"
+                placeholder="Contoh: Jahitan rapi, perlu cek resleting"
                 className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs outline-none focus:border-indigo-600"
               />
             </div>
 
-            {/* Alert Khusus Jika Pekerja Harian Mengerjakan Borongan */}
+            {/* Info Pekerja Harian */}
             {isHarian ? (
               <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-amber-300 bg-amber-50/90 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
                 <span className="text-base">💡</span>
                 <div>
-                  <b className="font-bold">Perlakuan Pekerja Harian Mengerjakan Borongan:</b>
+                  <b className="font-bold">Perlakuan Pekerja Harian:</b>
                   <p className="mt-0.5 text-amber-800 leading-relaxed">
-                    <b>{currentWorker?.name}</b> terdaftar dengan sistem upah <b>HARIAN</b>. Jumlah hasil repakan <b>({qty} pcs)</b> dan Nilai Pengajuan Borongan <b>(Rp {totalProposed.toLocaleString("id-ID")})</b> tetap tercatat penuh ke pembukuan produksi & pengajuan, namun upah borongan riil di slip gaji = <b>Rp 0</b> karena pekerja dibayarkan melalui gaji harian.
+                    <b>{currentWorker?.name}</b> terdaftar dengan sistem upah <b>HARIAN</b>. Hasil kerja ({qty} pcs) akan diteruskan ke antrean QC, sedangkan upah borongan riil di slip gaji tetap Rp 0 karena dibayar lewat gaji pokok harian.
                   </p>
                 </div>
               </div>
             ) : null}
 
-            {/* Panel Ringkasan Nilai & Upah 2 Versi */}
+            {/* Panel Ringkasan */}
             <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
               <div className="grid gap-3 sm:grid-cols-3 mb-4">
-                {/* Kotak 1: Upah Riil Operator */}
                 <div className={`rounded-xl p-3 border ${
                   isHarian ? "bg-amber-50/60 border-amber-200" : "bg-emerald-50/60 border-emerald-200"
                 }`}>
-                  <span className="text-[11px] font-bold text-slate-600 block">Upah Riil Operator (Slip Gaji):</span>
+                  <span className="text-[11px] font-bold text-slate-600 block">Upah Operator:</span>
                   <p className={`text-base font-black font-mono mt-0.5 ${
                     isHarian ? "text-amber-800" : "text-emerald-700"
                   }`}>
@@ -299,25 +295,23 @@ export function ProduksiRegulerClient({
                   </span>
                 </div>
 
-                {/* Kotak 2: Nilai Pengajuan Borongan */}
                 <div className="rounded-xl p-3 border bg-blue-50/60 border-blue-200">
-                  <span className="text-[11px] font-bold text-slate-600 block">Nilai Pengajuan Borongan:</span>
+                  <span className="text-[11px] font-bold text-slate-600 block">Nilai Pengajuan:</span>
                   <p className="text-base font-black text-blue-700 font-mono mt-0.5">
                     Rp {totalProposed.toLocaleString("id-ID")}
                   </p>
                   <span className="text-[10px] text-slate-500">
-                    {qty} pcs × Rp {proposedPrice.toLocaleString("id-ID")} (acuan)
+                    {qty} pcs × Rp {proposedPrice.toLocaleString("id-ID")}
                   </span>
                 </div>
 
-                {/* Kotak 3: Stok Barang Jadi */}
                 <div className="rounded-xl p-3 border bg-indigo-50/60 border-indigo-200">
-                  <span className="text-[11px] font-bold text-slate-600 block">Stok Gudang PUSAT:</span>
+                  <span className="text-[11px] font-bold text-slate-600 block">Alur Barang:</span>
                   <p className="text-base font-black text-indigo-700 font-mono mt-0.5">
-                    +{qty} pcs Lolos
+                    +{qty} pcs Masuk QC
                   </p>
                   <span className="text-[10px] text-slate-500">
-                    Langsung siap di Surat Jalan Klien
+                    Menunggu verifikasi di menu QC
                   </span>
                 </div>
               </div>
@@ -327,7 +321,7 @@ export function ProduksiRegulerClient({
                   type="submit"
                   className="rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-6 py-3 text-xs font-extrabold text-white shadow-md shadow-indigo-500/25 hover:from-indigo-700 hover:to-blue-700 transition active:scale-95"
                 >
-                  ⚡ Simpan Setoran & Tambah Stok Gudang
+                  ⚡ Simpan Setoran & Masuk Antrean QC
                 </button>
               </div>
             </div>
