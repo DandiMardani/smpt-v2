@@ -10,6 +10,7 @@ import {
   verifyAttendanceAction,
   verifyBulkAttendanceAction,
   unverifyAttendanceAction,
+  autoFixMissingOutAttendanceAction,
 } from "@/lib/final/actions";
 
 export type AttendanceRecordItem = {
@@ -49,7 +50,7 @@ type Props = {
 
 export default function AttendanceManager({ records, workers, canWrite, shiftSettings }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "TERVERIFIKASI">("DRAFT");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "ANOMALI" | "TERVERIFIKASI">("DRAFT");
   const [dateFilter, setDateFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [defaultDayClass, setDefaultDayClass] = useState<"FULL_DAY" | "HALF_DAY">("FULL_DAY");
@@ -62,7 +63,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     return new Map(workers.map((w) => [w.id, w]));
   }, [workers]);
 
-  // Pre-calculate shift overtimes for each record
+  // Pre-calculate shift overtimes & deteksi anomali jam bolong
   const enrichedRecords = useMemo(() => {
     return records.map((rec) => {
       const worker = workerMap.get(rec.worker_id);
@@ -77,15 +78,29 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           : null,
         shiftSettings
       );
+
+      const isMissingIn = !rec.actual_in || rec.actual_in === "--:--" || rec.actual_in.trim() === "";
+      const isMissingOut = !rec.actual_out || rec.actual_out === "--:--" || rec.actual_out.trim() === "";
+      const isAnomaly = (isMissingIn || isMissingOut) && rec.attendance_status === "HADIR";
+
       return {
         ...rec,
         worker,
         calc,
+        isMissingIn,
+        isMissingOut,
+        isAnomaly,
       };
     });
   }, [records, workerMap, shiftSettings]);
 
-  // Filter records
+  // Hitungan metrik
+  const totalCount = records.length;
+  const draftCount = records.filter((r) => r.verification_status !== "TERVERIFIKASI").length;
+  const verifiedCount = records.filter((r) => r.verification_status === "TERVERIFIKASI").length;
+  const anomalyCount = enrichedRecords.filter((r) => r.isAnomaly && r.verification_status !== "TERVERIFIKASI").length;
+
+  // Filter records berdasarkan status & filter anomali
   const filteredRecords = useMemo(() => {
     return enrichedRecords.filter((rec) => {
       if (statusFilter === "DRAFT" && rec.verification_status === "TERVERIFIKASI") {
@@ -93,6 +108,11 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
       }
       if (statusFilter === "TERVERIFIKASI" && rec.verification_status !== "TERVERIFIKASI") {
         return false;
+      }
+      if (statusFilter === "ANOMALI") {
+        if (!rec.isAnomaly || rec.verification_status === "TERVERIFIKASI") {
+          return false;
+        }
       }
       if (dateFilter && rec.attendance_date !== dateFilter) {
         return false;
@@ -110,11 +130,6 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
       return true;
     });
   }, [enrichedRecords, statusFilter, dateFilter, searchQuery]);
-
-  // Counts
-  const totalCount = records.length;
-  const draftCount = records.filter((r) => r.verification_status !== "TERVERIFIKASI").length;
-  const verifiedCount = records.filter((r) => r.verification_status === "TERVERIFIKASI").length;
 
   const selectableRecords = filteredRecords.filter((r) => r.verification_status !== "TERVERIFIKASI");
   const isAllSelected =
@@ -141,7 +156,6 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     setSelectedIds(next);
   }
 
-  // Bulk verify selected
   function handleBulkVerifySelected() {
     if (selectedIds.size === 0) return;
     const items = Array.from(selectedIds).map((attId) => {
@@ -164,7 +178,6 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     });
   }
 
-  // Bulk verify all drafts currently visible
   function handleBulkVerifyAllDrafts() {
     if (selectableRecords.length === 0) return;
     const items = selectableRecords.map((row) => {
@@ -188,115 +201,97 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
 
   return (
     <div className="space-y-4">
-      {/* 1. KPI & Guide Header */}
-      <div className="grid gap-3 sm:grid-cols-4">
+      {/* 1. KPI & Quick Filter Header */}
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+        {/* Total */}
         <div
           onClick={() => setStatusFilter("ALL")}
-          className={`cursor-pointer rounded-2xl border p-3.5 transition shadow-2xs ${
+          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
             statusFilter === "ALL"
-              ? "border-blue-500 bg-blue-50/50 text-blue-900"
+              ? "border-blue-500 bg-blue-50/50 text-blue-900 ring-2 ring-blue-300"
               : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           }`}
         >
-          <p className="text-xs font-medium text-slate-500">Total Absensi</p>
-          <p className="mt-1 text-2xl font-extrabold">{totalCount}</p>
+          <p className="text-[11px] font-medium text-slate-500">Semua Presensi</p>
+          <p className="mt-1 text-xl sm:text-2xl font-black text-slate-900">{totalCount}</p>
         </div>
 
+        {/* Tab Filter Anomali / Jam Bolong */}
         <div
-          onClick={() => setStatusFilter("DRAFT")}
-          className={`cursor-pointer rounded-2xl border p-3.5 transition shadow-2xs ${
-            statusFilter === "DRAFT"
-              ? "border-amber-500 bg-amber-50/70 text-amber-950"
-              : "border-amber-200/80 bg-amber-50/30 text-slate-700 hover:border-amber-400"
+          onClick={() => setStatusFilter("ANOMALI")}
+          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
+            statusFilter === "ANOMALI"
+              ? "border-rose-500 bg-rose-50 text-rose-950 ring-2 ring-rose-400"
+              : anomalyCount > 0
+              ? "border-rose-300 bg-rose-50/50 text-rose-900 hover:border-rose-400"
+              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           }`}
         >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-amber-800">⏳ Belum Verifikasi (DRAFT)</p>
-            {draftCount > 0 ? (
-              <span className="inline-flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+            <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+              <span>⚠️ Jam Bolong</span>
+            </p>
+            {anomalyCount > 0 ? (
+              <span className="inline-flex h-2 w-2 rounded-full bg-rose-500 animate-ping" />
             ) : null}
           </div>
-          <p className="mt-1 text-2xl font-black text-amber-900">{draftCount}</p>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-xl sm:text-2xl font-black text-rose-900">{anomalyCount}</span>
+            <span className="text-[10px] text-rose-700 font-medium">perlu dicek</span>
+          </div>
         </div>
 
+        {/* Draft */}
+        <div
+          onClick={() => setStatusFilter("DRAFT")}
+          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
+            statusFilter === "DRAFT"
+              ? "border-amber-500 bg-amber-50/70 text-amber-950 ring-2 ring-amber-300"
+              : "border-slate-200 bg-white text-slate-700 hover:border-amber-300"
+          }`}
+        >
+          <p className="text-[11px] font-semibold text-amber-800">⏳ Belum Verif (Draft)</p>
+          <p className="mt-1 text-xl sm:text-2xl font-black text-amber-900">{draftCount}</p>
+        </div>
+
+        {/* Terverifikasi */}
         <div
           onClick={() => setStatusFilter("TERVERIFIKASI")}
-          className={`cursor-pointer rounded-2xl border p-3.5 transition shadow-2xs ${
+          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
             statusFilter === "TERVERIFIKASI"
-              ? "border-emerald-500 bg-emerald-50/70 text-emerald-950"
+              ? "border-emerald-500 bg-emerald-50/70 text-emerald-950 ring-2 ring-emerald-300"
               : "border-slate-200 bg-white text-slate-700 hover:border-emerald-300"
           }`}
         >
-          <p className="text-xs font-semibold text-emerald-800">✅ Terverifikasi</p>
-          <p className="mt-1 text-2xl font-black text-emerald-900">{verifiedCount}</p>
-        </div>
-
-        <div
-          onClick={() => setShowGuide(!showGuide)}
-          className="cursor-pointer rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/80 to-blue-50/60 p-3.5 text-indigo-950 shadow-2xs hover:border-indigo-400 transition"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-indigo-900">📘 Rumus Lembur</span>
-            <span className="text-xs font-bold text-indigo-600">{showGuide ? "Tutup ▲" : "Buka ▼"}</span>
-          </div>
-          <p className="mt-1 text-xs text-indigo-800/90 leading-relaxed line-clamp-2">
-            Senin-Jumat (&gt;17), Sabtu (&gt;15), Minggu (+20rb/50rb). Klik untuk panduan lengkap.
-          </p>
+          <p className="text-[11px] font-semibold text-emerald-800">✅ Terverifikasi</p>
+          <p className="mt-1 text-xl sm:text-2xl font-black text-emerald-900">{verifiedCount}</p>
         </div>
       </div>
 
-      {/* 2. Overtime Rules & Guide Drawer (Collapsible) */}
-      {showGuide && (
-        <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50/60 p-4 sm:p-5 shadow-sm text-xs text-slate-800 space-y-3">
-          <div className="flex items-center justify-between border-b border-indigo-200/80 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">⏱️</span>
-              <h3 className="font-extrabold text-sm text-indigo-950">
-                Panduan Jam Kerja & Rumus Hitungan Lembur Resmi
-              </h3>
+      {/* 2. Banner Solusi Cepat Jam Bolong */}
+      {canWrite && anomalyCount > 0 && (
+        <div className="rounded-2xl border border-rose-200 bg-gradient-to-r from-rose-50 via-amber-50 to-orange-50 p-3.5 sm:p-4 text-xs shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="font-black text-rose-900 flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>Ditemukan {anomalyCount} data absensi yang lupa scan pulang!</span>
             </div>
+            <p className="text-slate-600 text-[11px]">
+              Klik tombol di samping untuk mengisi jam pulang otomatis jam 17:00 (Full Day, Lembur 0) serentak.
+            </p>
+          </div>
+
+          <form action={autoFixMissingOutAttendanceAction} className="shrink-0">
+            <input type="hidden" name="start_date" value={dateFilter} />
+            <input type="hidden" name="end_date" value={dateFilter} />
             <button
-              type="button"
-              onClick={() => setShowGuide(false)}
-              className="text-xs font-bold text-indigo-700 hover:underline"
+              type="submit"
+              className="w-full sm:w-auto rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-2 font-black text-white shadow-xs transition active:scale-95 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              Tutup Panduan ✕
+              <span>⚡</span>
+              <span>Set Semua Pulang 17:00 (Lembur 0)</span>
             </button>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            {/* Box 1: Jadwal Shift */}
-            <div className="rounded-xl border border-indigo-200/90 bg-white p-3.5 shadow-2xs space-y-1.5">
-              <b className="block text-indigo-950 font-bold border-b border-slate-100 pb-1">
-                📅 Jadwal Shift & Batas Lembur
-              </b>
-              <p>• <b>Senin – Jumat:</b> 08:00 – 17:00. Lewat jam 17:00 dihitung lembur.</p>
-              <p>• <b>Sabtu:</b> 08:00 – 15:00. Lewat jam 15:00 dihitung lembur.</p>
-              <p>• <b>Minggu:</b> 08:00 – 17:00. Hari libur/lembur penuh (8 jam kerja efektif).</p>
-            </div>
-
-            {/* Box 2: Pekerja Harian */}
-            <div className="rounded-xl border border-indigo-200/90 bg-white p-3.5 shadow-2xs space-y-1.5">
-              <b className="block text-indigo-950 font-bold border-b border-slate-100 pb-1">
-                👷 Pekerja Harian (HARIAN)
-              </b>
-              <p>• <b>Tarif Lembur / Jam:</b> <code className="bg-slate-100 px-1 rounded text-blue-700 font-mono">Gaji Harian / 8</code></p>
-              <p>• <b>Lembur &ge; 4 Jam:</b> Tambahan <b>Rp 5.000</b> per hari.</p>
-              <p>• <b>Hadir Minggu:</b> Tambahan bonus <b>Rp 20.000</b>.</p>
-              <p className="text-amber-800 font-semibold">• <b>Cutoff Jumat:</b> Lembur Jumat malam (&gt;17:00) masuk slip minggu berikutnya.</p>
-            </div>
-
-            {/* Box 3: Karyawan Bulanan */}
-            <div className="rounded-xl border border-indigo-200/90 bg-white p-3.5 shadow-2xs space-y-1.5">
-              <b className="block text-indigo-950 font-bold border-b border-slate-100 pb-1">
-                👔 Karyawan Bulanan (BULANAN)
-              </b>
-              <p>• <b>Tarif Lembur / Jam:</b> <code className="bg-slate-100 px-1 rounded text-blue-700 font-mono">Gaji Bulanan / 190</code></p>
-              <p>• <b>Lembur &ge; 4 Jam:</b> Tambahan <b>Rp 17.500</b> per hari.</p>
-              <p>• <b>Minggu Masuk:</b> Lembur 8 jam + Uang Makan <b>Rp 50.000</b>.</p>
-              <p>• <b>Uang Makan Mingguan:</b> Rp 50.000 / hari kehadiran Full Day.</p>
-            </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -329,11 +324,11 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           ) : null}
         </div>
 
-        <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl text-xs font-semibold">
+        <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl text-xs font-semibold overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setStatusFilter("ALL")}
-            className={`px-3 py-1.5 rounded-lg transition ${
+            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
               statusFilter === "ALL" ? "bg-white text-slate-900 shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
             }`}
           >
@@ -341,17 +336,26 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           </button>
           <button
             type="button"
+            onClick={() => setStatusFilter("ANOMALI")}
+            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
+              statusFilter === "ANOMALI" ? "bg-rose-600 text-white shadow-2xs font-bold" : "text-rose-700 hover:text-rose-900"
+            }`}
+          >
+            ⚠️ Jam Bolong ({anomalyCount})
+          </button>
+          <button
+            type="button"
             onClick={() => setStatusFilter("DRAFT")}
-            className={`px-3 py-1.5 rounded-lg transition ${
+            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
               statusFilter === "DRAFT" ? "bg-amber-500 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            ⏳ DRAFT ({draftCount})
+            ⏳ Draft ({draftCount})
           </button>
           <button
             type="button"
             onClick={() => setStatusFilter("TERVERIFIKASI")}
-            className={`px-3 py-1.5 rounded-lg transition ${
+            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
               statusFilter === "TERVERIFIKASI" ? "bg-emerald-600 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
             }`}
           >
@@ -360,12 +364,12 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
         </div>
       </div>
 
-      {/* 4. Bulk Action Toolbar (When Write Access Available) */}
+      {/* 4. Bulk Action Toolbar */}
       {canWrite && (
-        <div className="sticky top-2 z-20 rounded-2xl border-2 border-blue-400 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 p-4 text-white shadow-lg transition-all">
+        <div className="sticky top-2 z-20 rounded-2xl border-2 border-blue-400 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 p-3.5 sm:p-4 text-white shadow-lg transition-all">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 cursor-pointer font-bold text-sm bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl border border-white/20 transition select-none">
+              <label className="flex items-center gap-2 cursor-pointer font-bold text-xs sm:text-sm bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl border border-white/20 transition select-none">
                 <input
                   type="checkbox"
                   checked={isAllSelected}
@@ -384,20 +388,20 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <label className="flex items-center gap-1.5 bg-black/20 px-3 py-1.5 rounded-xl border border-white/10 cursor-pointer">
+              <label className="flex items-center gap-1.5 bg-black/20 px-2.5 py-1.5 rounded-xl border border-white/10 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={useAutoOvertime}
                   onChange={(e) => setUseAutoOvertime(e.target.checked)}
                   className="h-3.5 w-3.5 rounded accent-emerald-400"
                 />
-                <span className="font-semibold">⚡ Hitung Lembur Otomatis dari Jam Pulang</span>
+                <span className="font-semibold text-[11px]">Hitung Lembur Otomatis</span>
               </label>
 
               <select
                 value={defaultDayClass}
                 onChange={(e) => setDefaultDayClass(e.target.value as "FULL_DAY" | "HALF_DAY")}
-                className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white outline-none cursor-pointer"
+                className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white outline-none cursor-pointer text-xs"
               >
                 <option value="FULL_DAY" className="text-slate-900">FULL DAY</option>
                 <option value="HALF_DAY" className="text-slate-900">HALF DAY</option>
@@ -410,7 +414,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                   onClick={handleBulkVerifySelected}
                   className="rounded-xl bg-white px-4 py-2 font-black text-blue-900 shadow-md hover:bg-blue-50 transition active:scale-95 disabled:opacity-50"
                 >
-                  {isPending ? "Memproses..." : `⚡ Verifikasi ${selectedIds.size} Item`}
+                  {isPending ? "Memproses..." : `⚡ Sahkan ${selectedIds.size} Item`}
                 </button>
               ) : selectableRecords.length > 0 ? (
                 <button
@@ -419,7 +423,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                   onClick={handleBulkVerifyAllDrafts}
                   className="rounded-xl bg-amber-400 px-3.5 py-2 font-black text-amber-950 shadow-md hover:bg-amber-300 transition active:scale-95 disabled:opacity-50"
                 >
-                  {isPending ? "Memproses..." : `⚡ Verifikasi Semua Draft (${selectableRecords.length})`}
+                  {isPending ? "Memproses..." : `⚡ Sahkan Semua Draft (${selectableRecords.length})`}
                 </button>
               ) : null}
             </div>
@@ -427,11 +431,13 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
         </div>
       )}
 
-      {/* 5. Records Cards List */}
+      {/* 5. Daftar Kartu Absensi */}
       <div className="space-y-2.5">
         {filteredRecords.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 shadow-2xs">
-            Tidak ada data absensi yang sesuai filter.
+            {statusFilter === "ANOMALI"
+              ? "🎉 Tidak ada data jam bolong! Semua jam masuk & pulang tercatat lengkap."
+              : "Tidak ada data absensi yang sesuai filter."}
           </div>
         ) : (
           filteredRecords.map((rec) => {
@@ -446,6 +452,8 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                 className={`rounded-2xl border transition-all p-3.5 sm:p-4 shadow-2xs ${
                   isSelected
                     ? "border-blue-400 bg-blue-50/40 ring-2 ring-blue-400/30"
+                    : rec.isAnomaly && !isVerified
+                    ? "border-rose-300 bg-rose-50/40 ring-1 ring-rose-200"
                     : isVerified
                     ? "border-slate-200/90 bg-white hover:border-slate-300"
                     : "border-amber-200/90 bg-gradient-to-r from-amber-50/40 to-white hover:border-amber-300"
@@ -485,6 +493,18 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                             Finger #{worker.finger_id}
                           </span>
                         ) : null}
+
+                        {/* Tag Khusus jika Jam Pulang Bolong */}
+                        {rec.isMissingOut && !isVerified && (
+                          <span className="rounded-full bg-rose-100 border border-rose-300 px-2 py-0.5 text-[10px] font-black text-rose-800 animate-pulse">
+                            ⚠️ Lupa Scan Pulang
+                          </span>
+                        )}
+                        {rec.isMissingIn && !isVerified && (
+                          <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-black text-amber-800">
+                            ⚠️ Scan Masuk Kosong
+                          </span>
+                        )}
                       </div>
 
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
@@ -493,7 +513,8 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                         </span>
                         <span>•</span>
                         <span className="font-bold text-slate-700">
-                          Jam: {rec.actual_in || "--:--"} s/d {rec.actual_out || "--:--"}
+                          Jam: <span className={rec.isMissingIn ? "text-rose-600 font-black" : ""}>{rec.actual_in || "--:--"}</span> s/d{" "}
+                          <span className={rec.isMissingOut ? "text-rose-600 font-black" : ""}>{rec.actual_out || "--:--"}</span>
                         </span>
                         <span>•</span>
                         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
@@ -513,7 +534,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                     {/* Sunday Indicator */}
                     {calc.isSunday ? (
                       <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
-                        🌞 Minggu Masuk {worker?.pay_system === "BULANAN" ? "(+Rp 50rb makan)" : "(+Rp 20rb)"}
+                        🌞 Minggu Masuk
                       </span>
                     ) : null}
 
@@ -527,20 +548,6 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                         Tanpa Lembur
                       </span>
                     )}
-
-                    {/* 4 Hours Bonus Badge */}
-                    {calc.qualifies4hBonus ? (
-                      <span className="rounded-full bg-purple-100 border border-purple-300 px-2 py-0.5 text-[10px] font-black text-purple-900">
-                        ✨ Bonus 4 Jam ({worker?.pay_system === "BULANAN" ? "+17.5rb" : "+5rb"})
-                      </span>
-                    ) : null}
-
-                    {/* Friday Rollover Note */}
-                    {calc.fridayOvertimeNextWeek ? (
-                      <span className="rounded-full bg-cyan-100 border border-cyan-300 px-2 py-0.5 text-[10px] font-bold text-cyan-900">
-                        🗓️ Lembur Jumat (Slip Depan)
-                      </span>
-                    ) : null}
 
                     {/* Status Badge */}
                     {isVerified ? (
@@ -558,9 +565,9 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                       <button
                         type="button"
                         onClick={() => setExpandedId(expandedId === rec.id ? null : rec.id)}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                       >
-                        {expandedId === rec.id ? "Tutup ✕" : "Opsi ▾"}
+                        {expandedId === rec.id ? "Tutup ✕" : "Koreksi ▾"}
                       </button>
                     ) : null}
                   </div>
@@ -571,7 +578,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
                       <b className="text-xs font-bold text-slate-900">
-                        Koreksi / Verifikasi Individual: {worker?.name} ({rec.attendance_date})
+                        Koreksi Individual: {worker?.name} ({rec.attendance_date})
                       </b>
                       <span className="text-[11px] text-slate-500 font-medium">
                         Kalkulasi sistem: {calc.description}
@@ -611,7 +618,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Catatan</label>
                           <input
                             name="notes"
-                            defaultValue={rec.notes || ""}
+                            defaultValue={rec.notes || (rec.isMissingOut ? "Lupa finger pulang" : "")}
                             placeholder="Keterangan opsional"
                             className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
                           />
@@ -620,9 +627,9 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                         <div>
                           <button
                             type="submit"
-                            className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-emerald-700 transition"
+                            className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-emerald-700 transition cursor-pointer"
                           >
-                            ✓ Verifikasi Baris Ini
+                            ✓ Sahkan Baris Ini
                           </button>
                         </div>
                       </form>
@@ -635,7 +642,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                           <input type="hidden" name="attendance_id" value={rec.id} />
                           <button
                             type="submit"
-                            className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs"
+                            className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs cursor-pointer"
                           >
                             ↺ Batalkan Verifikasi (Kembali ke DRAFT)
                           </button>
