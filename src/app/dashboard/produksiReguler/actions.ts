@@ -30,11 +30,10 @@ export async function recordDirectSewingResultAction(formData: FormData) {
     const supabase = await createClient();
 
     // 1. Ambil detail Pekerja, Produk, dan Item Pekerjaan
-    const [workerRes, productRes, itemRes, locRes] = await Promise.all([
+    const [workerRes, productRes, itemRes] = await Promise.all([
       supabase.from("workers").select("id, name, worker_code, pay_system").eq("id", workerId).single(),
       supabase.from("project_products").select("id, name, product_code, unit").eq("id", productId).single(),
       supabase.from("work_items").select("id, name, operator_price, proposed_price, unit").eq("id", workItemId).single(),
-      supabase.from("locations").select("id").eq("name", "PUSAT").maybeSingle(),
     ]);
 
     if (workerRes.error || !workerRes.data) throw new Error("Pekerja tidak ditemukan.");
@@ -44,7 +43,6 @@ export async function recordDirectSewingResultAction(formData: FormData) {
     const worker = workerRes.data;
     const product = productRes.data;
     const item = itemRes.data;
-    const pusatLocationId = locRes.data?.id ?? 1;
 
     // 2. Buat SPK Ringkas (Auto-Generated) khusus setoran reguler
     const { data: orderData, error: orderErr } = await supabase.from("production_orders").insert({
@@ -62,7 +60,7 @@ export async function recordDirectSewingResultAction(formData: FormData) {
 
     const orderId = orderData.id;
 
-    // 3. Tambah Item SPK dengan harga operator snapshot
+    // 3. Tambah Item SPK dengan is_final_output_snapshot = true agar otomatis masuk antrean QC
     const operatorPrice = Number(item.operator_price || 0);
     const submissionPrice = Number(item.proposed_price || operatorPrice);
 
@@ -81,7 +79,7 @@ export async function recordDirectSewingResultAction(formData: FormData) {
       throw new Error(`Gagal menyimpan rincian pekerjaan: ${itemErr?.message || "Unknown error"}`);
     }
 
-    // 4. Catat Qty Sah di production_checks (agar otomatis masuk ke kalkulasi Payroll Operator)
+    // 4. Catat Qty ke production_checks (masuk antrean Menunggu QC & antrean Payroll)
     const { error: checkErr } = await supabase.from("production_checks").insert({
       order_item_id: itemData.id,
       check_date: resultDate,
@@ -92,79 +90,47 @@ export async function recordDirectSewingResultAction(formData: FormData) {
     });
 
     if (checkErr) {
-      throw new Error(`Gagal mencatat setoran upah: ${checkErr.message}`);
+      throw new Error(`Gagal mencatat setoran: ${checkErr.message}`);
     }
 
-    // 5. Pastikan Master Barang Jadi terdaftar untuk produk ini
-    let fgId: number;
-    let fgUnit = product.unit || "PCS";
-
+    // 5. Pastikan Master Barang Jadi siap untuk produk ini saat QC meloloskan fisik barang
     const { data: existingFg } = await supabase
       .from("finished_goods")
-      .select("id, unit")
+      .select("id")
       .eq("product_id", productId)
       .eq("status", "AKTIF")
       .maybeSingle();
 
-    if (existingFg) {
-      fgId = existingFg.id;
-      fgUnit = existingFg.unit || fgUnit;
-    } else {
-      const { data: newFg, error: newFgErr } = await supabase.from("finished_goods").insert({
+    if (!existingFg) {
+      await supabase.from("finished_goods").insert({
         project_id: projectId,
         product_id: productId,
         name: product.name,
         category: "Tas Jadi",
-        unit: fgUnit,
+        unit: product.unit || "PCS",
         source: "INTERNAL",
         final_work_item_id: workItemId,
         status: "AKTIF",
         notes: "Auto-created dari Setoran Produksi Reguler",
-      }).select("id, unit").single();
-
-      if (newFgErr || !newFg) {
-        throw new Error(`Gagal mendaftarkan Barang Jadi: ${newFgErr?.message}`);
-      }
-      fgId = newFg.id;
+      });
     }
 
-    // 6. Masukkan Barang Jadi Lolos ke Gudang PUSAT via Immutable Logistics Ledger
-    const { data: eventId, error: eventErr } = await supabase.rpc("smpt_new_logistics_event", {
-      p_event_type: "REGULAR_PRODUCTION",
-      p_reference_type: "PRODUCTION",
-      p_reference_id: orderId,
-      p_reference_code: `REG-${orderId}`,
-      p_event_date: resultDate,
-      p_notes: `Setoran Reguler: ${worker.name} (${goodQty} ${fgUnit})`,
-      p_reversal_of: null,
-    });
-
-    if (eventErr || !eventId) {
-      throw new Error(`Gagal mencatat event logistik: ${eventErr?.message}`);
-    }
-
-    const { error: stockErr } = await supabase.rpc("smpt_apply_logistics_stock", {
-      p_event_id: eventId,
-      p_item_kind: "FINISHED_GOOD",
-      p_finished_good_id: fgId,
-      p_set_id: null,
-      p_location_id: pusatLocationId,
-      p_delta: goodQty,
-      p_unit: fgUnit,
-      p_kind: "HASIL JAHIT REGULER",
-      p_notes: notes || `Setoran langsung ${goodQty} pcs`,
-    });
-
-    if (stockErr) {
-      throw new Error(`Gagal menambah stok Barang Jadi PUSAT: ${stockErr.message}`);
-    }
+    // CATATAN ALUR BARU:
+    // Pemanggilan smpt_apply_logistics_stock di sini SUDAH DIHAPUS.
+    // Stok Barang Jadi Gudang PUSAT kini hanya bertambah saat petugas menekan tombol
+    // 'Simpan QC' pada menu Quality Control (recordQcAction).
   } catch (error) {
     redirectWithMessage(PATH, "error", errorMessage(error, "Gagal mencatat setoran jahit reguler."));
   }
 
   revalidatePath(PATH);
+  revalidatePath("/dashboard/qc");
   revalidatePath("/dashboard/stokBarangJadi");
   revalidatePath("/dashboard/payroll");
   revalidatePath("/dashboard/setoran");
-  redirectWithMessage(PATH, "success", "Setoran jahit berhasil disimpan! Upah tukang langsung tercatat & stok Barang Jadi PUSAT bertambah.");
+  redirectWithMessage(
+    PATH,
+    "success",
+    "Setoran jahit berhasil disimpan dan diteruskan ke antrean QC! Stok fisik akan bertambah setelah diverifikasi tim QC."
+  );
 }
