@@ -712,20 +712,19 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         const dayOfWeek = d.getUTCDay(); // 0: Minggu, 6: Sabtu, 1-5: Senin-Jumat
 
         if (!hasIn) {
-          // JIKA TIDAK ADA SCAN MASUK: Pekerja TIDAK HADIR / ALPHA!
-          // Reset data yang sempat salah disahkan jadi Full Day
+          // JIKA TIDAK SCAN MASUK: Pekerja ALPHA! Reset data
           if (r.attendance_status === "HADIR" || r.day_class || hasOut) {
             absentIds.push(r.id);
           }
         } else {
           // JIKA ADA SCAN MASUK:
           if (dayOfWeek === 6) {
-            // HARI SABTU: Jam pulang normal adalah 15:00! (Bukan 17:00, agar tidak ada lembur 2 jam palsu)
+            // SABTU: Jam pulang normal 15:00 (Lembur = 0)
             if (!hasOut || r.actual_out === "17:00:00" || r.actual_out === "17:00") {
               saturdayFixIds.push(r.id);
             }
           } else if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-            // SENIN - JUMAT: Jam pulang normal adalah 17:00!
+            // SENIN - JUMAT: Jam pulang normal 17:00 (Lembur = 0)
             if (!hasOut) {
               weekdayFixIds.push(r.id);
             }
@@ -733,7 +732,7 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }
       }
 
-      // 1. Reset orang yang tidak pernah scan masuk (Alpha / 0 Rupiah)
+      // 1. Reset yang tidak masuk jadi Alpha
       for (let i = 0; i < absentIds.length; i += 100) {
         const chunk = absentIds.slice(i, i + 100);
         await s.from("attendance_records").update({
@@ -748,7 +747,7 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }).in("id", chunk);
       }
 
-      // 2. Koreksi hari Sabtu: jam pulang normal 15:00 (Lembur = 0 menit)
+      // 2. Koreksi Sabtu: pulang 15:00 (Lembur 0)
       for (let i = 0; i < saturdayFixIds.length; i += 100) {
         const chunk = saturdayFixIds.slice(i, i + 100);
         await s.from("attendance_records").update({
@@ -761,7 +760,7 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }).in("id", chunk);
       }
 
-      // 3. Koreksi Senin-Jumat: jam pulang normal 17:00 (Lembur = 0 menit)
+      // 3. Koreksi Senin-Jumat: pulang 17:00 (Lembur 0)
       for (let i = 0; i < weekdayFixIds.length; i += 100) {
         const chunk = weekdayFixIds.slice(i, i + 100);
         await s.from("attendance_records").update({
@@ -774,7 +773,7 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }).in("id", chunk);
       }
     },
-    "Absensi diperbaiki: Sabtu diset 15:00 (lembur 0), dan orang tanpa scan masuk otomatis Alpha!"
+    "Absensi diperbaiki: Sabtu diset 15:00 (lembur 0), dan yang tidak scan masuk otomatis Alpha!"
   );
 }
 
@@ -822,7 +821,6 @@ export async function verifyBulkAttendanceAction(f: FormData) {
       }
 
       const now = new Date().toISOString();
-
       const groups = new Map<string, { dayClass: string; otMin: number; ids: number[] }>();
 
       for (const it of itemsToVerify) {
@@ -910,7 +908,7 @@ export async function finalizeOperatorPayrollAction(f: FormData) {
         p_notes: t(f, "notes") || null,
       });
     },
-    "Payroll Operator difinalisasi dari Qty Sah Checker + hasil manual HARIAN; Nilai Operator HARIAN tetap 0 dan Nilai Pengajuan terpisah."
+    "Payroll Operator difinalisasi dari Qty Sah Checker + hasil manual HARIAN."
   );
 }
 
@@ -996,7 +994,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
 
       const workerMap = new Map((workersList ?? []).map((w: any) => [w.id, w]));
 
-      // Tarik data absensi terverifikasi periode ini untuk menghitung ulang secara tepat
+      // Tarik presensi terverifikasi periode ini
       const { data: attRecords } = await s
         .from("attendance_records")
         .select("worker_id, day_class, overtime_minutes, attendance_date, attendance_status")
@@ -1021,7 +1019,6 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         const w = workerMap.get(it.worker_id);
         const paySystem = String(w?.pay_system || it.pay_system_snapshot || "").toUpperCase();
 
-        // Hitung ulang kehadiran aktual dari absensi
         const workerAtts = attList.filter((a) => a.worker_id === it.worker_id && a.attendance_status === "HADIR");
         const fullDays = workerAtts.filter((a) => a.day_class === "FULL_DAY").length;
         const halfDays = workerAtts.filter((a) => a.day_class === "HALF_DAY").length;
@@ -1034,31 +1031,27 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         let holidayBonus = 0;
 
         if (paySystem === "BULANAN") {
-          // Karyawan Bulanan: gaji pokok utuh dari master jika run bulanan
           if (run.payroll_type === "BULANAN") {
             baseAmt = Number(w?.monthly_salary ?? w?.base_salary ?? it.base_amount ?? 0);
           } else {
-            // Run Mingguan: hanya uang makan hadir aktual
-            baseAmt = 0;
+            baseAmt = 0; // Uang mingguan bulanan = gaji pokok 0
             mealAmt = fullDays * 50000;
           }
           const hourlyRate = baseAmt > 0 ? Math.round((baseAmt / 190) * 100) / 100 : 0;
           otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
           if (totalOtMinutes >= 240) otBonus = 17500;
         } else {
-          // Pekerja Harian: upah pokok = hari hadir aktual x tarif harian
           const dailyRate = Number(w?.daily_salary ?? w?.daily_rate ?? w?.rate_per_day ?? it.daily_wage_snapshot ?? 0);
           if (fullDays > 0 || halfDays > 0) {
             baseAmt = Math.round((fullDays + halfDays * 0.5) * dailyRate);
           } else {
-            baseAmt = 0; // Jika tidak masuk sama sekali (seperti Alfin), otomatis Rp 0!
+            baseAmt = 0; // Tidak masuk sama sekali otomatis Rp 0
           }
 
           const hourlyRate = dailyRate > 0 ? Math.round((dailyRate / 8) * 100) / 100 : 0;
           otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
           if (totalOtMinutes >= 240) otBonus = 5000;
 
-          // Bonus hadir hari Minggu
           const sundayCount = workerAtts.filter((a) => {
             const d = new Date(a.attendance_date + "T00:00:00Z");
             return d.getUTCDay() === 0;
@@ -1115,7 +1108,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         })
         .eq("id", runId);
     },
-    "Berhasil menyinkronkan ulang hari hadir fisik, menghapus lembur palsu Sabtu, dan menolkan pekerja yang tidak masuk."
+    "Sinkronisasi berhasil: data kehadiran, uang makan, dan kasbon telah dihitung ulang."
   );
 }
 
@@ -1188,7 +1181,7 @@ export async function togglePayrollPaymentStatusAction(f: FormData) {
         const { data: run, error: rErr } = await s.from("operator_payroll_runs").select("*").eq("id", runId).single();
         if (rErr || !run) throw new Error("Run operator tidak ditemukan.");
         let notes = run.notes || "";
-        notes = notes.replace(/\[STATUS:\s*(SUDAH_DIBAYAR\vert{}BELUM_DIBAYAR\vert{}SUDAH DIBAYAR\vert{}BELUM DIBAYAR)\]/gi, "").trim();
+        notes = notes.replace(/\[STATUS:\s*(SUDAH_DIBAYAR|BELUM_DIBAYAR|SUDAH DIBAYAR|BELUM DIBAYAR)\]/gi, "").trim();
         const newNotes = `[STATUS: ${targetStatus}] ${notes}`.trim();
         const { error } = await s.from("operator_payroll_runs").update({ notes: newNotes }).eq("id", runId);
         if (error) throw error;
