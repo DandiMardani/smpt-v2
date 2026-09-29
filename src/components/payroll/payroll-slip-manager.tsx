@@ -82,6 +82,11 @@ export type WorkerInfo = {
   position?: string | null;
   identity_no?: string | null;
   pay_system?: string | null;
+  monthly_salary?: number | string | null;
+  daily_salary?: number | string | null;
+  base_salary?: number | string | null;
+  daily_rate?: number | string | null;
+  rate_per_day?: number | string | null;
 };
 
 type Props = {
@@ -130,25 +135,37 @@ function normalizePhone(raw?: string | null): string {
   return cleaned;
 }
 
+function formatDateId(dateStr?: string): string {
+  if (!dateStr) return "-";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
+
 function getPeriodDescription(start: string, end: string, type: string): string {
   if (type === "BULANAN") {
-    return `${start} s/d ${end} (Bulan Penuh)`;
+    return `${formatDateId(start)} s/d ${formatDateId(end)} (Siklus Bulanan)`;
   }
   if (type === "MINGGUAN") {
-    return `${start} s/d ${end} (Siklus Sabtu–Jumat)`;
+    return `${formatDateId(start)} s/d ${formatDateId(end)} (Siklus Mingguan)`;
   }
   if (type === "BORONGAN") {
-    return `${start} s/d ${end} (Siklus Jumat–Kamis)`;
+    return `${formatDateId(start)} s/d ${formatDateId(end)} (Siklus Borongan)`;
   }
-  return `${start} s/d ${end}`;
+  return `${formatDateId(start)} s/d ${formatDateId(end)}`;
 }
 
 function getRunPaymentStatus(run?: { status?: string; config_snapshot?: any; notes?: string | null }): "SUDAH DIBAYAR" | "BELUM DIBAYAR" {
   if (!run) return "BELUM DIBAYAR";
-  if (run.config_snapshot?.payment_status === "SUDAH_DIBAYAR") return "SUDAH DIBAYAR";
-  if (run.config_snapshot?.payment_status === "BELUM_DIBAYAR") return "BELUM DIBAYAR";
-  if (/\[STATUS:\s*SUDAH_DIBAYAR\]/i.test(run.notes || "")) return "SUDAH DIBAYAR";
-  if (/\[STATUS:\s*BELUM_DIBAYAR\]/i.test(run.notes || "")) return "BELUM DIBAYAR";
+  const snapStatus = run.config_snapshot?.payment_status;
+  if (snapStatus === "SUDAH DIBAYAR" || snapStatus === "SUDAH_DIBAYAR") return "SUDAH DIBAYAR";
+  if (snapStatus === "BELUM DIBAYAR" || snapStatus === "BELUM_DIBAYAR") return "BELUM DIBAYAR";
+  if (/\[STATUS:\s*(SUDAH_DIBAYAR|SUDAH DIBAYAR)\]/i.test(run.notes || "")) return "SUDAH DIBAYAR";
+  if (/\[STATUS:\s*(BELUM_DIBAYAR|BELUM DIBAYAR)\]/i.test(run.notes || "")) return "BELUM DIBAYAR";
   if (run.status === "PAID" || run.status === "FINAL") return "SUDAH DIBAYAR";
   return "BELUM DIBAYAR";
 }
@@ -250,7 +267,12 @@ export function PayrollSlipManager({
   currentWorkerId,
   canWrite = false,
 }: Props) {
-  // Peta saldo kasbon aktif terkini per pekerja (Kasbon Kantor & Bon Warung)
+  const workerMap = useMemo(() => {
+    const map = new Map<number, WorkerInfo>();
+    workers.forEach((w) => map.set(w.id, w));
+    return map;
+  }, [workers]);
+
   const activeAdvancesByWorker = useMemo(() => {
     const map = new Map<number, { kasbonP: number; kasbonW: number; warungNames: string[] }>();
     for (const a of activeAdvances) {
@@ -271,7 +293,6 @@ export function PayrollSlipManager({
     return map;
   }, [activeAdvances]);
 
-  // Mode Kategori Tab: HARIAN (Mingguan) | BULANAN | BORONGAN
   const defaultCategory = useMemo<"HARIAN" | "BULANAN" | "BORONGAN">(() => {
     if (currentWorkerId) {
       const w = workers.find((x) => x.id === currentWorkerId);
@@ -285,7 +306,6 @@ export function PayrollSlipManager({
 
   const [activeCategory, setActiveCategory] = useState<"HARIAN" | "BULANAN" | "BORONGAN">(defaultCategory);
 
-  // Selected general run
   const initialGeneralRunId = useMemo(() => {
     const matched = runs.filter((r) =>
       activeCategory === "BULANAN" ? r.payroll_type === "BULANAN" : r.payroll_type === "MINGGUAN"
@@ -296,20 +316,17 @@ export function PayrollSlipManager({
   const [selectedRunId, setSelectedRunId] = useState<number>(initialGeneralRunId);
   const [selectedOpRunId, setSelectedOpRunId] = useState<number>(operatorRuns[0]?.id || 0);
 
-  // Active items for view/preview/WA
   const [activeItem, setActiveItem] = useState<PayrollItemRow | null>(null);
   const [activeOpWorker, setActiveOpWorker] = useState<GroupedOperatorWorker | null>(null);
   const [previewItem, setPreviewItem] = useState<PayrollItemRow | null>(null);
   const [previewOpWorker, setPreviewOpWorker] = useState<GroupedOperatorWorker | null>(null);
 
-  // WhatsApp dialog state
   const [waModalOpen, setWaModalOpen] = useState(false);
   const [waOpModalOpen, setWaOpModalOpen] = useState(false);
   const [waPhone, setWaPhone] = useState("");
   const [copied, setCopied] = useState(false);
   const [filterMySlipOnly, setFilterMySlipOnly] = useState<boolean>(false);
 
-  // State Koreksi General Payroll
   const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null);
   const [editBase, setEditBase] = useState<number>(0);
   const [editMeal, setEditMeal] = useState<number>(0);
@@ -322,48 +339,57 @@ export function PayrollSlipManager({
   const [editKasbonPerusahaan, setEditKasbonPerusahaan] = useState<number>(0);
   const [editKasbonWarung, setEditKasbonWarung] = useState<number>(0);
 
-  // State Koreksi Operator Borongan
   const [editingOpItem, setEditingOpItem] = useState<OperatorItemRow | null>(null);
   const [editOpQty, setEditOpQty] = useState<number>(0);
   const [editOpPrice, setEditOpPrice] = useState<number>(0);
   const [editOpVal, setEditOpVal] = useState<number>(0);
 
-  const workerMap = useMemo(() => {
-    const map = new Map<number, WorkerInfo>();
-    workers.forEach((w) => map.set(w.id, w));
-    return map;
-  }, [workers]);
-
-  // Selected General Run
   const selectedRun = useMemo(() => {
     return runs.find((r) => r.id === selectedRunId) || runs[0] || null;
   }, [runs, selectedRunId]);
 
-  // Selected Operator Run
   const selectedOpRun = useMemo(() => {
     return operatorRuns.find((r) => r.id === selectedOpRunId) || operatorRuns[0] || null;
   }, [operatorRuns, selectedOpRunId]);
 
-  // General Run Items
+  // LIVE ITEMS: Selama status BELUM DIBAYAR, otomatis membaca nilai gaji master terbaru & kasbon aktif
   const allRunItems = useMemo(() => {
     if (!selectedRun) return [];
-    const isUnpaid = selectedRun.status !== "PAID" && selectedRun.status !== "DIBATALKAN";
+    const payStatus = getRunPaymentStatus(selectedRun);
+    const isUnpaid = payStatus === "BELUM DIBAYAR";
+
     return items
       .filter((it) => it.payroll_run_id === selectedRun.id)
       .map((it) => {
         if (!isUnpaid) return it;
-        const liveAdv = activeAdvancesByWorker.get(it.worker_id);
-        if (!liveAdv) return it;
 
+        const w = workerMap.get(it.worker_id) as any;
+        let effectiveBase = num(it.base_amount);
+
+        // Jika ada perubahan gaji di Master Pekerja, otomatis terapkan di status Belum Dibayar
+        if (w) {
+          const paySys = String(w.pay_system || it.pay_system_snapshot || "").toUpperCase();
+          if (paySys === "BULANAN") {
+            const masterMonthly = num(w.monthly_salary ?? w.base_salary);
+            if (masterMonthly > 0) effectiveBase = masterMonthly;
+          } else if (paySys === "HARIAN") {
+            const masterDaily = num(w.daily_salary ?? w.daily_rate ?? w.rate_per_day);
+            const fullDays = num(it.full_days);
+            const halfDays = num(it.half_days);
+            if (masterDaily > 0 && (fullDays > 0 || halfDays > 0)) {
+              effectiveBase = Math.round((fullDays + halfDays * 0.5) * masterDaily);
+            }
+          }
+        }
+
+        const liveAdv = activeAdvancesByWorker.get(it.worker_id);
         const curP = num(it.kasbon_perusahaan_amount);
         const curW = num(it.kasbon_warung_amount);
-        const effP = liveAdv.kasbonP > 0 ? liveAdv.kasbonP : curP;
-        const effW = liveAdv.kasbonW > 0 ? liveAdv.kasbonW : curW;
-
-        if (effP === curP && effW === curW) return it;
+        const effP = liveAdv && liveAdv.kasbonP > 0 ? liveAdv.kasbonP : curP;
+        const effW = liveAdv && liveAdv.kasbonW > 0 ? liveAdv.kasbonW : curW;
 
         const gross =
-          num(it.base_amount) +
+          effectiveBase +
           num(it.meal_amount) +
           num(it.overtime_amount) +
           num(it.manual_overtime_amount) +
@@ -375,13 +401,14 @@ export function PayrollSlipManager({
 
         return {
           ...it,
+          base_amount: effectiveBase,
           kasbon_perusahaan_amount: effP,
           kasbon_warung_amount: effW,
           deduction_amount: deduction,
           net_amount: net,
         };
       });
-  }, [items, selectedRun, activeAdvancesByWorker]);
+  }, [items, selectedRun, activeAdvancesByWorker, workerMap]);
 
   const runItems = useMemo(() => {
     if (!selectedRun) return [];
@@ -391,7 +418,6 @@ export function PayrollSlipManager({
     return allRunItems;
   }, [allRunItems, filterMySlipOnly, currentWorkerId, selectedRun]);
 
-  // Operator Items Grouped by Worker
   const groupedOperatorWorkers = useMemo<GroupedOperatorWorker[]>(() => {
     if (!selectedOpRun) return [];
     const opItemsForRun = operatorItems.filter((it) => it.run_id === selectedOpRun.id);
@@ -427,7 +453,6 @@ export function PayrollSlipManager({
     return res;
   }, [selectedOpRun, operatorItems, workerMap, filterMySlipOnly, currentWorkerId]);
 
-  // Dynamic overtime rates for correction
   const divisor = editingItem?.pay_system_snapshot === "BULANAN" ? 190 : 8;
   const baseForRate = editingItem?.pay_system_snapshot === "BULANAN"
     ? editBase
@@ -501,7 +526,6 @@ export function PayrollSlipManager({
     ? getRunPaymentStatus(selectedOpRun)
     : getRunPaymentStatus(selectedRun);
 
-  // Printing Slip Handlers
   const handlePrintSlip = (item: PayrollItemRow) => {
     if (!selectedRun) return;
     const title = getSlipTitle(selectedRun, item);
@@ -766,7 +790,7 @@ export function PayrollSlipManager({
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
           >
-            <span>🌾 Karyawan HARIAN (Sabtu–Jumat)</span>
+            <span>🌾 Karyawan HARIAN (Mingguan)</span>
             <span
               className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
                 activeCategory === "HARIAN" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
@@ -819,7 +843,7 @@ export function PayrollSlipManager({
                 : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
           >
-            <span>🧵 Operator BORONGAN (Jumat–Kamis)</span>
+            <span>🧵 Operator BORONGAN</span>
             <span
               className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
                 activeCategory === "BORONGAN" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
@@ -837,15 +861,15 @@ export function PayrollSlipManager({
           <div className="min-w-0">
             <h3 className="font-bold text-slate-900 text-sm sm:text-base">
               {activeCategory === "BORONGAN"
-                ? "Rincian Payroll Operator Borongan (Siklus Jumat s/d Kamis)"
+                ? "Rincian Payroll Operator Borongan"
                 : activeCategory === "HARIAN"
-                ? "Rincian Slip Gaji Karyawan Harian (Siklus Sabtu s/d Jumat)"
+                ? "Rincian Slip Gaji Karyawan Harian"
                 : "Rincian Slip Gaji Karyawan Bulanan"}
             </h3>
             <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
               {activeCategory === "BORONGAN"
                 ? "Hasil kerja operator borongan berdasarkan SPK & Qty Sah Checker. Tersedia koreksi nominal & export Excel."
-                : "Pilih finalisasi payroll untuk mencetak slip, mengoreksi lembur/uang makan, atau share ke WhatsApp."}
+                : "Gaji master & kasbon otomatis diperbarui sebelum status diubah menjadi Sudah Dibayar."}
             </p>
           </div>
 
@@ -864,7 +888,7 @@ export function PayrollSlipManager({
                     const count = operatorItems.filter((it) => it.run_id === r.id).length;
                     return (
                       <option key={r.id} value={r.id}>
-                        {r.payroll_code} • ({r.period_start} s/d {r.period_end}) — {count} Item ({money(r.total_operator_value)})
+                        {r.payroll_code} • ({formatDateId(r.period_start)} s/d {formatDateId(r.period_end)}) — {count} Item ({money(r.total_operator_value)})
                       </option>
                     );
                   })}
@@ -886,7 +910,7 @@ export function PayrollSlipManager({
                       const count = items.filter((it) => it.payroll_run_id === r.id).length;
                       return (
                         <option key={r.id} value={r.id}>
-                          {r.payroll_code} • {r.payroll_type} ({r.period_start} s/d {r.period_end}) — {count} Slip
+                          {r.payroll_code} • {r.payroll_type} ({formatDateId(r.period_start)} s/d {formatDateId(r.period_end)}) — {count} Slip
                         </option>
                       );
                     })}
@@ -919,7 +943,7 @@ export function PayrollSlipManager({
           </div>
         </div>
 
-        {/* RUN META BOX: Nomor Payout, Periode, Total, & Status Pembayaran */}
+        {/* RUN META BOX */}
         <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-3.5 text-xs grid grid-cols-2 sm:grid-cols-5 gap-3 min-w-0">
           <div className="min-w-0">
             <span className="text-slate-400 font-medium text-[11px] block">No. Payout:</span>
@@ -981,10 +1005,10 @@ export function PayrollSlipManager({
                   />
                   <button
                     type="submit"
-                    className="rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[9px] font-bold text-slate-700 hover:bg-slate-100 transition shadow-2xs"
-                    title="Ubah status bayar lunas/belum"
+                    className="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition shadow-2xs"
+                    title="Ubah status pembayaran lunas atau belum"
                   >
-                    {paymentStatusText === "SUDAH DIBAYAR" ? "Ubah Belum" : "Set Lunas"}
+                    {paymentStatusText === "SUDAH DIBAYAR" ? "↩️ Set Belum" : "✅ Set Lunas"}
                   </button>
                 </form>
               )}
@@ -1002,7 +1026,7 @@ export function PayrollSlipManager({
               Daftar Operator Borongan ({groupedOperatorWorkers.length} Penerima Upah)
             </h4>
             <span className="text-xs text-slate-500">
-              Periode: <b>{selectedOpRun?.period_start} s/d {selectedOpRun?.period_end}</b>
+              Periode: <b>{formatDateId(selectedOpRun?.period_start)} s/d {formatDateId(selectedOpRun?.period_end)}</b>
             </span>
           </div>
 
@@ -1117,7 +1141,7 @@ export function PayrollSlipManager({
             </h4>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-slate-500">
-                Periode: <b>{selectedRun?.period_start} s/d {selectedRun?.period_end}</b>
+                Periode: <b>{formatDateId(selectedRun?.period_start)} s/d {formatDateId(selectedRun?.period_end)}</b>
               </span>
               {canWrite && selectedRun ? (
                 <form action={syncPayrollAdvancesAction}>
@@ -1125,9 +1149,9 @@ export function PayrollSlipManager({
                   <button
                     type="submit"
                     className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 border border-amber-300 hover:bg-amber-100 shadow-2xs transition cursor-pointer"
-                    title="Tarik & sinkronkan ulang tagihan Kasbon Kantor & Bon Warung terbaru dari database ke periode ini"
+                    title="Tarik & sinkronkan ulang gaji pokok master serta kasbon/warung terbaru ke periode ini"
                   >
-                    <span>🔄</span> Sinkronkan Kasbon & Warung
+                    <span>🔄</span> Sinkronkan Gaji Master & Kasbon
                   </button>
                 </form>
               ) : null}
@@ -1242,7 +1266,7 @@ export function PayrollSlipManager({
                       </div>
                     </div>
 
-                    {/* 3 Tombol Aksi Ramah Sentuhan */}
+                    {/* 3 Tombol Aksi */}
                     <div className="mt-3 flex items-center justify-end gap-1.5 sm:gap-2 min-w-0">
                       {canWrite ? (
                         <button
@@ -1303,7 +1327,7 @@ export function PayrollSlipManager({
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {selectedRun?.payroll_code} • Periode: {selectedRun?.period_start} s/d {selectedRun?.period_end}
+                  {selectedRun?.payroll_code} • Periode: {formatDateId(selectedRun?.period_start)} s/d {formatDateId(selectedRun?.period_end)}
                 </p>
               </div>
               <button
