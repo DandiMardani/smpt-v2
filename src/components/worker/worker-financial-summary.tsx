@@ -134,12 +134,19 @@ export function WorkerFinancialSummary({
 
   const isBorongan = worker.pay_system === "BORONGAN";
   const isBulanan = worker.pay_system === "BULANAN";
+  const isHarian = !isBorongan && !isBulanan;
 
-  // Calculations for real-time balances
+  // Slip resmi dan tombol cetak HANYA aktif jika statusnya benar-benar SUDAH DIBAYAR (Lunas)
+  const isSlipPaid = Boolean(
+    officialSlip &&
+    (officialSlip.paymentStatus === "SUDAH DIBAYAR" || (officialSlip as any).status === "PAID")
+  );
+
+  // Perhitungan saldo kasbon & potongan berjalan real-time
   const totalWarung = warungDebts.reduce((acc, x) => acc + (n(x.amount) - n(x.paid_amount)), 0);
   const totalCompanyLoan = companyLoans.reduce((acc, x) => acc + (n(x.amount) - n(x.paid_amount)), 0);
 
-  // Monthly active company installment
+  // Angsuran kasbon kantor aktif bulan ini
   const activeCompanyInstallment = companyLoans.reduce((acc, x) => {
     const rem = n(x.amount) - n(x.paid_amount);
     const instCount = Number(x.installment_count) || 1;
@@ -150,7 +157,18 @@ export function WorkerFinancialSummary({
   const totalDeductionPending = totalWarung + (isBulanan ? activeCompanyInstallment : totalCompanyLoan);
   const estimatedNet = Math.max(0, estimatedGross - totalDeductionPending);
 
-  // Generate WhatsApp text for official slip
+  // Selama status BELUM DIBAYAR, angka 100% LIVE mengikuti data real-time (master gaji, lembur baru, & kasbon)
+  const displayedGross = isSlipPaid && officialSlip ? officialSlip.grossAmount : estimatedGross;
+  const displayedDeduction = isSlipPaid && officialSlip ? officialSlip.deductionAmount : totalDeductionPending;
+  const displayedNet = isSlipPaid && officialSlip ? officialSlip.netAmount : estimatedNet;
+  const displayedKasbonPerusahaan = isSlipPaid && officialSlip && officialSlip.kasbonPerusahaanAmount !== undefined
+    ? officialSlip.kasbonPerusahaanAmount
+    : (isBulanan ? activeCompanyInstallment : totalCompanyLoan);
+  const displayedKasbonWarung = totalWarung > 0
+    ? totalWarung
+    : (isSlipPaid && officialSlip && officialSlip.kasbonWarungAmount !== undefined ? officialSlip.kasbonWarungAmount : 0);
+
+  // Generator WhatsApp untuk slip resmi
   const getOfficialWhatsAppText = () => {
     if (!officialSlip) return "";
     const isSlipBorongan = officialSlip.type === "BORONGAN";
@@ -211,23 +229,12 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
     window.print();
   };
 
-  // Tentukan angka yang ditampilkan (Prioritas ke officialSlip terverifikasi admin)
-  const displayedGross = officialSlip ? officialSlip.grossAmount : estimatedGross;
-  const displayedDeduction = officialSlip ? officialSlip.deductionAmount : totalDeductionPending;
-  const displayedNet = officialSlip ? officialSlip.netAmount : estimatedNet;
-  const displayedKasbonPerusahaan = officialSlip && officialSlip.kasbonPerusahaanAmount !== undefined
-    ? officialSlip.kasbonPerusahaanAmount
-    : (isBulanan ? activeCompanyInstallment : totalCompanyLoan);
-  const displayedKasbonWarung = totalWarung > 0
-    ? totalWarung
-    : (officialSlip && officialSlip.kasbonWarungAmount !== undefined ? officialSlip.kasbonWarungAmount : 0);
-
   return (
     <div className="space-y-5">
-      {/* ================= SATU KARTU STATUS KEUANGAN & SLIP TERVERIFIKASI ================= */}
+      {/* ================= KARTU STATUS KEUANGAN (BERJALAN / SLIP RESMI) ================= */}
       <div
         className={`rounded-2xl border-2 p-5 sm:p-6 shadow-sm space-y-5 ${
-          officialSlip
+          isSlipPaid
             ? "border-emerald-300 bg-gradient-to-br from-emerald-50/50 via-white to-slate-50"
             : "border-blue-200 bg-gradient-to-br from-blue-50/50 via-white to-amber-50/30"
         }`}
@@ -238,36 +245,28 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs ${
-                  officialSlip ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"
+                  isSlipPaid ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"
                 }`}
               >
-                {officialSlip ? "📜 DOKUMEN SLIP RESMI TERVERIFIKASI" : "⏱️ ESTIMASI GAJI BERJALAN"}
+                {isSlipPaid ? "📜 DOKUMEN SLIP RESMI TERVERIFIKASI" : "⏱️ ESTIMASI GAJI BERJALAN"}
               </span>
 
-              {officialSlip ? (
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs ${
-                    officialSlip.paymentStatus === "SUDAH DIBAYAR"
-                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                      : "bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
-                  }`}
-                >
-                  {officialSlip.paymentStatus === "SUDAH DIBAYAR"
-                    ? "🟢 SUDAH DIBAYAR (LUNAS)"
-                    : "⏳ BELUM DIBAYAR (PROSES KASIR)"}
+              {isSlipPaid ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  🟢 SUDAH DIBAYAR (LUNAS)
                 </span>
               ) : null}
             </div>
 
             <h2 className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
-              {officialSlip ? `Slip Payout: ${officialSlip.payrollCode}` : "Akumulasi Upah & Kasbon Saya Hari Ini"}
+              {isSlipPaid && officialSlip ? `Slip Payout: ${officialSlip.payrollCode}` : "Akumulasi Upah & Kasbon Saya Hari Ini"}
             </h2>
 
             <p className="text-xs text-gray-600 flex flex-wrap items-center gap-2">
               <span><b>{worker.name}</b> ({worker.worker_code})</span>
               <span>•</span>
-              <span>Sistem Upah: <b>{officialSlip?.type || worker.pay_system}</b></span>
-              {officialSlip?.periodStart && (
+              <span>Sistem Upah: <b>{isSlipPaid && officialSlip?.type ? officialSlip.type : worker.pay_system}</b></span>
+              {isSlipPaid && officialSlip?.periodStart && (
                 <>
                   <span>•</span>
                   <span>📅 <b>Periode Gaji:</b> {formatDateId(officialSlip.periodStart)} s/d {formatDateId(officialSlip.periodEnd)}</span>
@@ -275,17 +274,22 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
               )}
             </p>
 
-            {officialSlip ? (
+            {isSlipPaid ? (
               <p className="text-[11px] text-emerald-700 flex items-center gap-1 font-medium">
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span>Data telah diverifikasi Admin Keuangan. Tidak ada perbedaan antara estimasi dan slip resmi.</span>
+                <span>Data telah diverifikasi & dibayarkan oleh Kasir. Ini adalah dokumen resmi slip gaji Anda.</span>
               </p>
-            ) : null}
+            ) : (
+              <p className="text-[11px] text-blue-700 flex items-center gap-1 font-medium">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                <span>Nilai berjalan real-time (mengikuti absensi, lembur, dan kasbon aktif sebelum gajian resmi).</span>
+              </p>
+            )}
           </div>
 
           {/* Action Buttons Header */}
           <div className="flex flex-wrap items-center gap-2">
-            {officialSlip ? (
+            {isSlipPaid ? (
               <>
                 <button
                   type="button"
@@ -342,6 +346,18 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
           </div>
         </div>
 
+        {/* Pemberitahuan khusus Karyawan Harian jika slip belum lunas */}
+        {isHarian && !isSlipPaid && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 space-y-1">
+            <div className="font-bold flex items-center gap-1.5">
+              <span>ℹ️</span> Informasi Karyawan Harian
+            </div>
+            <p className="text-[11px] text-blue-800 leading-relaxed">
+              Upah harian dibayarkan mingguan pada hari Jumat sesuai hari masuk kerja aktual. Di bawah ini adalah ringkasan hari masuk dan saldo kasbon berjalan Anda.
+            </p>
+          </div>
+        )}
+
         {/* SOP Lapangan & Ketentuan Lupa Absen Box */}
         {showRulesInfo && (
           <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 to-purple-50/60 p-4 text-xs space-y-3">
@@ -359,7 +375,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
                   <span>📅</span> Karyawan Harian (Sabtu - Jumat)
                 </div>
                 <p className="text-[11px] leading-relaxed text-indigo-800">
-                  • <b>Hari Jumat</b>: Absen pagi dihitung 1 hari kerja penuh (masuk Sabtu–Jumat + Minggu = 7 hari).<br />
+                  • <b>Hari Jumat</b>: Absen pagi dihitung 1 hari kerja penuh.<br />
                   • <b>Pulang Jam 12:00</b>: Dikoreksi admin menjadi <b>0.5 hari</b>.<br />
                   • <b>Lembur Jumat &gt;17:00</b>: Dihitung dan dibayarkan pada <b>payroll minggu berikutnya</b>.<br />
                   • <b>Hari Minggu</b>: Jam shift normal (08:00–17:00) mendapat insentif hadir <b>Rp 20.000</b>.
@@ -374,7 +390,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
                 <p className="text-[11px] leading-relaxed text-indigo-800">
                   • Gaji pokok utuh (Senin–Sabtu).<br />
                   • <b>Hari Minggu</b> (08:00–17:00) dihitung: Lembur 8 jam (Pokok ÷ 190/jam) + Uang Makan Minggu <b>Rp 50.000</b> + Bonus Lembur 4 jam <b>Rp 17.500</b>.<br />
-                  • Tidak ada uang makan reguler harian karena sudah menyatu di gaji bulanan tetap.
+                  • Uang makan mingguan berjalan sesuai hari kehadiran aktual.
                 </p>
               </div>
 
@@ -385,7 +401,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
                 </div>
                 <p className="text-[11px] leading-relaxed text-indigo-800">
                   • <b>Borongan (Jumat - Kamis)</b>: Dihitung dari Qty Sah hasil kerja. Kasbon urgent / pekerjaan habis dapat dicairkan lebih awal.<br />
-                  • <b>Lupa Finger Absen</b>: Untuk <b>Bulanan</b> gaji pokok aman; lembur/Minggu ditambahkan admin via form koreksi. Untuk <b>Harian</b>, supervisor konfirmasi fisik dan admin input koreksi hari/lembur manual pada slip.
+                  • <b>Lupa Finger Absen</b>: Untuk <b>Bulanan</b> gaji pokok aman; lembur ditambahkan via form koreksi. Untuk <b>Harian</b>, admin input koreksi hari/lembur manual pada slip.
                 </p>
               </div>
             </div>
@@ -398,16 +414,16 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-gray-500">
-                {officialSlip ? "Gaji / Upah Bruto Resmi:" : "Perkiraan Upah Bruto Berjalan:"}
+                {isSlipPaid ? "Gaji / Upah Bruto Resmi:" : "Perkiraan Upah Bruto Berjalan:"}
               </div>
               <div className="mt-1 text-2xl font-black text-gray-900">{money(displayedGross)}</div>
               <div className="mt-1 text-[11px] text-gray-600">
                 {isBulanan
-                  ? (officialSlip && ((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0)) > 0
+                  ? (isSlipPaid && officialSlip && ((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0)) > 0
                       ? `Pokok + Lembur ${overtimeHours} Jam + Insentif`
                       : "Gaji Pokok Bulanan Tetap")
                   : isBorongan
-                  ? `${qty(officialSlip?.totalQtyApproved || breakdown?.boronganItems?.reduce((a, b) => a + (b.goodQty || 0), 0) || 0)} PCS disetujui`
+                  ? `${qty(isSlipPaid && officialSlip?.totalQtyApproved ? officialSlip.totalQtyApproved : (breakdown?.boronganItems?.reduce((a, b) => a + (b.goodQty || 0), 0) || 0))} PCS disetujui`
                   : `${workedDays} Hari Kerja + ${overtimeHours} Jam Lembur`}
               </div>
             </div>
@@ -424,18 +440,18 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
               </div>
               <div className="mt-1 text-2xl font-black text-amber-800">{money(displayedKasbonWarung)}</div>
               <div className="mt-1 text-[11px] text-amber-900">
-                {officialSlip && (officialSlip.kasbonWarungAmount || 0) > 0 ? (
+                {isSlipPaid && officialSlip && (officialSlip.kasbonWarungAmount || 0) > 0 ? (
                   <span>
                     Dipotong di slip resmi: <b>{money(officialSlip.kasbonWarungAmount || 0)}</b>
                   </span>
-                ) : officialSlip && totalWarung > 0 ? (
+                ) : isSlipPaid && totalWarung > 0 ? (
                   <span className="text-amber-800 font-medium">
                     Belum dipotong di slip periode ini (dipotong payroll berikutnya)
                   </span>
-                ) : officialSlip ? (
+                ) : isSlipPaid ? (
                   "Tidak ada potongan tagihan warung"
                 ) : (
-                  "Otomatis dipotong saat payroll"
+                  "Otomatis dipotong saat gajian"
                 )}
               </div>
             </div>
@@ -474,7 +490,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
               </div>
               <div className="mt-1 text-2xl font-black text-rose-600">{money(displayedKasbonPerusahaan)}</div>
               <div className="mt-1 text-[11px] text-rose-800">
-                {officialSlip
+                {isSlipPaid
                   ? "Potongan resmi tercantum di slip"
                   : (activeCompanyInstallment > 0 ? `Cicilan aktif bln ini: ${money(activeCompanyInstallment)}` : "Lunas / Tidak ada cicilan")}
               </div>
@@ -513,7 +529,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
           <div className="rounded-xl bg-emerald-600 border border-emerald-700 p-4 shadow-sm text-white flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-bold text-emerald-100 uppercase tracking-wider">
-                {officialSlip ? "Gaji Bersih Resmi (Take Home Pay):" : "Perkiraan Bersih (Take Home Pay):"}
+                {isSlipPaid ? "Gaji Bersih Resmi (Take Home Pay):" : "Perkiraan Bersih (Take Home Pay):"}
               </div>
               <div className="mt-1 text-2xl sm:text-3xl font-black text-white">{money(displayedNet)}</div>
               <div className="mt-1 text-[11px] text-emerald-100">
@@ -521,7 +537,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-emerald-500/60 text-[11px] text-emerald-100">
-              {officialSlip
+              {isSlipPaid && officialSlip
                 ? `Status Bayar: ${officialSlip.paymentStatus}`
                 : `Sisa bersih setelah dikurangi semua kasbon`}
             </div>
@@ -706,8 +722,8 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
         )}
       </div>
 
-      {/* ================= 3. MODAL CETAK / PRATINJAU SLIP RESMI ================= */}
-      {showSlipModal && officialSlip && (
+      {/* ================= MODAL CETAK / PRATINJAU SLIP RESMI ================= */}
+      {showSlipModal && isSlipPaid && officialSlip && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs">
           <div className="relative w-full max-w-2xl rounded-2xl bg-white p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-start justify-between border-b border-slate-200 pb-3">
@@ -742,13 +758,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
                 </div>
                 <div className="text-right text-xs">
                   <div className="font-mono font-bold text-slate-800">{officialSlip.payrollCode}</div>
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase mt-1 ${
-                      officialSlip.paymentStatus === "SUDAH DIBAYAR"
-                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                        : "bg-amber-100 text-amber-800 border border-amber-300"
-                    }`}
-                  >
+                  <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase mt-1 bg-emerald-100 text-emerald-800 border border-emerald-300">
                     {officialSlip.paymentStatus}
                   </span>
                 </div>
