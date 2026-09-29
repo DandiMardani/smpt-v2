@@ -9,6 +9,8 @@ import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { resolveProjectCategory } from "@/lib/project-category";
 import { createClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { ProduksiRegulerClient } from "./produksi-reguler-client";
 
 type Props = { searchParams: Promise<SearchParams> };
@@ -18,6 +20,64 @@ export default async function ProduksiRegulerPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("hasil_produksi.write");
   const q = await searchParams;
   const supabase = await createClient();
+
+  // Action: Batalkan / Hapus Setoran Jahit
+  async function batalSetoranAction(formData: FormData) {
+    "use server";
+    const checkId = formData.get("checkId");
+    if (!checkId) return;
+
+    const auth = await requirePermission("hasil_produksi.view");
+    if (!auth.permissionCodes.includes("hasil_produksi.write")) {
+      redirect("/dashboard/produksiReguler?error=" + encodeURIComponent("Anda tidak memiliki izin untuk membatalkan setoran."));
+    }
+
+    const sb = await createClient();
+    const { error } = await sb
+      .from("production_checks")
+      .update({ status: "BATAL" })
+      .eq("id", checkId);
+
+    if (error) {
+      redirect("/dashboard/produksiReguler?error=" + encodeURIComponent("Gagal membatalkan setoran: " + error.message));
+    }
+
+    revalidatePath("/dashboard/produksiReguler");
+    redirect("/dashboard/produksiReguler?success=" + encodeURIComponent("Setoran jahit berhasil dibatalkan dan ditarik dari pembukuan."));
+  }
+
+  // Action: Edit Data Setoran Jahit
+  async function editSetoranAction(formData: FormData) {
+    "use server";
+    const checkId = formData.get("checkId");
+    const goodQty = Number(formData.get("goodQty") || 0);
+    const rejectQty = Number(formData.get("rejectQty") || 0);
+    const notes = String(formData.get("notes") || "").trim();
+
+    if (!checkId) return;
+
+    const auth = await requirePermission("hasil_produksi.view");
+    if (!auth.permissionCodes.includes("hasil_produksi.write")) {
+      redirect("/dashboard/produksiReguler?error=" + encodeURIComponent("Anda tidak memiliki izin untuk mengedit setoran."));
+    }
+
+    const sb = await createClient();
+    const { error } = await sb
+      .from("production_checks")
+      .update({
+        good_qty: goodQty,
+        reject_qty: rejectQty,
+        notes: notes || null,
+      })
+      .eq("id", checkId);
+
+    if (error) {
+      redirect("/dashboard/produksiReguler?error=" + encodeURIComponent("Gagal memperbarui setoran: " + error.message));
+    }
+
+    revalidatePath("/dashboard/produksiReguler");
+    redirect("/dashboard/produksiReguler?success=" + encodeURIComponent("Data setoran jahit berhasil diperbarui."));
+  }
 
   // Load supporting reference data
   const [projectRes, productRes, workerRes, workItemRes, recentChecksRes] = await Promise.all([
@@ -137,6 +197,7 @@ export default async function ProduksiRegulerPage({ searchParams }: Props) {
                     <th className="px-4 py-3 text-right">Upah Operator (Riil)</th>
                     <th className="px-4 py-3 text-right">Nilai Pengajuan</th>
                     <th className="px-4 py-3">Catatan</th>
+                    {canWrite ? <th className="px-4 py-3 text-center">Aksi</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-700">
@@ -201,6 +262,86 @@ export default async function ProduksiRegulerPage({ searchParams }: Props) {
                         <td className="px-4 py-3 text-slate-500 text-[11px] max-w-xs truncate">
                           {c.notes || "-"}
                         </td>
+                        {canWrite ? (
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* Popover Edit */}
+                              <details className="relative">
+                                <summary className="cursor-pointer list-none rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition select-none">
+                                  Edit
+                                </summary>
+                                <div className="absolute right-0 top-full z-30 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl">
+                                  <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-100">
+                                    <span className="text-xs font-bold text-slate-900">Edit Setoran</span>
+                                    <span className="text-[10px] text-slate-400">#{c.id}</span>
+                                  </div>
+                                  <form action={editSetoranAction} className="space-y-2">
+                                    <input type="hidden" name="checkId" value={c.id} />
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Hasil (Pcs)</label>
+                                      <input
+                                        type="number"
+                                        name="goodQty"
+                                        defaultValue={goodQty}
+                                        min="0"
+                                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-bold text-slate-800 focus:border-blue-500 focus:outline-none"
+                                        required
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Reject (Pcs)</label>
+                                      <input
+                                        type="number"
+                                        name="rejectQty"
+                                        defaultValue={c.reject_qty || 0}
+                                        min="0"
+                                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-bold text-slate-800 focus:border-blue-500 focus:outline-none"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Catatan</label>
+                                      <input
+                                        type="text"
+                                        name="notes"
+                                        defaultValue={c.notes || ""}
+                                        placeholder="Catatan..."
+                                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
+                                      />
+                                    </div>
+                                    <button
+                                      type="submit"
+                                      className="w-full rounded-lg bg-blue-600 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 transition"
+                                    >
+                                      Simpan
+                                    </button>
+                                  </form>
+                                </div>
+                              </details>
+
+                              {/* Popover Batal */}
+                              <details className="relative">
+                                <summary className="cursor-pointer list-none rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 transition select-none">
+                                  Batal
+                                </summary>
+                                <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-xl border border-rose-100 bg-white p-3 text-left shadow-xl">
+                                  <div className="text-xs font-bold text-rose-600 mb-1">Batalkan Setoran?</div>
+                                  <p className="text-[11px] leading-relaxed text-slate-600 mb-3">
+                                    Setoran <b className="text-slate-900">{formatNumber(goodQty)} pcs</b> milik <b className="text-slate-900">{meta?.workerName || "Penjahit"}</b> akan ditarik dari pembukuan upah.
+                                  </p>
+                                  <form action={batalSetoranAction}>
+                                    <input type="hidden" name="checkId" value={c.id} />
+                                    <button
+                                      type="submit"
+                                      className="w-full rounded-lg bg-rose-600 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700 active:scale-95 transition"
+                                    >
+                                      Ya, Batalkan
+                                    </button>
+                                  </form>
+                                </div>
+                              </details>
+                            </div>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
