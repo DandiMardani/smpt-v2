@@ -63,7 +63,6 @@ export default async function Page() {
     const rpcWorker = rpcProfRes.data && rpcProfRes.data.length > 0 ? rpcProfRes.data[0] : null;
     const directWorker = wRes.data || null;
 
-    // Gabungkan data agar kolom monthly_salary & daily_wage dari master workers tidak hilang
     workerData = {
       ...(directWorker ?? {}),
       ...(rpcWorker ?? {}),
@@ -107,7 +106,7 @@ export default async function Page() {
     workedDays = fullDays + (halfDays * 0.5);
     overtimeHours = Math.round((otMins / 60) * 10) / 10;
 
-    // Akumulasi borongan berjalan dari SPK pekerja ini
+    // Hitung akumulasi borongan berjalan dari SPK pekerja ini
     const myOrders = orders.filter((o: any) => o.operator_worker_id === workerId);
     const myBoronganItems: any[] = [];
     let totalBoronganValue = 0;
@@ -271,7 +270,7 @@ export default async function Page() {
         };
       }
 
-      // SINKRONISASI DATA DENGAN SLIP RESMI
+      // SINKRONISASI CERDAS: MENGGABUNGKAN DATA ABSENSI & KOREKSI SLIP
       if (officialSlip) {
         if (officialSlip.type === "BORONGAN") {
           estimatedGross = officialSlip.grossAmount;
@@ -290,19 +289,31 @@ export default async function Page() {
             })),
           };
         } else if (workerData.pay_system === "BULANAN" || officialSlip.type === "BULANAN") {
-          // KHUSUS BULANAN: Gaji pokok diambil dari master workers (monthly_salary)
-          // Jangan ditimpa Rp 0 dari base_amount slip mingguan!
           const monthlySalary = n(workerData.monthly_salary);
-          const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
+          const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
+          const otHourlyRate = monthlySalary > 0 ? Math.round(monthlySalary / Math.max(1, otDiv)) : 0;
+
+          // Gabungkan menit lembur dari absensi live & slip resmi (ambil yang terbesar)
+          const slipOtMins = (Number(officialSlip.overtimeMinutes) || 0) + ((Number(officialSlip.manualOvertimeHours) || 0) * 60);
+          const totalOtMins = Math.max(otMins, slipOtMins);
+
           overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
-          workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
+          workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5) || workedDays;
 
-          const totalOtWage = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
-          const slipMeal = officialSlip.mealAmount || 0;
-          const otBonus = officialSlip.overtimeBonus || 0;
-          const holidayBonus = officialSlip.holidayBonus || 0;
+          // Upah lembur: jika di slip nilainya 0 padahal ada jam lembur, hitung otomatis dari tarif per jam
+          const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
+          const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
 
-          // Estimasi bruto bulanan: Gaji Pokok Bulanan Tetap + Uang Makan + Lembur Mingguan
+          const slipMeal = Number(officialSlip.mealAmount) || 0;
+          const otBonus = (Number(officialSlip.overtimeBonus) || 0) > 0 
+            ? Number(officialSlip.overtimeBonus) 
+            : (totalOtMins >= 240 ? Number(settingsMap.OT_BONUS_BULANAN_4H || 17500) : count4h * 17500);
+
+          const holidayBonus = (Number(officialSlip.holidayBonus) || 0) > 0
+            ? Number(officialSlip.holidayBonus)
+            : (sundayCount * Number(settingsMap.BULANAN_SUNDAY_MEAL || 50000));
+
+          // Estimasi bruto bulanan: Gaji Pokok Bulanan Tetap + Upah Lembur + Bonus + Uang Makan
           estimatedGross = monthlySalary + totalOtWage + otBonus + holidayBonus + slipMeal;
 
           breakdown = {
@@ -312,9 +323,10 @@ export default async function Page() {
             sundayMealOrBonus: slipMeal || holidayBonus,
             regularMeal: slipMeal,
             totalGross: estimatedGross,
+            otHourlyRate: Math.round(otHourlyRate),
             otMinutes: totalOtMins,
-            sundayCount: (slipMeal > 0 || holidayBonus > 0) ? Math.round((slipMeal || holidayBonus) / 50000) : 0,
-            count4h: otBonus > 0 ? Math.round(otBonus / 17500) : 0,
+            sundayCount: (slipMeal > 0 || holidayBonus > 0) ? Math.round((slipMeal || holidayBonus) / 50000) : sundayCount,
+            count4h: otBonus > 0 ? Math.round(otBonus / 17500) : count4h,
           };
         } else {
           // Harian
