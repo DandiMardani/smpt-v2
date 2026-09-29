@@ -60,11 +60,17 @@ export default async function Page() {
       s.from("operator_payroll_items").select("*, operator_payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(30),
     ]);
 
-    if (rpcProfRes.data && rpcProfRes.data.length > 0) {
-      workerData = rpcProfRes.data[0];
-    } else if (wRes.data) {
-      workerData = wRes.data;
-    }
+    const rpcWorker = rpcProfRes.data && rpcProfRes.data.length > 0 ? rpcProfRes.data[0] : null;
+    const directWorker = wRes.data || null;
+
+    // Gabungkan data agar kolom monthly_salary & daily_wage dari master workers tidak hilang
+    workerData = {
+      ...(directWorker ?? {}),
+      ...(rpcWorker ?? {}),
+      monthly_salary: directWorker?.monthly_salary ?? rpcWorker?.monthly_salary ?? 0,
+      daily_wage: directWorker?.daily_wage ?? rpcWorker?.daily_wage ?? 0,
+      pay_system: directWorker?.pay_system ?? rpcWorker?.pay_system ?? "HARIAN",
+    };
 
     const allAdv = advRes.data ?? [];
     warungDebts = allAdv.filter((a) => a.category === "KASBON_WARUNG");
@@ -86,7 +92,6 @@ export default async function Page() {
       otMins += dayOt;
       if (dayOt >= 240) count4h += 1;
 
-      // Check if Sunday
       if (a.attendance_date) {
         const parts = String(a.attendance_date).slice(0, 10).split("-");
         const y = parseInt(parts[0], 10);
@@ -102,7 +107,7 @@ export default async function Page() {
     workedDays = fullDays + (halfDays * 0.5);
     overtimeHours = Math.round((otMins / 60) * 10) / 10;
 
-    // Hitung akumulasi borongan berjalan dari SPK pekerja ini
+    // Akumulasi borongan berjalan dari SPK pekerja ini
     const myOrders = orders.filter((o: any) => o.operator_worker_id === workerId);
     const myBoronganItems: any[] = [];
     let totalBoronganValue = 0;
@@ -145,12 +150,10 @@ export default async function Page() {
       } else if (workerData.pay_system === "BULANAN") {
         const baseAmount = n(workerData.monthly_salary);
         const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
-        const otHourlyRate = baseAmount / Math.max(1, otDiv);
+        const otHourlyRate = baseAmount > 0 ? baseAmount / Math.max(1, otDiv) : 0;
         const overtimeWage = Math.round((otMins / 60) * otHourlyRate);
         const bonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
         const sundayMealOrBonus = sundayCount * Number(settingsMap.BULANAN_SUNDAY_MEAL || 50000);
-        // CATATAN PENTING: Karyawan Bulanan TIDAK ada uang makan reguler harian karena sudah menyatu di gaji bulanan utuh
-        const regularMeal = 0;
         estimatedGross = baseAmount + overtimeWage + bonus4h + sundayMealOrBonus;
 
         breakdown = {
@@ -189,7 +192,7 @@ export default async function Page() {
         };
       }
 
-      // Ambil Slip Gaji Resmi Terakhir (Borongan vs Bulanan/Harian)
+      // Ambil Slip Gaji Resmi Terakhir
       if (workerData.pay_system === "BORONGAN" && opSlipRes.data && opSlipRes.data.length > 0) {
         const latestRunId = opSlipRes.data[0].run_id;
         const latestRun = opSlipRes.data[0].operator_payroll_runs;
@@ -221,12 +224,9 @@ export default async function Page() {
         const run = it.payroll_runs;
         const gr = n(it.base_amount) + n(it.meal_amount) + n(it.overtime_amount) + n(it.manual_overtime_amount) + n(it.overtime_bonus) + n(it.holiday_bonus);
 
-        // Ambil kasbon dari snapshot dulu
         let liveKasbonPerusahaan = n(it.kasbon_perusahaan_amount);
         let liveKasbonWarung = n(it.kasbon_warung_amount);
 
-        // SINKRONISASI REAL-TIME: Jika run BELUM DIBAYAR, override kasbon dari data live cash_advances
-        // Ini memastikan kasbon yang baru ditambahkan setelah payroll dibuat langsung terlihat worker
         const runPayStatus = getRunPaymentStatus(run);
         if (runPayStatus === "BELUM DIBAYAR") {
           const allAdv = advRes.data ?? [];
@@ -252,7 +252,7 @@ export default async function Page() {
           periodStart: run?.period_start || "",
           periodEnd: run?.period_end || "",
           paymentStatus: getRunPaymentStatus(run),
-          baseAmount: n(it.base_amount),
+          baseAmount: (workerData.pay_system === "BULANAN" && n(it.base_amount) === 0) ? n(workerData.monthly_salary) : n(it.base_amount),
           fullDays: Number(it.full_days || 0),
           halfDays: Number(it.half_days || 0),
           overtimeMinutes: Number(it.overtime_minutes || 0),
@@ -271,8 +271,7 @@ export default async function Page() {
         };
       }
 
-      // SINKRONISASI DATA UTAMA DENGAN SLIP RESMI HASIL KOREKSI ADMIN
-      // Mencegah munculnya "2 data kontradiktif" antara estimasi mentah absensi vs slip resmi
+      // SINKRONISASI DATA DENGAN SLIP RESMI
       if (officialSlip) {
         if (officialSlip.type === "BORONGAN") {
           estimatedGross = officialSlip.grossAmount;
@@ -290,15 +289,42 @@ export default async function Page() {
               totalValue: b.operatorValue,
             })),
           };
+        } else if (workerData.pay_system === "BULANAN" || officialSlip.type === "BULANAN") {
+          // KHUSUS BULANAN: Gaji pokok diambil dari master workers (monthly_salary)
+          // Jangan ditimpa Rp 0 dari base_amount slip mingguan!
+          const monthlySalary = n(workerData.monthly_salary);
+          const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
+          overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
+          workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
+
+          const totalOtWage = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
+          const slipMeal = officialSlip.mealAmount || 0;
+          const otBonus = officialSlip.overtimeBonus || 0;
+          const holidayBonus = officialSlip.holidayBonus || 0;
+
+          // Estimasi bruto bulanan: Gaji Pokok Bulanan Tetap + Uang Makan + Lembur Mingguan
+          estimatedGross = monthlySalary + totalOtWage + otBonus + holidayBonus + slipMeal;
+
+          breakdown = {
+            baseAmount: monthlySalary,
+            overtimeWage: totalOtWage,
+            bonus4h: otBonus,
+            sundayMealOrBonus: slipMeal || holidayBonus,
+            regularMeal: slipMeal,
+            totalGross: estimatedGross,
+            otMinutes: totalOtMins,
+            sundayCount: (slipMeal > 0 || holidayBonus > 0) ? Math.round((slipMeal || holidayBonus) / 50000) : 0,
+            count4h: otBonus > 0 ? Math.round(otBonus / 17500) : 0,
+          };
         } else {
-          // Bulanan atau Harian
+          // Harian
           estimatedGross = officialSlip.grossAmount;
           const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
           overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
           workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
 
           const totalOtWage = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
-          const sundayAmt = (officialSlip.type === "BULANAN" ? officialSlip.mealAmount : officialSlip.holidayBonus) || 0;
+          const sundayAmt = officialSlip.holidayBonus || 0;
 
           breakdown = {
             baseAmount: officialSlip.baseAmount || 0,
@@ -308,8 +334,8 @@ export default async function Page() {
             regularMeal: 0,
             totalGross: officialSlip.grossAmount,
             otMinutes: totalOtMins,
-            sundayCount: sundayAmt > 0 ? (officialSlip.type === "BULANAN" ? Math.round(sundayAmt / 50000) : Math.round(sundayAmt / 20000)) : 0,
-            count4h: (officialSlip.overtimeBonus || 0) > 0 ? (officialSlip.type === "BULANAN" ? Math.round((officialSlip.overtimeBonus || 0) / 17500) : Math.round((officialSlip.overtimeBonus || 0) / 5000)) : 0,
+            sundayCount: sundayAmt > 0 ? Math.round(sundayAmt / 20000) : 0,
+            count4h: (officialSlip.overtimeBonus || 0) > 0 ? Math.round((officialSlip.overtimeBonus || 0) / 5000) : 0,
           };
         }
       }
