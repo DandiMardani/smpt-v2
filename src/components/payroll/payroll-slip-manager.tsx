@@ -3,7 +3,7 @@
 import React, { useState, useTransition } from "react";
 import * as payrollActions from "@/lib/final/actions";
 
-// 1. Tipe Data Wajib yang Diimpor oleh page.tsx
+// 1. Tipe Data untuk page.tsx
 export interface WorkerInfo {
   id?: number;
   name?: string;
@@ -19,26 +19,32 @@ export interface WorkerInfo {
 
 export interface PayrollItemRow {
   id: number;
-  payroll_run_id?: number;
-  worker_id?: number;
+  payroll_run_id: number;
+  worker_id: number;
   worker_name_snapshot?: string;
   pay_system_snapshot?: string;
   department_snapshot?: string;
   worker_code_snapshot?: string;
-  full_days?: number | string;
-  half_days?: number | string;
-  base_amount?: number | string;
-  meal_amount?: number | string;
-  overtime_minutes?: number | string;
-  overtime_amount?: number | string;
-  manual_overtime_hours?: number | string;
-  manual_overtime_amount?: number | string;
-  overtime_bonus?: number | string;
-  holiday_bonus?: number | string;
-  kasbon_perusahaan_amount?: number | string;
-  kasbon_warung_amount?: number | string;
-  deduction_amount?: number | string;
-  net_amount?: number | string;
+  full_days?: number;
+  half_days?: number;
+  base_amount?: number;
+  meal_amount?: number;
+  overtime_minutes?: number;
+  overtime_amount?: number;
+  manual_overtime_hours?: number;
+  manual_overtime_amount?: number;
+  overtime_manual_hours?: number;
+  overtime_manual_amount?: number;
+  overtime_bonus?: number;
+  holiday_bonus?: number;
+  holiday_manual_amount?: number;
+  holiday_manual_hours?: number;
+  sunday_overtime_hours?: number;
+  sunday_overtime_amount?: number;
+  kasbon_perusahaan_amount?: number;
+  kasbon_warung_amount?: number;
+  deduction_amount?: number;
+  net_amount?: number;
   workers?: WorkerInfo;
   [key: string]: any;
 }
@@ -52,11 +58,11 @@ export interface PayrollRunRow {
   period_start?: string;
   period_end?: string;
   notes?: string;
-  total_gross?: number | string;
-  total_deduction?: number | string;
-  total_net?: number | string;
-  total_operator_value?: number | string;
-  total_submission_value?: number | string;
+  total_gross?: number;
+  total_deduction?: number;
+  total_net?: number;
+  total_operator_value?: number;
+  total_submission_value?: number;
   config_snapshot?: any;
   [key: string]: any;
 }
@@ -101,7 +107,7 @@ export interface Props {
 
 export type PayrollSlipManagerProps = Props;
 
-// 2. Ikon Native SVG Mandiri (Bebas Dependency)
+// 2. Ikon Native SVG Mandiri (Bebas Dependencies)
 const Users = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -794,7 +800,7 @@ export function PayrollSlipManager(props: Props) {
         </div>
       )}
 
-      {/* MODAL KOREKSI: CUKUP KETIK HARI / TAP TOMBOL */}
+      {/* MODAL KOREKSI: INPUT HARI / TAP PRESET */}
       {editingItem && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-5">
@@ -1087,7 +1093,7 @@ export function PayrollSlipManager(props: Props) {
                   type="number"
                   value={editOpSubPrice}
                   onChange={(e) => setEditOpSubPrice(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-bold text-sm rounded-xl px-3 py-2 mt-1"
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-black text-sm rounded-xl px-3 py-2 mt-1"
                 />
               </div>
 
