@@ -27,6 +27,22 @@ function isBulananWorker(w: WorkerItem): boolean {
   return BULANAN_NAMES.some((bn) => uname.includes(bn));
 }
 
+function isHarianWorker(w: WorkerItem): boolean {
+  if (isBulananWorker(w)) return false;
+
+  // Filter ketat: Keluarkan Operator Jahit dan Borongan
+  const pos = (w.position || "").toUpperCase();
+  const dept = (w.department || "").toUpperCase();
+  const pay = (w.pay_system || "").toUpperCase();
+
+  if (pos.includes("JAHIT") || dept.includes("JAHIT") || pay.includes("BORONGAN")) {
+    return false;
+  }
+
+  // Khusus Helper dan Pekerja Harian
+  return pos.includes("HELPER") || pay === "HARIAN" || dept.includes("HELPER");
+}
+
 const DAY_NAMES = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 
 type RowState = {
@@ -71,8 +87,9 @@ function QuickManualAttendanceSheet({
     return { dow, name, isSun, isSat, defaultIn, defaultOut };
   }, [date, shiftSettings]);
 
+  // Hanya ambil Bulanan dan Helper Harian murni
   const bulananWorkers = useMemo(() => workers.filter((w) => isBulananWorker(w)), [workers]);
-  const harianWorkers = useMemo(() => workers.filter((w) => !isBulananWorker(w)), [workers]);
+  const harianWorkers = useMemo(() => workers.filter((w) => isHarianWorker(w)), [workers]);
 
   const [rowStates, setRowStates] = useState<Record<number, RowState>>(() => {
     const init: Record<number, RowState> = {};
@@ -251,7 +268,7 @@ function QuickManualAttendanceSheet({
               : "bg-slate-100 text-slate-700 hover:bg-slate-200"
           }`}
         >
-          <span>👷‍♂️ Karyawan Harian ({harianWorkers.length} Orang)</span>
+          <span>👷‍♂️ Karyawan Harian ({harianWorkers.length} Helper)</span>
         </button>
       </div>
 
