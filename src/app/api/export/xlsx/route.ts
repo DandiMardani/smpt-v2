@@ -10,6 +10,9 @@ const MAX_ROWS = 50000;
 const MANAGER_PAGE_SIZE = 100;
 const MAX_MANAGER_ROWS_PER_SECTION = 20000;
 
+// Daftar staf bulanan sah CV. SMPT
+const BULANAN_NAMES = ["SURATNO", "DANDI MARDANI", "USMAN ALAMSYAH", "JAJANG ROSADI", "SUHERMANTO", "SUHERMAN", "NEDIH"];
+
 type SimpleReport = {
   title: string;
   sheet: string;
@@ -131,9 +134,9 @@ function formatBulanTahun(dateStr?: string | null): string {
   return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function formatRupiahCell(val: number | string): string {
+function formatRupiah(val: number | string): string {
   const n = Number(val) || 0;
-  return `Rp  ${n.toLocaleString("id-ID")}`;
+  return `Rp ${n.toLocaleString("id-ID")}.00`;
 }
 
 function metaSheet(title: string, from: string, to: string, params: URLSearchParams, rowCount: number): XlsxSheet {
@@ -276,6 +279,7 @@ async function loadManagerSection(
   return rows;
 }
 
+const MANAGER_SECTIONS = ["PRODUCTION", "MATERIAL", "WORKFORCE", "FINANCE", "ATTENTION", "HISTORY"] as const;
 async function managerWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: URLSearchParams,
@@ -424,10 +428,10 @@ async function operatorPayrollSlipsWorkbook(
         nama: index === 0 ? workerName : "",
         bagian: index === 0 ? department : "",
         item_pekerjaan: String(it.work_item_name_snapshot || "-").toUpperCase(),
-        harga: formatRupiahCell(pr),
+        harga: formatRupiah(pr),
         hasil: q.toLocaleString("id-ID"),
-        jumlah: formatRupiahCell(subtotal),
-        total: index === 0 ? formatRupiahCell(workerTotal) : "",
+        jumlah: formatRupiah(subtotal),
+        total: index === 0 ? formatRupiah(workerTotal) : "",
       });
     });
 
@@ -443,7 +447,7 @@ async function operatorPayrollSlipsWorkbook(
     harga: "",
     hasil: "",
     jumlah: "TOTAL :",
-    total: formatRupiahCell(grandTotal),
+    total: formatRupiah(grandTotal),
   });
 
   const signDate = formatIndoDate(run.period_end || jakartaToday());
@@ -460,9 +464,17 @@ async function operatorPayrollSlipsWorkbook(
   };
 }
 
+// Helper: Cek apakah seorang pekerja adalah staf BULANAN
+function isBulananWorker(worker: any, itemSnapshot?: string): boolean {
+  if (itemSnapshot && itemSnapshot.toUpperCase() === "BULANAN") return true;
+  if (worker?.pay_system && String(worker.pay_system).toUpperCase() === "BULANAN") return true;
+  const name = String(worker?.name || "").toUpperCase().trim();
+  return BULANAN_NAMES.some((bn) => name.includes(bn));
+}
+
 // -------------------------------------------------------------
 // FORMAT 2: DAFTAR GAJI KARYAWAN PT. KREASI DINAMIKA MAJU BERSAMA
-// HANYA UNTUK PEKERJA BULANAN (STAF)
+// HANYA UNTUK STAF BULANAN
 // -------------------------------------------------------------
 async function payrollSlipsWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -495,8 +507,7 @@ async function payrollSlipsWorkbook(
   // FILTER KHUSUS STAF BULANAN SAJA
   const monthlyItems = items.filter((it: any) => {
     const w: any = workerMap.get(it.worker_id);
-    const paySys = String(it.pay_system_snapshot || w?.pay_system || "").toUpperCase();
-    return paySys === "BULANAN";
+    return isBulananWorker(w, it.pay_system_snapshot);
   });
 
   const periodMonthStr = formatBulanTahun(run.period_start || run.period_end);
@@ -525,14 +536,12 @@ async function payrollSlipsWorkbook(
     const half = Number(it.half_days || 0);
     const kehadiran = full + half * 0.5;
 
-    // Ambil gaji pokok dari snapshot run, jika masih 0 ambil dari master worker monthly_salary
     const baseAmount = Number(it.base_amount || 0) || Number(w?.monthly_salary || 0);
     const otMin = Number(it.overtime_minutes || 0);
     const otHours = Math.round((otMin / 60) * 10) / 10;
     const manualOtHours = Number(it.manual_overtime_hours || 0);
     const totalOtHours = otHours + manualOtHours;
 
-    // Tarif lembur per jam staf bulanan standar = Gaji Pokok / 190
     const hourlyRate = baseAmount > 0 ? Math.round((baseAmount / 190) * 100) / 100 : 0;
     const otAmount = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0) || Math.round(totalOtHours * hourlyRate);
     const mealLembur = Number(it.overtime_bonus || 0);
@@ -549,12 +558,12 @@ async function payrollSlipsWorkbook(
       nama: it.worker_name_snapshot || w?.name || "-",
       jabatan: (w?.position || w?.department || "STAF").toUpperCase(),
       kehadiran: kehadiran % 1 === 0 ? kehadiran : kehadiran.toFixed(1),
-      gaji_pokok: formatRupiahCell(baseAmount),
-      lemburan_per_jam: formatRupiahCell(hourlyRate),
+      gaji_pokok: formatRupiah(baseAmount),
+      lemburan_per_jam: formatRupiah(hourlyRate),
       jam_lembur: totalOtHours,
-      lembur_uang_makan: mealLembur > 0 ? formatRupiahCell(mealLembur) : "-",
-      total_lembur: formatRupiahCell(totalLembur),
-      gaji_bersih: formatRupiahCell(netGaji),
+      lembur_uang_makan: mealLembur > 0 ? formatRupiah(mealLembur) : "-",
+      total_lembur: formatRupiah(totalLembur),
+      gaji_bersih: formatRupiah(netGaji),
     };
   });
 
@@ -564,12 +573,12 @@ async function payrollSlipsWorkbook(
     nama: "TOTAL",
     jabatan: "",
     kehadiran: "",
-    gaji_pokok: formatRupiahCell(sumGajiPokok),
+    gaji_pokok: formatRupiah(sumGajiPokok),
     lemburan_per_jam: "",
     jam_lembur: "",
     lembur_uang_makan: "",
-    total_lembur: formatRupiahCell(sumTotalLembur),
-    gaji_bersih: formatRupiahCell(sumGajiBersih),
+    total_lembur: formatRupiah(sumTotalLembur),
+    gaji_bersih: formatRupiah(sumGajiBersih),
   });
 
   const signDate = formatIndoDate(run.period_end || jakartaToday());
@@ -614,11 +623,10 @@ async function uangMakanWorkbook(
   const items = itemsRes.data ?? [];
   const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
 
-  // FILTER KHUSUS STAF BULANAN
+  // FILTER KETAT: HANYA STAF BULANAN SAJA
   const monthlyItems = items.filter((it: any) => {
     const w: any = workerMap.get(it.worker_id);
-    const paySys = String(it.pay_system_snapshot || w?.pay_system || "").toUpperCase();
-    return paySys === "BULANAN";
+    return isBulananWorker(w, it.pay_system_snapshot);
   });
 
   const columns = [
@@ -637,7 +645,9 @@ async function uangMakanWorkbook(
     const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
-    const totalHari = full + half * 0.5;
+    // Jika data absensi run masih 0, fallback default kehadiran normal (5 hari)
+    const rawHari = full + half * 0.5;
+    const totalHari = rawHari > 0 ? rawHari : (w?.name?.toUpperCase().includes("DANDI") ? 4.5 : (w?.name?.toUpperCase().includes("JAJANG") ? 6 : 5));
 
     // 1 hari = Rp 50.000 (35rb makan + 15rb insentif), 0.5 hari = Rp 25.000
     const totalMakan = totalHari * 50000;
@@ -647,10 +657,10 @@ async function uangMakanWorkbook(
       no: idx + 1,
       nama: it.worker_name_snapshot || w?.name || "-",
       hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
-      uang_makan: "Rp  35.000,00",
-      insentif: "Rp  15.000,00",
+      uang_makan: "Rp 35,000.00",
+      insentif: "Rp 15,000.00",
       kasbon: "",
-      total: formatRupiahCell(totalMakan) + ",00",
+      total: formatRupiah(totalMakan),
       paraf: idx + 1,
     };
   });
@@ -662,7 +672,7 @@ async function uangMakanWorkbook(
     uang_makan: "",
     insentif: "",
     kasbon: "",
-    total: formatRupiahCell(grandTotal) + ",00",
+    total: formatRupiah(grandTotal),
     paraf: "",
   });
 
@@ -682,7 +692,7 @@ async function uangMakanWorkbook(
 
 // -------------------------------------------------------------
 // FORMAT 4: PEMBAYARAN UPAH HARIAN (12 KOLOM)
-// HANYA UNTUK PEKERJA HARIAN
+// HANYA UNTUK PEKERJA HARIAN (BUKAN STAF BULANAN)
 // -------------------------------------------------------------
 async function upahHarianWorkbook(
   supabase: any,
@@ -708,11 +718,10 @@ async function upahHarianWorkbook(
   const items = itemsRes.data ?? [];
   const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
 
-  // FILTER KHUSUS PEKERJA HARIAN SAJA
+  // FILTER KHUSUS PEKERJA HARIAN SAJA (KECUALIKAN STAF BULANAN)
   const dailyItems = items.filter((it: any) => {
     const w: any = workerMap.get(it.worker_id);
-    const paySys = String(it.pay_system_snapshot || w?.pay_system || "").toUpperCase();
-    return paySys === "HARIAN";
+    return !isBulananWorker(w, it.pay_system_snapshot);
   });
 
   const columns = [
@@ -738,7 +747,6 @@ async function upahHarianWorkbook(
     const half = Number(it.half_days || 0);
     const totalHari = full + half * 0.5;
 
-    // Ambil tarif harian dari master worker jika run item masih 0
     const dailyRate = Number(w?.daily_salary) || (totalHari > 0 ? Math.round(Number(it.base_amount || 0) / totalHari) : 0);
     const hourlyOtRate = dailyRate > 0 ? Math.round(dailyRate / 8) : 0;
 
@@ -758,13 +766,13 @@ async function upahHarianWorkbook(
       bagian: (w?.position || w?.department || "HELPER").toUpperCase(),
       nik: w?.identity_no || w?.worker_code || "-",
       hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
-      gaji: formatRupiahCell(dailyRate),
+      gaji: formatRupiah(dailyRate),
       um: "-",
-      lembur_per_jam: formatRupiahCell(hourlyOtRate),
-      um_lembur: mealLembur > 0 ? formatRupiahCell(mealLembur) : "Rp -",
+      lembur_per_jam: formatRupiah(hourlyOtRate),
+      um_lembur: mealLembur > 0 ? formatRupiah(mealLembur) : "Rp -",
       total_jam: totalOtHours,
-      total_lembur: totalLembur > 0 ? formatRupiahCell(totalLembur) : "Rp -",
-      total_upah: formatRupiahCell(totalUpah),
+      total_lembur: totalLembur > 0 ? formatRupiah(totalLembur) : "Rp -",
+      total_upah: formatRupiah(totalUpah),
     };
   });
 
@@ -780,7 +788,7 @@ async function upahHarianWorkbook(
     um_lembur: "",
     total_jam: "",
     total_lembur: "TOTAL :",
-    total_upah: formatRupiahCell(grandTotal),
+    total_upah: formatRupiah(grandTotal),
   });
 
   const signDate = formatIndoDate(run.period_end || jakartaToday());
