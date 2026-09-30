@@ -2,9 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
-async function compressImage(file: File, maxWidth = 1000, quality = 0.75): Promise<File> {
-  if (!file.type.startsWith("image/")) return file;
-
+async function compressImageToBase64(file: File, maxWidth = 1000, quality = 0.75): Promise<{ file: File; base64: string }> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -27,22 +25,27 @@ async function compressImage(file: File, maxWidth = 1000, quality = 0.75): Promi
         canvas.height = height;
 
         const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve(file);
+        if (!ctx) {
+          return resolve({ file, base64: event.target?.result as string });
+        }
 
         ctx.drawImage(img, 0, 0, width, height);
+        const base64 = canvas.toDataURL("image/jpeg", quality);
+
         canvas.toBlob(
           (blob) => {
-            if (!blob) return resolve(file);
+            if (!blob) return resolve({ file, base64 });
             const cleanName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
-            resolve(new File([blob], cleanName, { type: "image/jpeg", lastModified: Date.now() }));
+            const compFile = new File([blob], cleanName, { type: "image/jpeg", lastModified: Date.now() });
+            resolve({ file: compFile, base64 });
           },
           "image/jpeg",
           quality
         );
       };
-      img.onerror = () => resolve(file);
+      img.onerror = () => resolve({ file, base64: event.target?.result as string });
     };
-    reader.onerror = () => resolve(file);
+    reader.onerror = () => resolve({ file, base64: "" });
   });
 }
 
@@ -51,6 +54,7 @@ export function NotaUploadInput() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [base64Data, setBase64Data] = useState<string>("");
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState("");
   const [isCompressing, setIsCompressing] = useState(false);
@@ -71,16 +75,19 @@ export function NotaUploadInput() {
     setIsCompressing(true);
 
     try {
-      const compressedFile = await compressImage(rawFile, 1000, 0.75);
+      const { file: compressedFile, base64 } = await compressImageToBase64(rawFile, 1000, 0.75);
 
       if (typeof DataTransfer !== "undefined") {
-        const dt = new DataTransfer();
-        dt.items.add(compressedFile);
-        e.target.files = dt.files;
+        try {
+          const dt = new DataTransfer();
+          dt.items.add(compressedFile);
+          e.target.files = dt.files;
+        } catch {}
       }
 
       if (previewUrl && previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(URL.createObjectURL(compressedFile));
+      setPreviewUrl(base64 || URL.createObjectURL(compressedFile));
+      setBase64Data(base64);
       setFileName(compressedFile.name);
       setFileSize(`${Math.round(compressedFile.size / 1024)} KB`);
     } catch {
@@ -97,12 +104,17 @@ export function NotaUploadInput() {
     if (cameraInputRef.current) cameraInputRef.current.value = "";
     if (galleryInputRef.current) galleryInputRef.current.value = "";
     setPreviewUrl(null);
+    setBase64Data("");
     setFileName("");
     setFileSize("");
   };
 
   return (
     <div className="space-y-1.5">
+      {/* Input hidden untuk mengirim data base64 secara langsung */}
+      <input type="hidden" name="receipt_base64" value={base64Data} />
+
+      {/* Input file kamera dan galeri diseragamkan memakai nama receipt_file */}
       <input
         ref={cameraInputRef}
         type="file"
@@ -115,7 +127,7 @@ export function NotaUploadInput() {
       <input
         ref={galleryInputRef}
         type="file"
-        name="receipt_file_gallery"
+        name="receipt_file"
         accept="image/*"
         className="hidden"
         onChange={(e) => handleFileChange(e, "gallery")}
@@ -132,14 +144,14 @@ export function NotaUploadInput() {
           <div className="flex-1 min-w-0 text-left">
             <p className="text-xs font-bold text-slate-800 truncate">{fileName}</p>
             <p className="text-[11px] text-emerald-700 font-semibold">
-              ✓ Terkompresi ({fileSize})
+              ✓ Siap Disimpan ({fileSize})
             </p>
             <button
               type="button"
               onClick={handleReset}
               className="text-[11px] text-rose-600 hover:underline font-semibold"
             >
-              Hapus / Foto Ulang
+              Hapus / Ganti Foto
             </button>
           </div>
         </div>
@@ -161,6 +173,9 @@ export function NotaUploadInput() {
           >
             📁 Galeri
           </button>
+          {isCompressing && (
+            <span className="text-[11px] text-slate-400 animate-pulse">Memproses foto...</span>
+          )}
         </div>
       )}
     </div>
