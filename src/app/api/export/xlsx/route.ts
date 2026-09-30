@@ -65,20 +65,25 @@ const SIMPLE_REPORTS: Record<string, SimpleReport> = {
 function jakartaToday(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
+
 function validDate(value: string | null, fallback: string): string {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
 }
+
 function positiveId(value: string | null): number | null {
   const n = Number(value);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
+
 function safeStatus(value: string | null): string | null {
   const v = String(value ?? "").trim();
   return v && v.length <= 50 ? v : null;
 }
+
 function fileSlug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "export";
 }
+
 function label(key: string): string {
   const aliases: Record<string, string> = {
     id: "ID", project_id: "Project ID", product_id: "Produk ID", material_id: "Material ID", worker_id: "Pekerja ID",
@@ -89,6 +94,7 @@ function label(key: string): string {
   if (aliases[key]) return aliases[key];
   return key.split("_").map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(" ");
 }
+
 function columnsFromRows(rows: Array<Record<string, unknown>>) {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -97,6 +103,34 @@ function columnsFromRows(rows: Array<Record<string, unknown>>) {
   }
   return (keys.length ? keys : ["info"]).map((key) => ({ key, label: label(key) }));
 }
+
+function formatIndoDate(dateStr?: string | null): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return String(dateStr);
+  const months = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+  ];
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function formatBulanTahun(dateStr?: string | null): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return String(dateStr);
+  const months = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+  ];
+  return `${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function formatRupiahCell(val: number | string): string {
+  const n = Number(val) || 0;
+  return `Rp ${n.toLocaleString("id-ID")}.00`;
+}
+
 function metaSheet(title: string, from: string, to: string, params: URLSearchParams, rowCount: number): XlsxSheet {
   const wsRaw = String(params.get("ws") ?? "").trim().toUpperCase();
   const wsLabel = wsRaw === "HAJI" ? "Haji" : wsRaw === "REGULER" ? "Reguler" : "Semua";
@@ -141,11 +175,9 @@ async function loadSimpleReport(
   const worker = positiveId(params.get("worker"));
   const status = safeStatus(params.get("status"));
 
-  // workspace filter: hanya berlaku jika tabel punya projectColumn
   const wsRaw = String(params.get("ws") ?? "").trim().toUpperCase();
   const ws = wsRaw === "HAJI" ? "HAJI" : wsRaw === "REGULER" ? "REGULER" : null;
 
-  // Jika ada filter workspace dan tabel punya projectColumn, fetch project IDs dulu
   let wsProjectIds: number[] | null = null;
   if (ws && report.projectColumn) {
     const { data: projData } = await (supabase as any)
@@ -160,12 +192,11 @@ async function loadSimpleReport(
           if (!cat) {
             const txt = `${p.name ?? ""} ${p.project_code ?? ""}`.toLowerCase();
             if (ws === "HAJI") return txt.includes("haji") || txt.includes("embarkasi") || txt.includes("hajj") || txt.includes("kemenag");
-            return true; // REGULER adalah fallback
+            return true;
           }
           return false;
         })
         .map((p) => p.id);
-      // Jika tidak ada proyek cocok, kembalikan kosong
       if (wsProjectIds.length === 0) return [];
     }
   }
@@ -278,241 +309,9 @@ async function laporanWorkbook(
   ];
 }
 
-async function payrollSlipsWorkbook(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  params: URLSearchParams
-): Promise<{ sheets: XlsxSheet[]; filename: string }> {
-  const runId = positiveId(params.get("run_id"));
-
-  let runQuery = supabase.from("payroll_runs").select("*");
-  if (runId) {
-    runQuery = runQuery.eq("id", runId);
-  } else {
-    runQuery = runQuery.order("id", { ascending: false }).limit(1);
-  }
-
-  const { data: runData, error: runError } = await runQuery.single();
-  if (runError || !runData) {
-    throw new Error("Data Payroll Run tidak ditemukan.");
-  }
-  const run = runData as {
-    id: number;
-    payroll_code: string;
-    payroll_type: string;
-    period_start: string;
-    period_end: string;
-    status: string;
-    total_gross: number;
-    total_deduction: number;
-    total_net: number;
-    notes?: string | null;
-    config_snapshot?: any;
-  };
-
-  const cfg = run.config_snapshot || {};
-  const isPaid = cfg.payment_status === "SUDAH_DIBAYAR" || run.status === "PAID";
-  const runPaymentStatus = isPaid ? "SUDAH DIBAYAR" : "BELUM DIBAYAR";
-
-  const [itemsRes, workersRes] = await Promise.all([
-    supabase
-      .from("payroll_run_items")
-      .select("*")
-      .eq("payroll_run_id", run.id)
-      .order("id", { ascending: true }),
-    supabase
-      .from("workers")
-      .select("id, worker_code, name, department, position, identity_no, phone, pay_system"),
-  ]);
-
-  if (itemsRes.error) throw itemsRes.error;
-  const items = itemsRes.data ?? [];
-  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
-
-  const columns = [
-    { key: "no", label: "No" },
-    { key: "worker_code", label: "Kode Pekerja" },
-    { key: "worker_name", label: "Nama Pekerja" },
-    { key: "department", label: "Bagian / Dept" },
-    { key: "position", label: "Jabatan" },
-    { key: "pay_system", label: "Sistem Upah" },
-    { key: "identity_no", label: "NIK / KTP" },
-    { key: "phone", label: "No. HP / WA" },
-    { key: "full_days", label: "Hadir Full (Hari)" },
-    { key: "half_days", label: "Hadir Half (Hari)" },
-    { key: "ot_hours", label: "Jam Lembur Sistem" },
-    { key: "manual_ot_hours", label: "Jam Lembur Manual" },
-    { key: "total_ot_hours", label: "Total Jam Lembur" },
-    { key: "base_amount", label: "Gaji / Upah Pokok (Rp)" },
-    { key: "meal_amount", label: "Uang Makan Minggu (Rp)" },
-    { key: "overtime_amount", label: "Upah Lembur Sistem (Rp)" },
-    { key: "manual_overtime_amount", label: "Upah Lembur Manual (Rp)" },
-    { key: "overtime_bonus", label: "Bonus Lembur 4H (Rp)" },
-    { key: "holiday_bonus", label: "Tambahan Minggu (Rp)" },
-    { key: "gross_amount", label: "Total Bruto (Rp)" },
-    { key: "kasbon_perusahaan", label: "Kasbon Kantor (Rp)" },
-    { key: "kasbon_warung", label: "Kasbon Warung (Rp)" },
-    { key: "deduction_amount", label: "Total Potongan (Rp)" },
-    { key: "net_amount", label: "Gaji Bersih / Net (Rp)" },
-    { key: "payment_status", label: "Status Pembayaran" },
-  ];
-
-  let sumFull = 0;
-  let sumHalf = 0;
-  let sumOtHours = 0;
-  let sumManualOtHours = 0;
-  let sumTotalOtHours = 0;
-  let sumBase = 0;
-  let sumMeal = 0;
-  let sumOtAmount = 0;
-  let sumManualOtAmount = 0;
-  let sumOtBonus = 0;
-  let sumHolidayBonus = 0;
-  let sumGross = 0;
-  let sumKasbonP = 0;
-  let sumKasbonW = 0;
-  let sumDeduction = 0;
-  let sumNet = 0;
-
-  const rows: Array<Record<string, unknown>> = items.map((item: any, idx: number) => {
-    const w = workerMap.get(item.worker_id);
-    const full = Number(item.full_days || 0);
-    const half = Number(item.half_days || 0);
-    const otMin = Number(item.overtime_minutes || 0);
-    const otHours = Math.round((otMin / 60) * 10) / 10;
-    const manualOtHours = Number(item.manual_overtime_hours || 0);
-    const totalOtHours = Math.round((otHours + manualOtHours) * 10) / 10;
-
-    const base = Number(item.base_amount || 0);
-    const meal = Number(item.meal_amount || 0);
-    const otAmount = Number(item.overtime_amount || 0);
-    const manualOtAmount = Number(item.manual_overtime_amount || 0);
-    const otBonus = Number(item.overtime_bonus || 0);
-    const holidayBonus = Number(item.holiday_bonus || 0) + Number(item.holiday_manual_amount || 0);
-    const gross = Math.round((base + meal + otAmount + manualOtAmount + otBonus + holidayBonus) * 100) / 100;
-
-    const kasbonP = Number(item.kasbon_perusahaan_amount || 0);
-    const kasbonW = Number(item.kasbon_warung_amount || 0);
-    const deduction = Number(item.deduction_amount || (kasbonP + kasbonW));
-    const net = Number(item.net_amount || Math.max(0, gross - deduction));
-
-    sumFull += full;
-    sumHalf += half;
-    sumOtHours += otHours;
-    sumManualOtHours += manualOtHours;
-    sumTotalOtHours += totalOtHours;
-    sumBase += base;
-    sumMeal += meal;
-    sumOtAmount += otAmount;
-    sumManualOtAmount += manualOtAmount;
-    sumOtBonus += otBonus;
-    sumHolidayBonus += holidayBonus;
-    sumGross += gross;
-    sumKasbonP += kasbonP;
-    sumKasbonW += kasbonW;
-    sumDeduction += deduction;
-    sumNet += net;
-
-    return {
-      no: idx + 1,
-      worker_code: w?.worker_code || `PKR-${item.worker_id}`,
-      worker_name: item.worker_name_snapshot,
-      department: w?.department || "-",
-      position: w?.position || "-",
-      pay_system: item.pay_system_snapshot,
-      identity_no: w?.identity_no || "-",
-      phone: w?.phone || "-",
-      full_days: full,
-      half_days: half,
-      ot_hours: otHours,
-      manual_ot_hours: manualOtHours,
-      total_ot_hours: totalOtHours,
-      base_amount: base,
-      meal_amount: meal,
-      overtime_amount: otAmount,
-      manual_overtime_amount: manualOtAmount,
-      overtime_bonus: otBonus,
-      holiday_bonus: holidayBonus,
-      gross_amount: gross,
-      kasbon_perusahaan: kasbonP,
-      kasbon_warung: kasbonW,
-      deduction_amount: deduction,
-      net_amount: net,
-      payment_status: runPaymentStatus,
-    };
-  });
-
-  // Tambahkan baris total rekap di akhir sheet 1
-  rows.push({
-    no: "TOTAL",
-    worker_code: "",
-    worker_name: `${items.length} Pekerja`,
-    department: "",
-    position: "",
-    pay_system: "",
-    identity_no: "",
-    phone: "",
-    full_days: sumFull,
-    half_days: sumHalf,
-    ot_hours: Math.round(sumOtHours * 10) / 10,
-    manual_ot_hours: Math.round(sumManualOtHours * 10) / 10,
-    total_ot_hours: Math.round(sumTotalOtHours * 10) / 10,
-    base_amount: Math.round(sumBase * 100) / 100,
-    meal_amount: Math.round(sumMeal * 100) / 100,
-    overtime_amount: Math.round(sumOtAmount * 100) / 100,
-    manual_overtime_amount: Math.round(sumManualOtAmount * 100) / 100,
-    overtime_bonus: Math.round(sumOtBonus * 100) / 100,
-    holiday_bonus: Math.round(sumHolidayBonus * 100) / 100,
-    gross_amount: Math.round(sumGross * 100) / 100,
-    kasbon_perusahaan: Math.round(sumKasbonP * 100) / 100,
-    kasbon_warung: Math.round(sumKasbonW * 100) / 100,
-    deduction_amount: Math.round(sumDeduction * 100) / 100,
-    net_amount: Math.round(sumNet * 100) / 100,
-    payment_status: runPaymentStatus,
-  });
-
-  const summarySheet: XlsxSheet = {
-    name: "Ringkasan Payroll",
-    columns: [
-      { key: "field", label: "Parameter" },
-      { key: "value", label: "Nilai" },
-    ],
-    rows: [
-      { field: "Kode Payroll", value: run.payroll_code },
-      { field: "Jenis Payroll", value: run.payroll_type === "MINGGUAN" ? "Karyawan Harian (Mingguan)" : "Karyawan Bulanan" },
-      { field: "Periode Mulai", value: run.period_start },
-      { field: "Periode Selesai", value: run.period_end },
-      { field: "Status Payout", value: run.status },
-      { field: "Status Pembayaran", value: runPaymentStatus },
-      { field: "Total Pekerja", value: items.length },
-      { field: "Total Gaji / Upah Pokok", value: Math.round(sumBase * 100) / 100 },
-      { field: "Total Uang Makan", value: Math.round(sumMeal * 100) / 100 },
-      { field: "Total Upah Lembur (Sistem + Manual)", value: Math.round((sumOtAmount + sumManualOtAmount) * 100) / 100 },
-      { field: "Total Bonus Lembur 4H", value: Math.round(sumOtBonus * 100) / 100 },
-      { field: "Total Insentif Minggu", value: Math.round(sumHolidayBonus * 100) / 100 },
-      { field: "TOTAL PENDAPATAN BRUTO", value: Math.round(sumGross * 100) / 100 },
-      { field: "Total Potongan Kasbon Perusahaan", value: Math.round(sumKasbonP * 100) / 100 },
-      { field: "Total Potongan Kasbon Warung", value: Math.round(sumKasbonW * 100) / 100 },
-      { field: "TOTAL SELURUH POTONGAN", value: Math.round(sumDeduction * 100) / 100 },
-      { field: "TOTAL GAJI BERSIH (NET DIBAYARKAN)", value: Math.round(sumNet * 100) / 100 },
-      { field: "Catatan", value: run.notes || "-" },
-      { field: "Waktu Export", value: new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) },
-    ],
-  };
-
-  const mainSheet: XlsxSheet = {
-    name: "Rekap Slip Gaji",
-    columns,
-    rows,
-  };
-
-  const filename = `SMPT-Slip-Gaji-${run.payroll_code}-${run.payroll_type}-${run.period_start}-${run.period_end}.xlsx`;
-
-  return {
-    sheets: [mainSheet, summarySheet],
-    filename,
-  };
-}
-
+// -------------------------------------------------------------
+// LAPORAN 1: BORONGAN OPERATOR FORMAT CV. SMPT (SARIAYU MOM & BABY)
+// -------------------------------------------------------------
 async function operatorPayrollSlipsWorkbook(
   supabase: any,
   params: URLSearchParams,
@@ -537,6 +336,7 @@ async function operatorPayrollSlipsWorkbook(
       .from("operator_payroll_items")
       .select("*")
       .eq("run_id", run.id)
+      .order("worker_id", { ascending: true })
       .order("id", { ascending: true }),
     supabase
       .from("workers")
@@ -547,105 +347,424 @@ async function operatorPayrollSlipsWorkbook(
   const items = itemsRes.data ?? [];
   const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
 
-  const notesStr = String(run.notes || "");
-  const isPaid = /\[STATUS:\s*SUDAH_DIBAYAR\]/i.test(notesStr) || run.status === "PAID";
-  const paymentStatus = isPaid ? "SUDAH DIBAYAR" : "BELUM DIBAYAR";
+  let projectName = "SARIAYU MOM & BABY";
+  if (run.notes && !run.notes.includes("[STATUS:")) {
+    projectName = run.notes.split("\n")[0].trim().toUpperCase() || projectName;
+  }
 
   const columns = [
-    { key: "no", label: "No" },
-    { key: "worker_code", label: "Kode Pekerja" },
-    { key: "worker_name", label: "Nama Pekerja" },
-    { key: "department", label: "Bagian / Dept" },
-    { key: "pay_system", label: "Sistem Upah" },
-    { key: "work_item_name", label: "Item Pekerjaan" },
-    { key: "qty_approved", label: "Qty Sah (Approved)" },
-    { key: "operator_price", label: "Tarif Borongan (Rp)" },
-    { key: "operator_value", label: "Total Upah Borongan (Rp)" },
-    { key: "submission_price", label: "Tarif Pengajuan (Rp)" },
-    { key: "submission_value", label: "Nilai Pengajuan (Rp)" },
-    { key: "payment_status", label: "Status Pembayaran" },
+    { key: "kode_op", label: "KODE OP", width: 14 },
+    { key: "kode", label: "KODE", width: 12 },
+    { key: "nama", label: "Nama", width: 22 },
+    { key: "bagian", label: "BAGIAN", width: 16 },
+    { key: "item_pekerjaan", label: "ITEM PEKERJAAN", width: 34 },
+    { key: "harga", label: "HARGA", width: 16 },
+    { key: "hasil", label: "HASIL", width: 12 },
+    { key: "jumlah", label: "JUMLAH", width: 18 },
+    { key: "total", label: "TOTAL", width: 20 },
   ];
 
-  let sumQty = 0;
-  let sumOpVal = 0;
-  let sumSubVal = 0;
+  const groupedByWorker = new Map<number, Array<any>>();
+  items.forEach((it: any) => {
+    const list = groupedByWorker.get(it.worker_id) || [];
+    list.push(it);
+    groupedByWorker.set(it.worker_id, list);
+  });
 
-  const rows: Array<Record<string, unknown>> = items.map((item: any, idx: number) => {
-    const w = workerMap.get(item.worker_id);
-    const qty = Number(item.qty_approved || 0);
-    const opPrice = Number(item.operator_price_snapshot || 0);
-    const opVal = Number(item.operator_value || (qty * opPrice));
-    const subPrice = Number(item.submission_price_snapshot || 0);
-    const subVal = Number(item.submission_value || (qty * subPrice));
+  const rows: Array<Record<string, any>> = [];
+  let grandTotal = 0;
+  let opSeq = 1;
 
-    sumQty += qty;
-    sumOpVal += opVal;
-    sumSubVal += subVal;
+  groupedByWorker.forEach((workerItems, wId) => {
+    const w = workerMap.get(wId);
+    const workerTotal = workerItems.reduce((acc, it) => {
+      const q = Number(it.qty_approved || 0);
+      const pr = Number(it.operator_price_snapshot || 0);
+      return acc + (Number(it.operator_value) || (q * pr));
+    }, 0);
+    grandTotal += workerTotal;
+
+    const opCode = w?.worker_code ? (w.worker_code.startsWith("OP") ? w.worker_code : `OP${String(opSeq).padStart(3, "0")}`) : `OP${String(opSeq).padStart(3, "0")}`;
+    const workerName = (w?.name || workerItems[0]?.worker_name_snapshot || "-").toUpperCase();
+    const department = (w?.department || w?.position || "OPERATOR").toUpperCase();
+
+    workerItems.forEach((it: any, index: number) => {
+      const q = Number(it.qty_approved || 0);
+      const pr = Number(it.operator_price_snapshot || 0);
+      const subtotal = Number(it.operator_value) || (q * pr);
+      const workCode = it.work_item_code_snapshot || `T${String(it.work_item_id || it.id).padStart(3, "0")}`;
+
+      rows.push({
+        kode_op: index === 0 ? opCode : "",
+        kode: workCode,
+        nama: index === 0 ? workerName : "",
+        bagian: index === 0 ? department : "",
+        item_pekerjaan: String(it.work_item_name_snapshot || "-").toUpperCase(),
+        harga: formatRupiahCell(pr),
+        hasil: q.toLocaleString("id-ID"),
+        jumlah: formatRupiahCell(subtotal),
+        total: index === 0 ? formatRupiahCell(workerTotal) : "",
+      });
+    });
+
+    opSeq += 1;
+  });
+
+  rows.push({
+    kode_op: "",
+    kode: "",
+    nama: "",
+    bagian: "",
+    item_pekerjaan: "",
+    harga: "",
+    hasil: "",
+    jumlah: "TOTAL :",
+    total: formatRupiahCell(grandTotal),
+  });
+
+  const signDate = formatIndoDate(run.period_end || jakartaToday());
+  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
+  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: `Tangerang Selatan, ${signDate}` });
+  rows.push({ kode_op: "", kode: "Disetujui,", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "Yang Mengajukan,", total: "" });
+  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
+  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
+  rows.push({ kode_op: "", kode: "Bony Daty", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "Dandi Mardani", total: "" });
+
+  const mainSheet: XlsxSheet = {
+    name: "Pengajuan Borongan",
+    columns,
+    rows,
+    headerColor: "1E293B",
+  };
+
+  const filename = `SMPT-Pengajuan-Borongan-${fileSlug(projectName)}-${run.period_start}-${run.period_end}.xlsx`;
+  return { sheets: [mainSheet], filename };
+}
+
+// -------------------------------------------------------------
+// LAPORAN 2: DAFTAR GAJI KARYAWAN PT. KREASI DINAMIKA MAJU BERSAMA
+// -------------------------------------------------------------
+async function payrollSlipsWorkbook(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: URLSearchParams
+): Promise<{ sheets: XlsxSheet[]; filename: string }> {
+  const runId = positiveId(params.get("run_id"));
+
+  let runQuery = supabase.from("payroll_runs").select("*");
+  if (runId) {
+    runQuery = runQuery.eq("id", runId);
+  } else {
+    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+  }
+
+  const { data: runData, error: runError } = await runQuery.single();
+  if (runError || !runData) {
+    throw new Error("Data Payroll Run tidak ditemukan.");
+  }
+  const run = runData as any;
+
+  const [itemsRes, workersRes] = await Promise.all([
+    supabase
+      .from("payroll_run_items")
+      .select("*")
+      .eq("payroll_run_id", run.id)
+      .order("id", { ascending: true }),
+    supabase
+      .from("workers")
+      .select("id, worker_code, name, department, position, identity_no, phone, pay_system, monthly_salary, daily_salary"),
+  ]);
+
+  if (itemsRes.error) throw itemsRes.error;
+  const items = itemsRes.data ?? [];
+  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
+
+  const periodMonthStr = formatBulanTahun(run.period_start || run.period_end);
+
+  const columns = [
+    { key: "no", label: "No", width: 6 },
+    { key: "nik", label: "NIK", width: 12 },
+    { key: "nama", label: "Nama Karyawan", width: 22 },
+    { key: "jabatan", label: "Jabatan", width: 18 },
+    { key: "kehadiran", label: "KEHADIRAN", width: 14 },
+    { key: "gaji_pokok", label: "Gaji Pokok", width: 18 },
+    { key: "lemburan_per_jam", label: "Lemburan / Jam", width: 18 },
+    { key: "jam_lembur", label: "Jam Lembur", width: 12 },
+    { key: "lembur_uang_makan", label: "Lembur Uang Makan", width: 18 },
+    { key: "total_lembur", label: "Total Lembur", width: 18 },
+    { key: "gaji_bersih", label: "Gaji Bersih (Bulan ini)", width: 22 },
+  ];
+
+  let sumGajiPokok = 0;
+  let sumTotalLembur = 0;
+  let sumGajiBersih = 0;
+
+  const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
+    const w = workerMap.get(it.worker_id);
+    const full = Number(it.full_days || 0);
+    const half = Number(it.half_days || 0);
+    const kehadiran = full + (half * 0.5);
+
+    const baseAmount = Number(it.base_amount || 0);
+    const otMin = Number(it.overtime_minutes || 0);
+    const otHours = Math.round((otMin / 60) * 10) / 10;
+    const manualOtHours = Number(it.manual_overtime_hours || 0);
+    const totalOtHours = otHours + manualOtHours;
+
+    const hourlyRate = baseAmount > 0 ? Math.round((baseAmount / 190) * 100) / 100 : 0;
+    const otAmount = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
+    const mealLembur = Number(it.overtime_bonus || 0);
+    const totalLembur = otAmount + mealLembur;
+    const netGaji = Number(it.net_amount || 0);
+
+    sumGajiPokok += baseAmount;
+    sumTotalLembur += totalLembur;
+    sumGajiBersih += netGaji;
 
     return {
       no: idx + 1,
-      worker_code: w?.worker_code || `PKR-${item.worker_id}`,
-      worker_name: item.worker_name_snapshot,
-      department: w?.department || "PRODUKSI",
-      pay_system: "BORONGAN",
-      work_item_name: item.work_item_name_snapshot,
-      qty_approved: qty,
-      operator_price: opPrice,
-      operator_value: opVal,
-      submission_price: subPrice,
-      submission_value: subVal,
-      payment_status: paymentStatus,
+      nik: w?.worker_code || `K0${idx + 1}`,
+      nama: it.worker_name_snapshot,
+      jabatan: (w?.position || w?.department || "STAF").toUpperCase(),
+      kehadiran: kehadiran % 1 === 0 ? kehadiran : kehadiran.toFixed(1),
+      gaji_pokok: formatRupiahCell(baseAmount),
+      lemburan_per_jam: formatRupiahCell(hourlyRate),
+      jam_lembur: totalOtHours,
+      lembur_uang_makan: mealLembur > 0 ? formatRupiahCell(mealLembur) : "-",
+      total_lembur: formatRupiahCell(totalLembur),
+      gaji_bersih: formatRupiahCell(netGaji),
     };
   });
 
   rows.push({
-    no: "TOTAL",
-    worker_code: "",
-    worker_name: `${items.length} Item Pekerjaan`,
-    department: "",
-    pay_system: "",
-    work_item_name: "",
-    qty_approved: Math.round(sumQty * 100) / 100,
-    operator_price: "",
-    operator_value: Math.round(sumOpVal * 100) / 100,
-    submission_price: "",
-    submission_value: Math.round(sumSubVal * 100) / 100,
-    payment_status: paymentStatus,
+    no: "",
+    nik: "",
+    nama: "TOTAL",
+    jabatan: "",
+    kehadiran: "",
+    gaji_pokok: formatRupiahCell(sumGajiPokok),
+    lemburan_per_jam: "",
+    jam_lembur: "",
+    lembur_uang_makan: "",
+    total_lembur: formatRupiahCell(sumTotalLembur),
+    gaji_bersih: formatRupiahCell(sumGajiBersih),
   });
 
-  const summarySheet: XlsxSheet = {
-    name: "Ringkasan Payroll Operator",
-    columns: [
-      { key: "field", label: "Parameter" },
-      { key: "value", label: "Nilai" },
-    ],
-    rows: [
-      { field: "Kode Payroll", value: run.payroll_code },
-      { field: "Jenis Payroll", value: "Payroll Operator Borongan" },
-      { field: "Periode Mulai", value: run.period_start },
-      { field: "Periode Selesai", value: run.period_end },
-      { field: "Status Run", value: run.status },
-      { field: "Status Pembayaran", value: paymentStatus },
-      { field: "Total Baris Pekerjaan", value: items.length },
-      { field: "Total Qty Sah", value: Math.round(sumQty * 100) / 100 },
-      { field: "TOTAL UPAH BORONGAN (OPERATOR)", value: Math.round(sumOpVal * 100) / 100 },
-      { field: "TOTAL NILAI PENGAJUAN", value: Math.round(sumSubVal * 100) / 100 },
-      { field: "Catatan", value: run.notes || "-" },
-      { field: "Waktu Export", value: new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) },
-    ],
-  };
+  const signDate = formatIndoDate(run.period_end || jakartaToday());
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: `Tangerang Selatan, ${signDate}` });
+  rows.push({ no: "", nik: "Disetujui,", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "Yang Mengajukan,", total_lembur: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "Bony Daty", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "Dandi Mardani", total_lembur: "", gaji_bersih: "" });
 
   const mainSheet: XlsxSheet = {
-    name: "Rekap Slip Borongan",
+    name: "Daftar Gaji",
     columns,
     rows,
+    headerColor: "1E293B",
   };
 
-  const filename = `SMPT-Slip-Borongan-${run.payroll_code}-${run.period_start}-${run.period_end}.xlsx`;
+  const filename = `Daftar-Gaji-Karyawan-${fileSlug(periodMonthStr)}-${run.payroll_code}.xlsx`;
+  return { sheets: [mainSheet], filename };
+}
+
+// -------------------------------------------------------------
+// LAPORAN 3: FORM PEMBAYARAN UANG MAKAN MINGGUAN (8 KOLOM)
+// -------------------------------------------------------------
+async function uangMakanWorkbook(
+  supabase: any,
+  params: URLSearchParams
+): Promise<{ sheets: XlsxSheet[]; filename: string }> {
+  const runId = positiveId(params.get("run_id"));
+
+  let runQuery = supabase.from("payroll_runs").select("*");
+  if (runId) {
+    runQuery = runQuery.eq("id", runId);
+  } else {
+    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+  }
+
+  const { data: runData } = await runQuery;
+  const run = runData?.[0] || {};
+
+  const [itemsRes, workersRes] = await Promise.all([
+    supabase
+      .from("payroll_run_items")
+      .select("*")
+      .eq("payroll_run_id", run.id || 0)
+      .order("id", { ascending: true }),
+    supabase.from("workers").select("id, worker_code, name, department, position, pay_system"),
+  ]);
+
+  const items = itemsRes.data ?? [];
+  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
+
+  const columns = [
+    { key: "no", label: "NO", width: 6 },
+    { key: "nama", label: "NAMA", width: 22 },
+    { key: "hari", label: "HARI", width: 10 },
+    { key: "uang_makan", label: "UANG MAKAN", width: 18 },
+    { key: "insentif", label: "INSENTIF", width: 18 },
+    { key: "kasbon", label: "KASBON", width: 16 },
+    { key: "total", label: "TOTAL", width: 20 },
+    { key: "paraf", label: "PARAF", width: 10 },
+  ];
+
+  let grandTotal = 0;
+  const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
+    const full = Number(it.full_days || 0);
+    const half = Number(it.half_days || 0);
+    const totalHari = full + (half * 0.5);
+
+    const totalMakan = totalHari * 50000;
+    grandTotal += totalMakan;
+
+    return {
+      no: idx + 1,
+      nama: it.worker_name_snapshot,
+      hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
+      uang_makan: "Rp 35,000.00",
+      insentif: "Rp 15,000.00",
+      kasbon: "",
+      total: formatRupiahCell(totalMakan),
+      paraf: idx + 1,
+    };
+  });
+
+  rows.push({
+    no: "",
+    nama: "",
+    hari: "",
+    uang_makan: "",
+    insentif: "",
+    kasbon: "",
+    total: formatRupiahCell(grandTotal),
+    paraf: "",
+  });
+
+  const signDate = formatIndoDate(run.period_end || jakartaToday());
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: "", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: `Tangerang Selatan, ${signDate}`, paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "Disetujui,", kasbon: "", total: "Yang Mengajukan,", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: "", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: "", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "Bony Daty", kasbon: "", total: "Dandi Mardani", paraf: "" });
 
   return {
-    sheets: [mainSheet, summarySheet],
-    filename,
+    sheets: [{ name: "Uang Makan", columns, rows, headerColor: "1E293B" }],
+    filename: `Pembayaran-Uang-Makan-${run.period_start || "Mingguan"}-${run.period_end || ""}.xlsx`,
+  };
+}
+
+// -------------------------------------------------------------
+// LAPORAN 4: FORM PEMBAYARAN UPAH HARIAN (12 KOLOM)
+// -------------------------------------------------------------
+async function upahHarianWorkbook(
+  supabase: any,
+  params: URLSearchParams
+): Promise<{ sheets: XlsxSheet[]; filename: string }> {
+  const runId = positiveId(params.get("run_id"));
+
+  let runQuery = supabase.from("payroll_runs").select("*");
+  if (runId) {
+    runQuery = runQuery.eq("id", runId);
+  } else {
+    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+  }
+
+  const { data: runData } = await runQuery;
+  const run = runData?.[0] || {};
+
+  const [itemsRes, workersRes] = await Promise.all([
+    supabase
+      .from("payroll_run_items")
+      .select("*")
+      .eq("payroll_run_id", run.id || 0)
+      .order("id", { ascending: true }),
+    supabase.from("workers").select("id, worker_code, name, department, position, identity_no, daily_salary, pay_system"),
+  ]);
+
+  const items = itemsRes.data ?? [];
+  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
+
+  const columns = [
+    { key: "no", label: "NO", width: 6 },
+    { key: "nama", label: "NAMA", width: 22 },
+    { key: "bagian", label: "BAGIAN", width: 16 },
+    { key: "nik", label: "NIK", width: 20 },
+    { key: "hari", label: "HARI", width: 8 },
+    { key: "gaji", label: "GAJI", width: 16 },
+    { key: "um", label: "UM", width: 8 },
+    { key: "lembur_per_jam", label: "LEMBUR/JAM", width: 16 },
+    { key: "um_lembur", label: "UANG MAKAN LEMBUR", width: 18 },
+    { key: "total_jam", label: "TOTAL JAM", width: 12 },
+    { key: "total_lembur", label: "TOTAL LEMBUR", width: 16 },
+    { key: "total_upah", label: "TOTAL UPAH", width: 20 },
+  ];
+
+  let grandTotal = 0;
+
+  const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
+    const w = workerMap.get(it.worker_id);
+    const full = Number(it.full_days || 0);
+    const half = Number(it.half_days || 0);
+    const totalHari = full + (half * 0.5);
+
+    const dailyRate = Number(w?.daily_salary) || (totalHari > 0 ? Math.round(Number(it.base_amount || 0) / totalHari) : 0);
+    const hourlyOtRate = dailyRate > 0 ? Math.round(dailyRate / 8) : 0;
+
+    const otMin = Number(it.overtime_minutes || 0);
+    const otHours = Math.round((otMin / 60) * 10) / 10;
+    const manualOtHours = Number(it.manual_overtime_hours || 0);
+    const totalOtHours = otHours + manualOtHours;
+
+    const totalLembur = (Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0));
+    const mealLembur = Number(it.overtime_bonus || 0);
+    const totalUpah = (totalHari * dailyRate) + totalLembur + mealLembur;
+    grandTotal += totalUpah;
+
+    return {
+      no: idx + 1,
+      nama: (it.worker_name_snapshot || w?.name || "-").toUpperCase(),
+      bagian: (w?.position || w?.department || "HELPER").toUpperCase(),
+      nik: w?.identity_no || w?.worker_code || "-",
+      hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
+      gaji: formatRupiahCell(dailyRate),
+      um: "-",
+      lembur_per_jam: formatRupiahCell(hourlyOtRate),
+      um_lembur: mealLembur > 0 ? formatRupiahCell(mealLembur) : "Rp -",
+      total_jam: totalOtHours,
+      total_lembur: totalLembur > 0 ? formatRupiahCell(totalLembur) : "Rp -",
+      total_upah: formatRupiahCell(totalUpah),
+    };
+  });
+
+  rows.push({
+    no: "",
+    nama: "",
+    bagian: "",
+    nik: "",
+    hari: "",
+    gaji: "",
+    um: "",
+    lembur_per_jam: "",
+    um_lembur: "",
+    total_jam: "",
+    total_lembur: "TOTAL :",
+    total_upah: formatRupiahCell(grandTotal),
+  });
+
+  const signDate = formatIndoDate(run.period_end || jakartaToday());
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: `Tangerang Selatan, ${signDate}`, total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Disetujui,", total_jam: "", total_lembur: "Yang Mengajukan,", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Bony Daty", total_jam: "", total_lembur: "Dandi Mardani", total_upah: "" });
+
+  return {
+    sheets: [{ name: "Upah Harian", columns, rows, headerColor: "1E293B" }],
+    filename: `Pembayaran-Upah-Harian-${run.period_start || "Mingguan"}-${run.period_end || ""}.xlsx`,
   };
 }
 
@@ -666,16 +785,33 @@ export async function GET(request: NextRequest) {
     let sheets: XlsxSheet[];
     let customFilename: string | null = null;
 
-    if (key === "payroll_slips" || key === "operator_payroll_slips") {
+    if (
+      key === "payroll_slips" ||
+      key === "operator_payroll_slips" ||
+      key === "pembayaran_uang_makan" ||
+      key === "pembayaran_upah_harian"
+    ) {
       if (!access.permissions.has("payroll.view") && !["MANAGER", "ADMIN"].includes(access.role)) {
         return NextResponse.json({ error: "Tidak punya akses melihat payroll." }, { status: 403 });
       }
-      const isOperator = key === "operator_payroll_slips" || params.get("run_type") === "operator";
-      const result = isOperator
-        ? await operatorPayrollSlipsWorkbook(supabase, params)
-        : await payrollSlipsWorkbook(supabase, params);
-      sheets = result.sheets;
-      customFilename = result.filename;
+
+      if (key === "operator_payroll_slips" || params.get("run_type") === "operator") {
+        const result = await operatorPayrollSlipsWorkbook(supabase, params);
+        sheets = result.sheets;
+        customFilename = result.filename;
+      } else if (key === "pembayaran_uang_makan") {
+        const result = await uangMakanWorkbook(supabase, params);
+        sheets = result.sheets;
+        customFilename = result.filename;
+      } else if (key === "pembayaran_upah_harian") {
+        const result = await upahHarianWorkbook(supabase, params);
+        sheets = result.sheets;
+        customFilename = result.filename;
+      } else {
+        const result = await payrollSlipsWorkbook(supabase, params);
+        sheets = result.sheets;
+        customFilename = result.filename;
+      }
     } else if (key === "manager_dashboard" || key === "manager_section") {
       if (!["MANAGER", "ADMIN"].includes(access.role)) return NextResponse.json({ error: "Export Dashboard Manager hanya untuk MANAGER/ADMIN." }, { status: 403 });
       title = key === "manager_section" ? `Manager ${String(params.get("section") || "Detail")}` : "Manager Dashboard";
