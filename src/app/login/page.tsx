@@ -67,33 +67,30 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-900 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black px-4 py-12 text-slate-900">
-      <section className="relative w-full max-w-md rounded-3xl border border-slate-700/50 bg-white/95 p-7 shadow-2xl backdrop-blur-md sm:p-9">
+      <section className="relative w-full max-w-sm rounded-3xl border border-slate-700/50 bg-white/95 p-6 shadow-2xl backdrop-blur-md sm:p-8">
         
-        {/* Header & Logo Pin KDMB */}
-        <div className="mb-8 text-center flex flex-col items-center">
-          <div className="relative mb-5 p-1 rounded-2xl bg-gradient-to-b from-slate-300 to-slate-600 shadow-md">
-            <div className="overflow-hidden rounded-[14px] bg-black">
+        {/* Header Ringkas & Lega */}
+        <div className="mb-6 text-center flex flex-col items-center">
+          <div className="relative mb-3.5 p-1 rounded-2xl bg-gradient-to-b from-slate-300 to-slate-600 shadow-md">
+            <div className="overflow-hidden rounded-[13px] bg-black">
               <img
                 src="/IMG_20261001_015858_661.jpg"
                 alt="Logo KDMB"
-                className="h-16 w-16 object-cover object-center transition duration-300 hover:scale-105"
+                className="h-14 w-14 object-cover object-center"
               />
             </div>
           </div>
 
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.25em] text-slate-500">
-            Sistem Manajemen Produksi Terpadu
-          </p>
-          <h1 className="mt-1.5 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-            Kreasi Dinamika Maju Bersama
+          <h1 className="text-xl font-black tracking-tight text-slate-900">
+            SMPT V2
           </h1>
-          <p className="mt-1 text-xs sm:text-sm text-slate-500">
-            Silakan masuk dengan akun perusahaan Anda.
+          <p className="mt-0.5 text-xs font-semibold text-slate-400">
+            Kreasi Dinamika Maju Bersama
           </p>
         </div>
 
         {error ? (
-          <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs sm:text-sm font-semibold text-rose-800 shadow-xs">
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800">
             {error}
           </div>
         ) : null}
@@ -102,7 +99,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="email"
-              className="mb-1.5 block text-xs font-bold text-slate-700"
+              className="mb-1 block text-xs font-bold text-slate-700"
             >
               Email atau ID Pekerja
             </label>
@@ -126,7 +123,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="mb-1.5 block text-xs font-bold text-slate-700"
+              className="mb-1 block text-xs font-bold text-slate-700"
             >
               Kata Sandi
             </label>
@@ -194,10 +191,6 @@ export default function LoginPage() {
             {loading ? "Memproses..." : "Masuk ke Sistem"}
           </button>
         </form>
-
-        <p className="mt-7 text-center text-xs font-semibold text-slate-400">
-          Kreasi Dinamika Maju Bersama
-        </p>
       </section>
     </main>
   );
