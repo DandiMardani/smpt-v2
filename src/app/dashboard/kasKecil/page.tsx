@@ -22,22 +22,16 @@ import { addPettyCashAction } from "@/lib/final/actions";
 import { revalidatePath } from "next/cache";
 import { NotaUploadInput } from "./nota-upload-input";
 import { ExportKasKecilBar, type PettyCashItem } from "./export-kas-kecil";
+import { CancelPettyCashBtn } from "./cancel-btn";
 
 type Props = { searchParams: Promise<SearchParams> };
 
-// Server Action untuk membatalkan / menghapus transaksi kas kecil
-async function cancelPettyCashAction(formData: FormData) {
+// Server action cepat untuk hapus/batalkan transaksi
+export async function deletePettyCashAction(id: number | string) {
   "use server";
-  const id = formData.get("id");
-  if (!id) return;
   const s = await createClient();
-  
-  // Update status transaksi menjadi DIBATALKAN agar tidak memotong saldo
-  await s
-    .from("petty_cash_transactions")
-    .update({ status: "DIBATALKAN" })
-    .eq("id", id);
-
+  // Hapus langsung baris yang salah agar tidak merusak saldo
+  await s.from("petty_cash_transactions").delete().eq("id", id);
   revalidatePath("/dashboard/kas-kecil");
 }
 
@@ -123,7 +117,7 @@ export default async function Page({ searchParams }: Props) {
         </Card>
       ) : null}
 
-      {/* Komponen Filter Tanggal, Export Excel CSV, & Cetak PDF */}
+      {/* Filter Tanggal, Export Excel CSV, & Cetak PDF */}
       <ExportKasKecilBar data={transactions} />
 
       <Card title="Riwayat">
@@ -192,19 +186,7 @@ export default async function Page({ searchParams }: Props) {
                   </Td>
                   {can ? (
                     <Td className="text-right">
-                      {x.status === "AKTIF" ? (
-                        <form action={cancelPettyCashAction}>
-                          <input type="hidden" name="id" value={x.id} />
-                          <button
-                            type="submit"
-                            className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-100 transition active:scale-95"
-                          >
-                            Batalkan
-                          </button>
-                        </form>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic">Dibatalkan</span>
-                      )}
+                      <CancelPettyCashBtn id={x.id} action={deletePettyCashAction} />
                     </Td>
                   ) : null}
                 </tr>
