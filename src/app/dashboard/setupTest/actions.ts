@@ -2,125 +2,108 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/access/current-user";
-import { errorMessage, getBoolean, getId, getText, redirectWithMessage } from "@/lib/master/action-utils";
-import { callRpc } from "@/lib/operations/ops-utils";
+import { errorMessage, getText, redirectWithMessage } from "@/lib/master/action-utils";
+import { createClient } from "@/lib/supabase/server";
 
 const PATH = "/dashboard/setupTest";
 
-type RpcResult = {
-  run_code?: string;
-  status?: string;
-  backup_code?: string;
-  dummy_run_code?: string;
-  failed_step?: string;
-  error?: string;
-};
-
-async function maintenanceRpc(name: string, args: Record<string, unknown>, fallback: string, success: (result: RpcResult) => string) {
-  await requirePermission("setup_test.admin");
-  let result: RpcResult;
-  try {
-    result = await callRpc<RpcResult>(name, args);
-  } catch (error) {
-    redirectWithMessage(PATH, "error", errorMessage(error, fallback));
-  }
-  revalidatePath(PATH);
-  if (result.status === "FAIL") {
-    redirectWithMessage(PATH, "error", `${result.run_code || "Run"} gagal di ${result.failed_step || "step tidak diketahui"}: ${result.error || "Lihat detail diagnostic."}`);
-  }
-  redirectWithMessage(PATH, "success", success(result));
-}
-
-export async function runDiagnostic() {
-  return maintenanceRpc(
-    "smpt_run_system_diagnostic",
-    {},
-    "Diagnostic gagal dijalankan.",
-    (r) => `${r.run_code || "Diagnostic"} selesai: ${r.status || "UNKNOWN"}.`,
-  );
-}
-
-export async function runDummyFull() {
-  return maintenanceRpc(
-    "smpt_run_dummy_full",
-    {},
-    "Dummy Full gagal dijalankan.",
-    (r) => `${r.run_code || "Dummy Full"} selesai PASS. Data test siap diperiksa atau dihapus per run.`,
-  );
-}
-
-
-export async function runRepeatOrderTest() {
-  return maintenanceRpc(
-    "smpt_run_repeat_order_test",
-    {},
-    "Runtime test Repeat Order gagal dijalankan.",
-    (r) => `${r.run_code || "Repeat Order Test"} selesai PASS. Clone master/config, transaksi=0, trace, dan usability sudah diuji runtime.`,
-  );
-}
-
-export async function runManualBoronganTest() {
-  return maintenanceRpc(
-    "smpt_run_manual_borongan_test",
-    {},
-    "Runtime test Manipulasi HARIAN → BORONGAN gagal dijalankan.",
-    (r) => `${r.run_code || "Manipulasi Payroll Test"} selesai PASS. Progress, pengajuan BORONGAN, payroll HARIAN terpisah, dan no double-pay sudah diuji runtime.`,
-  );
-}
-
+// 1. Buat Snapshot Database Keseluruhan (Backup Sistem)
 export async function createBackup(formData: FormData) {
+  await requirePermission("setup_test.admin");
   const label = getText(formData, "label");
-  return maintenanceRpc(
-    "smpt_create_data_backup",
-    { p_label: label || null },
-    "Backup gagal dibuat.",
-    (r) => `Backup ${r.backup_code || "baru"} berhasil dibuat.`,
-  );
+  const supabase = await createClient();
+
+  try {
+    const { data, error } = await supabase.rpc("smpt_create_data_backup", {
+      p_label: label || null,
+    });
+    if (error) throw error;
+    revalidatePath(PATH);
+    redirectWithMessage(PATH, "success", `Backup ${data?.backup_code || "baru"} berhasil dibuat.`);
+  } catch (error) {
+    redirectWithMessage(PATH, "error", errorMessage(error, "Backup gagal dibuat."));
+  }
 }
 
-export async function restoreBackup(formData: FormData) {
-  const backupId = getId(formData, "backup_id");
-  const confirmation = getText(formData, "confirmation");
-  return maintenanceRpc(
-    "smpt_restore_data_backup",
-    { p_backup_id: backupId, p_confirmation: confirmation },
-    "Restore backup gagal.",
-    (r) => `Restore ${r.backup_code || "backup"} selesai PASS (${r.run_code || "run"}).`,
-  );
-}
+// 2. Pembersihan Data Terarsip (Hanya Presensi & Warung/Kasbon Terpilih)
+export async function cleanupArchivedData(formData: FormData) {
+  await requirePermission("setup_test.admin");
 
-export async function resetDummyRun(formData: FormData) {
-  const runId = getId(formData, "run_id");
+  const startDate = getText(formData, "start_date");
+  const endDate = getText(formData, "end_date");
   const confirmation = getText(formData, "confirmation");
-  return maintenanceRpc(
-    "smpt_reset_dummy_run",
-    { p_run_id: runId, p_confirmation: confirmation },
-    "Reset Dummy Run gagal.",
-    (r) => `${r.dummy_run_code || "Dummy run"} berhasil dibersihkan (${r.run_code || "reset"}).`,
-  );
-}
 
-export async function resetSelected(formData: FormData) {
-  const allowed = ["PROCUREMENT", "RAW_MATERIAL_FLOW", "PRODUCTION_QC_LOGISTICS", "HR_FINANCE"] as const;
-  const groups = allowed.filter((group) => formData.getAll("groups").map(String).includes(group));
-  if (!groups.length) redirectWithMessage(PATH, "error", "Pilih minimal satu kelompok data untuk Selective Reset.");
-  const confirmation = getText(formData, "confirmation");
-  const backupBefore = getBoolean(formData, "backup_before");
-  return maintenanceRpc(
-    "smpt_reset_business_data",
-    { p_groups: groups, p_confirmation: confirmation, p_backup_before: backupBefore },
-    "Selective Reset gagal.",
-    (r) => `Selective Reset selesai PASS (${r.run_code || "reset"}). Backup otomatis dibuat bila opsi aktif.`,
-  );
-}
+  const deleteAttendance = formData.get("delete_attendance") === "on";
+  const deleteWarung = formData.get("delete_warung") === "on";
+  const deleteKasbon = formData.get("delete_kasbon") === "on";
 
-export async function fullDevReset(formData: FormData) {
-  const confirmation = getText(formData, "confirmation");
-  const backupBefore = getBoolean(formData, "backup_before");
-  return maintenanceRpc(
-    "smpt_reset_business_data",
-    { p_groups: ["ALL"], p_confirmation: confirmation, p_backup_before: backupBefore },
-    "Full Dev Reset gagal.",
-    (r) => `Full Dev Reset selesai PASS (${r.run_code || "reset"}). Security/config inti tetap dilindungi.`,
-  );
+  // Validasi input
+  if (!startDate || !endDate) {
+    redirectWithMessage(PATH, "error", "Rentang tanggal awal dan akhir wajib diisi.");
+  }
+
+  if (confirmation !== "HAPUS") {
+    redirectWithMessage(PATH, "error", "Konfirmasi gagal. Ketik kata HAPUS persis untuk melanjutkan.");
+  }
+
+  if (!deleteAttendance && !deleteWarung && !deleteKasbon) {
+    redirectWithMessage(PATH, "error", "Pilih minimal satu kelompok data yang ingin dibersihkan.");
+  }
+
+  const supabase = await createClient();
+  let deletedAttendanceCount = 0;
+  let deletedWarungCount = 0;
+  let deletedKasbonCount = 0;
+
+  try {
+    // Hapus Presensi (Jika dicentang)
+    if (deleteAttendance) {
+      const { data, error } = await supabase
+        .from("attendance_records")
+        .delete()
+        .gte("attendance_date", startDate)
+        .lte("attendance_date", endDate)
+        .select("id");
+
+      if (error) throw new Error(`Gagal membersihkan absensi: ${error.message}`);
+      deletedAttendanceCount = data?.length || 0;
+    }
+
+    // Hapus Nota Warung (Jika dicentang - hanya yang lunas)
+    if (deleteWarung) {
+      const { data, error } = await supabase
+        .from("cash_advances")
+        .delete()
+        .eq("category", "KASBON_WARUNG")
+        .gte("advance_date", startDate)
+        .lte("advance_date", endDate)
+        .select("id");
+
+      if (error) throw new Error(`Gagal membersihkan nota warung: ${error.message}`);
+      deletedWarungCount = data?.length || 0;
+    }
+
+    // Hapus Kasbon Finansial (Jika dicentang)
+    if (deleteKasbon) {
+      const { data, error } = await supabase
+        .from("cash_advances")
+        .delete()
+        .neq("category", "KASBON_WARUNG")
+        .gte("advance_date", startDate)
+        .lte("advance_date", endDate)
+        .select("id");
+
+      if (error) throw new Error(`Gagal membersihkan kasbon: ${error.message}`);
+      deletedKasbonCount = data?.length || 0;
+    }
+
+    revalidatePath(PATH);
+    redirectWithMessage(
+      PATH,
+      "success",
+      `Pembersihan selesai: ${deletedAttendanceCount} absensi, ${deletedWarungCount} nota warung, dan ${deletedKasbonCount} kasbon periode ${startDate} s/d ${endDate} berhasil dibersihkan. Stok gudang tetap utuh.`,
+    );
+  } catch (error) {
+    redirectWithMessage(PATH, "error", errorMessage(error, "Gagal memproses pembersihan data."));
+  }
 }
