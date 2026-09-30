@@ -54,6 +54,7 @@ export type PayrollRunItem = PayrollItemRow;
 export interface PayrollRunRow {
   id: number;
   payout_no?: string;
+  payroll_code?: string;
   payroll_type?: string;
   period_start?: string;
   period_end?: string;
@@ -212,6 +213,12 @@ const Printer = ({ className = "w-4 h-4" }: { className?: string }) => (
   </svg>
 );
 
+const Utensils = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2M7 2v20M21 15V2v0a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7" />
+  </svg>
+);
+
 // 3. Komponen Utama
 export function PayrollSlipManager(props: Props) {
   const { runs = [], currentRunId, items = [], operatorRuns = [], operatorItems = [] } = props;
@@ -297,11 +304,12 @@ export function PayrollSlipManager(props: Props) {
 
   const handleOpenEdit = (item: PayrollItemRow) => {
     setEditingItem(item);
+    const isBulananWorker = String(item.pay_system_snapshot || item.workers?.pay_system || "").toUpperCase() === "BULANAN";
     const existingMeal = Number(item.meal_amount || 0);
-    const calculatedDays = existingMeal > 0 ? Math.round(existingMeal / 50000) : Number(item.full_days || 0);
+    const calculatedDays = existingMeal > 0 ? Math.round((existingMeal / 50000) * 10) / 10 : Number(item.full_days || 0) + Number(item.half_days || 0) * 0.5;
     
-    setEditDays(String(calculatedDays));
-    setEditMealAmount(existingMeal);
+    setEditDays(String(calculatedDays || 0));
+    setEditMealAmount(existingMeal > 0 ? existingMeal : (calculatedDays * 50000));
     setEditBaseAmount(Number(item.base_amount || 0));
     setEditOtHours(item.overtime_minutes ? Math.round((Number(item.overtime_minutes) / 60) * 10) / 10 : 0);
     setEditOtAmount(Number(item.overtime_amount || 0));
@@ -309,36 +317,44 @@ export function PayrollSlipManager(props: Props) {
     setEditManualOtAmount(Number(item.manual_overtime_amount || 0));
     setEditOtBonus(Number(item.overtime_bonus || 0));
     setEditHolidayBonus(Number(item.holiday_bonus || 0));
-    setEditKasbonP(Number(item.kasbon_perusahaan_amount || 0));
-    setEditKasbonW(Number(item.kasbon_warung_amount || 0));
+
+    // Staf bulanan pada pencairan uang makan mingguan bebas potongan kasbon
+    if (isBulananWorker) {
+      setEditKasbonP(0);
+      setEditKasbonW(0);
+    } else {
+      setEditKasbonP(Number(item.kasbon_perusahaan_amount || 0));
+      setEditKasbonW(Number(item.kasbon_warung_amount || 0));
+    }
   };
 
   const handleDaysChange = (daysStr: string) => {
     setEditDays(daysStr);
     const parsed = parseFloat(daysStr) || 0;
-    setEditMealAmount(Math.max(0, parsed * 50000));
+    setEditMealAmount(Math.max(0, Math.round(parsed * 50000)));
   };
 
   const handleSetPresetDays = (days: number) => {
     setEditDays(String(days));
-    setEditMealAmount(days * 50000);
+    setEditMealAmount(Math.round(days * 50000));
   };
 
   const handleApplySundayShift = () => {
     setEditManualOtHours(8);
-    const basePokok = editBaseAmount || Number(editingItem?.workers?.monthly_salary || 0);
+    const basePokok = editBaseAmount || Number(editingItem?.workers?.monthly_salary || 3000000);
     const hourlyRate = basePokok > 0 ? Math.round((basePokok / 190) * 100) / 100 : 0;
     setEditManualOtAmount(Math.round(8 * hourlyRate));
-    setEditOtBonus(17500);
+    setEditOtBonus(0); // Shift normal 8 jam tidak ada bonus 4h (kecuali lembur malam >17:00)
     
     const curDays = parseFloat(editDays) || 0;
     const nextDays = curDays + 1;
     setEditDays(String(nextDays));
-    setEditMealAmount(nextDays * 50000);
+    setEditMealAmount(Math.round(nextDays * 50000));
   };
 
+  const isEditingBulanan = String(editingItem?.pay_system_snapshot || editingItem?.workers?.pay_system || "").toUpperCase() === "BULANAN";
   const calculatedTotalGross = editBaseAmount + editMealAmount + editOtAmount + editManualOtAmount + editOtBonus + editHolidayBonus;
-  const calculatedTotalDeduction = editKasbonP + editKasbonW;
+  const calculatedTotalDeduction = isEditingBulanan ? 0 : (editKasbonP + editKasbonW);
   const calculatedNet = Math.max(0, calculatedTotalGross - calculatedTotalDeduction);
 
   const handleSaveCorrection = async (e: React.FormEvent) => {
@@ -355,9 +371,10 @@ export function PayrollSlipManager(props: Props) {
     fd.set("manual_overtime_amount", String(editManualOtAmount));
     fd.set("overtime_bonus", String(editOtBonus));
     fd.set("holiday_bonus", String(editHolidayBonus));
-    fd.set("kasbon_perusahaan_amount", String(editKasbonP));
-    fd.set("kasbon_warung_amount", String(editKasbonW));
+    fd.set("kasbon_perusahaan_amount", String(isEditingBulanan ? 0 : editKasbonP));
+    fd.set("kasbon_warung_amount", String(isEditingBulanan ? 0 : editKasbonW));
     fd.set("deduction_amount", String(calculatedTotalDeduction));
+    fd.set("net_amount", String(calculatedNet));
 
     startTransition(async () => {
       if (payrollActions.updatePayrollItemAction) {
@@ -447,8 +464,8 @@ export function PayrollSlipManager(props: Props) {
               : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          <span className="truncate">BULANAN ({countBulanan})</span>
+          <Utensils className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span className="truncate">UANG MAKAN ({countBulanan})</span>
         </button>
 
         <button
@@ -472,18 +489,18 @@ export function PayrollSlipManager(props: Props) {
             <h2 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
               <span>
                 {activeTab === "BULANAN"
-                  ? "Uang Makan Staf Bulanan"
+                  ? "Form Pembayaran Uang Makan Mingguan (Bebas Kasbon)"
                   : activeTab === "BORONGAN"
                   ? "Rincian Slip Operator Borongan"
-                  : "Rincian Slip Gaji Harian"}
+                  : "Rincian Slip Pembayaran Upah Harian"}
               </span>
             </h2>
             <p className="text-xs text-slate-500">
               {activeTab === "BULANAN"
-                ? "Isi jumlah hari kehadiran untuk uang makan mingguan (Rp 50.000/hari)."
+                ? "Dihitung per hari hadir (UM Rp 35.000 + Insentif Rp 15.000 = Rp 50.000/hari). Tidak memotong kasbon."
                 : activeTab === "BORONGAN"
                 ? "Dihitung dari Qty Sah Checker + Harga Satuan Borongan."
-                : "Upah kehadiran, lembur, dan potongan kasbon otomatis tersinkron."}
+                : "Upah kehadiran harian, lembur, dan potongan kasbon otomatis tersinkron."}
             </p>
           </div>
 
@@ -496,7 +513,7 @@ export function PayrollSlipManager(props: Props) {
             >
               {runs.map((r: any) => (
                 <option key={r.id} value={r.id}>
-                  {r.payout_no || `PAY-${String(r.id).padStart(6, "0")}`} • {r.period_start} s/d {r.period_end}
+                  {r.payroll_code || r.payout_no || `PAY-${String(r.id).padStart(6, "0")}`} • {r.period_start} s/d {r.period_end}
                 </option>
               ))}
             </select>
@@ -508,7 +525,7 @@ export function PayrollSlipManager(props: Props) {
           <div>
             <span className="text-[10px] font-bold text-slate-400 block uppercase">No. Payout</span>
             <span className="text-xs font-black text-slate-800">
-              {activeRun?.payout_no || `PAY-${String(activeRun?.id || 0).padStart(6, "0")}`}
+              {activeRun?.payroll_code || activeRun?.payout_no || `PAY-${String(activeRun?.id || 0).padStart(6, "0")}`}
             </span>
           </div>
           <div>
@@ -562,7 +579,7 @@ export function PayrollSlipManager(props: Props) {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isPending ? "animate-spin" : ""}`} />
-              <span>Sinkronkan Gaji & Kasbon</span>
+              <span>Sinkronkan Absensi & Hitungan</span>
             </button>
           )}
         </div>
@@ -595,10 +612,16 @@ export function PayrollSlipManager(props: Props) {
               const dept = item.department_snapshot || item.workers?.department || "PRODUKSI";
               const isBulanan = String(item.pay_system_snapshot || item.workers?.pay_system || "").toUpperCase() === "BULANAN";
 
-              const fullDays = item.full_days || 0;
-              const halfDays = item.half_days || 0;
+              const fullDays = Number(item.full_days || 0);
+              const halfDays = Number(item.half_days || 0);
               const mealAmt = Number(item.meal_amount || 0);
-              const netAmt = Number(item.net_amount || 0);
+              const totalDays = mealAmt > 0 ? Math.round((mealAmt / 50000) * 10) / 10 : (fullDays + halfDays * 0.5);
+
+              // Untuk staf bulanan, take home pay uang makan = murni nominal uang makan (+ lembur jika ada), KASBON = 0
+              const effectiveKasbon = isBulanan ? 0 : Number(item.deduction_amount || 0);
+              const effectiveNet = isBulanan
+                ? Math.max(0, mealAmt + Number(item.overtime_amount || 0) + Number(item.manual_overtime_amount || 0))
+                : Number(item.net_amount || 0);
 
               return (
                 <div
@@ -614,7 +637,7 @@ export function PayrollSlipManager(props: Props) {
                             isBulanan ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
                           }`}
                         >
-                          {isBulanan ? "BULANAN" : "HARIAN"}
+                          {isBulanan ? "UANG MAKAN MINGGUAN" : "HARIAN"}
                         </span>
                       </div>
                       <span className="text-[11px] font-bold text-slate-400 block">
@@ -623,8 +646,10 @@ export function PayrollSlipManager(props: Props) {
                     </div>
 
                     <div className="text-right">
-                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Gaji Bersih (Net)</span>
-                      <span className="text-base font-black text-emerald-600">{formatRupiah(netAmt)}</span>
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">
+                        {isBulanan ? "Uang Makan Diterima (Net)" : "Gaji Bersih (Net)"}
+                      </span>
+                      <span className="text-base font-black text-emerald-600">{formatRupiah(effectiveNet)}</span>
                     </div>
                   </div>
 
@@ -638,7 +663,7 @@ export function PayrollSlipManager(props: Props) {
                       </span>
                       <span className="text-[10px] text-slate-400 block">
                         {isBulanan
-                          ? `(${mealAmt > 0 ? mealAmt / 50000 : 0} Hari Masuk)`
+                          ? `(${totalDays} Hari Masuk)`
                           : `(${fullDays} Full • ${halfDays} Half)`}
                       </span>
                     </div>
@@ -654,25 +679,45 @@ export function PayrollSlipManager(props: Props) {
                     </div>
 
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Bonus & Insentif:</span>
+                      <span className="text-[10px] text-slate-400 block font-medium">
+                        {isBulanan ? "Rincian Tarif Harian:" : "Bonus & Insentif:"}
+                      </span>
                       <span className="font-bold text-slate-700">
-                        {formatRupiah(Number(item.overtime_bonus || 0) + Number(item.holiday_bonus || 0))}
+                        {isBulanan ? "Rp 50.000 / Hari" : formatRupiah(Number(item.overtime_bonus || 0) + Number(item.holiday_bonus || 0))}
                       </span>
                       <span className="text-[10px] text-slate-400 block">
-                        {Number(item.holiday_bonus || 0) > 0 ? "Insentif Minggu" : "Reguler"}
+                        {isBulanan ? "UM 35rb + Insentif 15rb" : (Number(item.holiday_bonus || 0) > 0 ? "Insentif Minggu" : "Reguler")}
                       </span>
                     </div>
 
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">Potongan Kasbon:</span>
-                      <span className="font-bold text-rose-600">
-                        {Number(item.deduction_amount || 0) > 0 ? `-${formatRupiah(Number(item.deduction_amount || 0))}` : "-"}
+                      <span className={`font-bold ${effectiveKasbon > 0 ? "text-rose-600" : "text-emerald-700"}`}>
+                        {effectiveKasbon > 0 ? `-${formatRupiah(effectiveKasbon)}` : "Rp 0"}
                       </span>
                       <span className="text-[10px] text-slate-400 block">
-                        {Number(item.deduction_amount || 0) > 0 ? "Kantor / Warung" : "Bebas Kasbon"}
+                        {isBulanan ? "Bebas Kasbon (Dipotong Bulanan)" : (effectiveKasbon > 0 ? "Kantor / Warung" : "Lunas / Nihil")}
                       </span>
                     </div>
                   </div>
+
+                  {/* Riwayat Pergerakan Kehadiran Uang Makan Per Hari (Khusus Bulanan) */}
+                  {isBulanan && (
+                    <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-2.5 text-[11px] space-y-1">
+                      <div className="font-bold text-purple-900 flex items-center justify-between text-[10px] uppercase tracking-wider">
+                        <span>Riwayat Kehadiran Uang Makan:</span>
+                        <span className="font-mono text-purple-700 font-black">{totalDays} Hari Aktif</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 text-slate-700 text-[10px]">
+                        <span className="bg-white border border-purple-200 px-2 py-0.5 rounded-md">
+                          🍜 Uang Makan: {totalDays} × Rp 35.000 = {formatRupiah(totalDays * 35000)}
+                        </span>
+                        <span className="bg-white border border-purple-200 px-2 py-0.5 rounded-md">
+                          ⭐ Insentif: {totalDays} × Rp 15.000 = {formatRupiah(totalDays * 15000)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2 pt-1">
                     <button
@@ -681,7 +726,7 @@ export function PayrollSlipManager(props: Props) {
                       className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
-                      <span>Koreksi</span>
+                      <span>Koreksi Hari</span>
                     </button>
 
                     <button
@@ -690,14 +735,16 @@ export function PayrollSlipManager(props: Props) {
                       className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all"
                     >
                       <FileText className="w-3.5 h-3.5" />
-                      <span>Cetak Slip</span>
+                      <span>Cetak Bukti</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => {
-                        const text = `Halo ${workerName}, rincian slip upah periode ${activeRun?.period_start} s/d ${activeRun?.period_end}: Total Bersih ${formatRupiah(netAmt)}.`;
-                        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+                        const noteMsg = isBulanan
+                          ? `Halo ${workerName}, berikut rincian Uang Makan periode ${activeRun?.period_start} s/d ${activeRun?.period_end}: Kehadiran ${totalDays} hari × Rp 50.000 = Total Diterima ${formatRupiah(effectiveNet)} (Bebas Potongan Kasbon).`
+                          : `Halo ${workerName}, rincian slip upah harian periode ${activeRun?.period_start} s/d ${activeRun?.period_end}: Total Bersih ${formatRupiah(effectiveNet)}.`;
+                        window.open(`https://wa.me/?text=${encodeURIComponent(noteMsg)}`, "_blank");
                       }}
                       className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all"
                     >
@@ -811,11 +858,11 @@ export function PayrollSlipManager(props: Props) {
                     Koreksi: {editingItem.worker_name_snapshot || editingItem.workers?.name}
                   </h3>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
-                    {editingItem.pay_system_snapshot || editingItem.workers?.pay_system}
+                    {isEditingBulanan ? "BULANAN (UANG MAKAN)" : "HARIAN"}
                   </span>
                 </div>
                 <span className="text-xs text-slate-400 font-medium">
-                  {activeRun?.payout_no} • {activeRun?.period_start} s/d {activeRun?.period_end}
+                  {activeRun?.payroll_code || activeRun?.payout_no} • {activeRun?.period_start} s/d {activeRun?.period_end}
                 </span>
               </div>
               <button
@@ -849,7 +896,7 @@ export function PayrollSlipManager(props: Props) {
                       max="14"
                       value={editDays}
                       onChange={(e) => handleDaysChange(e.target.value)}
-                      placeholder="Ketik jumlah hari (misal: 6)"
+                      placeholder="Ketik jumlah hari (misal: 5 atau 4.5)"
                       className="w-full bg-white border border-amber-300 text-slate-800 font-black text-base rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
                     <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
@@ -857,7 +904,7 @@ export function PayrollSlipManager(props: Props) {
                     </span>
                   </div>
                   <span className="text-[10px] text-amber-700 font-medium block mt-1">
-                    Ketik harinya (contoh: 6), otomatis dihitung Rp 300.000
+                    Bisa desimal (contoh: 4.5 jika Jumat pulang jam 12:00 = Rp 225.000)
                   </span>
                 </div>
 
@@ -867,6 +914,17 @@ export function PayrollSlipManager(props: Props) {
                     Pilihan Cepat (1-Tap):
                   </span>
                   <div className="grid grid-cols-4 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSetPresetDays(4.5)}
+                      className={`py-1.5 px-2 rounded-lg font-bold text-xs border transition-all ${
+                        editDays === "4.5"
+                          ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                          : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
+                      }`}
+                    >
+                      4.5 Hari
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleSetPresetDays(5)}
@@ -891,17 +949,6 @@ export function PayrollSlipManager(props: Props) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleSetPresetDays(7)}
-                      className={`py-1.5 px-2 rounded-lg font-bold text-xs border transition-all ${
-                        editDays === "7"
-                          ? "bg-amber-600 text-white border-amber-600 shadow-sm"
-                          : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100"
-                      }`}
-                    >
-                      7 Hari
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => handleSetPresetDays(0)}
                       className="py-1.5 px-2 rounded-lg font-bold text-xs bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200"
                     >
@@ -920,19 +967,18 @@ export function PayrollSlipManager(props: Props) {
                 </button>
               </div>
 
-              <div className="space-y-1">
-                <label htmlFor="modal-input-gaji-pokok" className="text-xs font-bold text-slate-600">Gaji Pokok (Rp)</label>
-                <input
-                  id="modal-input-gaji-pokok"
-                  type="number"
-                  value={editBaseAmount}
-                  onChange={(e) => setEditBaseAmount(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs rounded-xl px-3 py-2 outline-none"
-                />
-                <span className="text-[10px] text-slate-400">
-                  Untuk siklus mingguan biarkan Rp 0 agar gaji pokok tidak keluar ganda.
-                </span>
-              </div>
+              {!isEditingBulanan && (
+                <div className="space-y-1">
+                  <label htmlFor="modal-input-gaji-pokok" className="text-xs font-bold text-slate-600">Upah Pokok Harian (Rp)</label>
+                  <input
+                    id="modal-input-gaji-pokok"
+                    type="number"
+                    value={editBaseAmount}
+                    onChange={(e) => setEditBaseAmount(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs rounded-xl px-3 py-2 outline-none"
+                  />
+                </div>
+              )}
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-3">
                 <span className="text-xs font-black text-slate-700 block">Lembur & Jam Tambahan</span>
@@ -947,7 +993,9 @@ export function PayrollSlipManager(props: Props) {
                       onChange={(e) => {
                         const h = parseFloat(e.target.value) || 0;
                         setEditManualOtHours(h);
-                        const rate = (Number(editingItem?.workers?.monthly_salary) || 0) / 190;
+                        const rate = isEditingBulanan
+                          ? (Number(editingItem?.workers?.monthly_salary || 3000000) / 190)
+                          : (Number(editingItem?.workers?.daily_salary || 70000) / 8);
                         setEditManualOtAmount(Math.round(h * rate));
                       }}
                       className="w-full bg-white border border-slate-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
@@ -964,60 +1012,45 @@ export function PayrollSlipManager(props: Props) {
                     />
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="modal-input-bonus-lembur" className="text-[10px] font-bold text-slate-500">Bonus Lembur (Rp)</label>
-                    <input
-                      id="modal-input-bonus-lembur"
-                      type="number"
-                      value={editOtBonus}
-                      onChange={(e) => setEditOtBonus(Number(e.target.value))}
-                      className="w-full bg-white border border-slate-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="modal-input-insentif-minggu" className="text-[10px] font-bold text-slate-500">Insentif Minggu (Rp)</label>
-                    <input
-                      id="modal-input-insentif-minggu"
-                      type="number"
-                      value={editHolidayBonus}
-                      onChange={(e) => setEditHolidayBonus(Number(e.target.value))}
-                      className="w-full bg-white border border-slate-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
-                    />
-                  </div>
-                </div>
               </div>
 
-              <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-3.5 space-y-2">
-                <span className="text-xs font-black text-rose-800 block">Potongan Kasbon</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="modal-input-kasbon-kantor" className="text-[10px] font-bold text-rose-600">Kasbon Kantor (Rp)</label>
-                    <input
-                      id="modal-input-kasbon-kantor"
-                      type="number"
-                      value={editKasbonP}
-                      onChange={(e) => setEditKasbonP(Number(e.target.value))}
-                      className="w-full bg-white border border-rose-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="modal-input-kasbon-warung" className="text-[10px] font-bold text-rose-600">Kasbon Warung (Rp)</label>
-                    <input
-                      id="modal-input-kasbon-warung"
-                      type="number"
-                      value={editKasbonW}
-                      onChange={(e) => setEditKasbonW(Number(e.target.value))}
-                      className="w-full bg-white border border-rose-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
-                    />
+              {!isEditingBulanan ? (
+                <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-3.5 space-y-2">
+                  <span className="text-xs font-black text-rose-800 block">Potongan Kasbon Harian</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label htmlFor="modal-input-kasbon-kantor" className="text-[10px] font-bold text-rose-600">Kasbon Kantor (Rp)</label>
+                      <input
+                        id="modal-input-kasbon-kantor"
+                        type="number"
+                        value={editKasbonP}
+                        onChange={(e) => setEditKasbonP(Number(e.target.value))}
+                        className="w-full bg-white border border-rose-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="modal-input-kasbon-warung" className="text-[10px] font-bold text-rose-600">Kasbon Warung (Rp)</label>
+                      <input
+                        id="modal-input-kasbon-warung"
+                        type="number"
+                        value={editKasbonW}
+                        onChange={(e) => setEditKasbonW(Number(e.target.value))}
+                        className="w-full bg-white border border-rose-200 text-xs font-bold rounded-xl px-3 py-2 mt-0.5"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-800 font-medium">
+                  ✅ <b>Bebas Potongan Kasbon:</b> Uang makan mingguan staf bulanan dicairkan utuh tanpa potongan hutang warung maupun pinjaman kantor.
+                </div>
+              )}
 
               <div className="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Take Home Pay (Bersih)</span>
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">
+                    {isEditingBulanan ? "Uang Makan Diterima (Net)" : "Take Home Pay (Bersih)"}
+                  </span>
                   <span className="text-lg font-black text-emerald-400">{formatRupiah(calculatedNet)}</span>
                 </div>
                 <div className="text-right text-[11px] text-slate-400">
@@ -1039,7 +1072,7 @@ export function PayrollSlipManager(props: Props) {
                   disabled={isPending}
                   className="flex-2 w-full py-3 rounded-xl font-black text-xs bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-500/20"
                 >
-                  {isPending ? "Menyimpan..." : "💾 Simpan Koreksi Gaji"}
+                  {isPending ? "Menyimpan..." : "💾 Simpan Koreksi"}
                 </button>
               </div>
             </form>
@@ -1125,14 +1158,18 @@ export function PayrollSlipManager(props: Props) {
         </div>
       )}
 
-      {/* MODAL CETAK SLIP GAJI */}
+      {/* MODAL CETAK SLIP / BUKTI PEMBAYARAN */}
       {viewingSlipItem && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 space-y-4 shadow-xl">
             <div className="text-center border-b pb-3 space-y-1">
-              <h3 className="font-black text-base text-slate-800">SLIP PEMBAYARAN UPAH</h3>
+              <h3 className="font-black text-base text-slate-800">
+                {String(viewingSlipItem.pay_system_snapshot || viewingSlipItem.workers?.pay_system).toUpperCase() === "BULANAN"
+                  ? "BUKTI PEMBAYARAN UANG MAKAN"
+                  : "SLIP PEMBAYARAN UPAH HARIAN"}
+              </h3>
               <p className="text-xs text-slate-500">
-                {activeRun?.payout_no} • {activeRun?.period_start} s/d {activeRun?.period_end}
+                {activeRun?.payroll_code || activeRun?.payout_no} • {activeRun?.period_start} s/d {activeRun?.period_end}
               </p>
             </div>
 
@@ -1142,30 +1179,69 @@ export function PayrollSlipManager(props: Props) {
                 <span className="font-black text-slate-800">{viewingSlipItem.worker_name_snapshot || viewingSlipItem.workers?.name}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-dashed">
-                <span className="text-slate-500">Sistem Upah</span>
+                <span className="text-slate-500">Kategori Upah</span>
                 <span className="font-bold text-slate-800">{viewingSlipItem.pay_system_snapshot}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-dashed">
-                <span className="text-slate-500">Gaji Pokok / Upah Hadir</span>
-                <span className="font-bold text-slate-800">{formatRupiah(Number(viewingSlipItem.base_amount || 0))}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-dashed">
-                <span className="text-slate-500">Uang Makan</span>
-                <span className="font-bold text-slate-800">{formatRupiah(Number(viewingSlipItem.meal_amount || 0))}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-dashed">
-                <span className="text-slate-500">Lembur & Insentif</span>
-                <span className="font-bold text-slate-800">
-                  {formatRupiah(Number(viewingSlipItem.overtime_amount || 0) + Number(viewingSlipItem.manual_overtime_amount || 0) + Number(viewingSlipItem.holiday_bonus || 0))}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
-                <span>Potongan Kasbon</span>
-                <span className="font-bold">-{formatRupiah(Number(viewingSlipItem.deduction_amount || 0))}</span>
-              </div>
+
+              {String(viewingSlipItem.pay_system_snapshot || viewingSlipItem.workers?.pay_system).toUpperCase() === "BULANAN" ? (
+                <>
+                  <div className="flex justify-between py-1 border-b border-dashed">
+                    <span className="text-slate-500">Uang Makan (Rp 35.000/hari)</span>
+                    <span className="font-bold text-slate-800">
+                      {formatRupiah(Math.round(((Number(viewingSlipItem.meal_amount || 0)) / 50000) * 35000))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-dashed">
+                    <span className="text-slate-500">Insentif Kehadiran (Rp 15.000/hari)</span>
+                    <span className="font-bold text-slate-800">
+                      {formatRupiah(Math.round(((Number(viewingSlipItem.meal_amount || 0)) / 50000) * 15000))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-dashed text-emerald-700">
+                    <span>Potongan Kasbon</span>
+                    <span className="font-bold">Rp 0 (Bebas Kasbon)</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between py-1 border-b border-dashed">
+                    <span className="text-slate-500">Upah Hadir Pokok</span>
+                    <span className="font-bold text-slate-800">{formatRupiah(Number(viewingSlipItem.base_amount || 0))}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-dashed">
+                    <span className="text-slate-500">Lembur & Insentif</span>
+                    <span className="font-bold text-slate-800">
+                      {formatRupiah(Number(viewingSlipItem.overtime_amount || 0) + Number(viewingSlipItem.manual_overtime_amount || 0) + Number(viewingSlipItem.holiday_bonus || 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
+                    <span>Potongan Kasbon</span>
+                    <span className="font-bold">-{formatRupiah(Number(viewingSlipItem.deduction_amount || 0))}</span>
+                  </div>
+                </>
+              )}
+
               <div className="flex justify-between pt-2 text-sm font-black text-emerald-600">
                 <span>TOTAL DITERIMA (NET)</span>
-                <span>{formatRupiah(Number(viewingSlipItem.net_amount || 0))}</span>
+                <span>
+                  {String(viewingSlipItem.pay_system_snapshot || viewingSlipItem.workers?.pay_system).toUpperCase() === "BULANAN"
+                    ? formatRupiah(Number(viewingSlipItem.meal_amount || 0))
+                    : formatRupiah(Number(viewingSlipItem.net_amount || 0))}
+                </span>
+              </div>
+            </div>
+
+            {/* Kolom Tanda Tangan Resmi Sesuai Template SMPT */}
+            <div className="pt-4 border-t grid grid-cols-2 text-center text-[10px] text-slate-600">
+              <div>
+                <p>Disetujui,</p>
+                <div className="h-10"></div>
+                <p className="font-bold text-slate-900 underline">Bony Daty</p>
+              </div>
+              <div>
+                <p>Yang Mengajukan,</p>
+                <div className="h-10"></div>
+                <p className="font-bold text-slate-900 underline">Dandi Mardani</p>
               </div>
             </div>
 
