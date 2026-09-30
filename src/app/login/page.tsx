@@ -189,10 +189,6 @@ export default function LoginPage() {
             {loading ? "Memproses..." : "Masuk ke Sistem"}
           </button>
         </form>
-
-        <p className="mt-7 text-center text-xs font-medium text-slate-400">
-          Kreasi Dinamika Maju Bersama
-        </p>
       </section>
     </main>
   );
