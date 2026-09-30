@@ -32,11 +32,23 @@ const PlusIcon = () => (
   </svg>
 );
 
+const StoreIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18l-2 9H5L3 3zm0 9a3 3 0 106 0 3 3 0 106 0 3 3 0 106 0M5 21h14a2 2 0 002-2v-7H3v7a2 2 0 002 2z" />
+  </svg>
+);
+
+const ArrowLeftIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+  </svg>
+);
+
 const DEFAULT_CATALOG = [
   { id: "1", name: "Kopi", price: 5000 },
-  { id: "2", name: "Rokok Magnum", price: 20000 },
-  { id: "3", name: "Gorengan", price: 1500 },
-  { id: "4", name: "Nasi Bungkus", price: 12000 },
+  { id: "2", name: "Rokok", price: 25000 },
+  { id: "3", name: "Gorengan", price: 2000 },
+  { id: "4", name: "Nasi Bungkus", price: 15000 },
 ];
 
 export interface WarungTransaction {
@@ -46,11 +58,14 @@ export interface WarungTransaction {
   worker_code: string;
   worker_role?: string;
   amount: number;
+  paid_amount?: number;
+  remaining_amount?: number;
   notes: string;
   created_at: string;
   status: string;
   installments_paid: number;
   warung_name: string;
+  warung_id?: string | null;
 }
 
 interface Worker {
@@ -64,23 +79,78 @@ interface WarungPortalProps {
   initialWorkers: Worker[];
   initialTransactions: WarungTransaction[];
   currentWarung: { id: string; name: string };
+  isAdmin?: boolean;
 }
 
 export function WarungPortal({
   initialWorkers,
   initialTransactions,
   currentWarung,
+  isAdmin = false,
 }: WarungPortalProps) {
+  // Jika admin, mulai dari daftar pilihan kartu warung ("ALL"). Jika user biasa, langsung kunci ke warung miliknya.
+  const [selectedWarungFilter, setSelectedWarungFilter] = useState<string>(isAdmin ? "ALL" : currentWarung.name);
   const [activeTab, setActiveTab] = useState<"rekap" | "transaksi">("rekap");
   const [searchQuery, setSearchQuery] = useState("");
-  
+
+  // Daftar Semua Warung Unik (Untuk Admin Card-View)
+  const availableWarungs = useMemo(() => {
+    const map = new Map<string, { name: string; totalDebt: number; workerCount: Set<string>; txCount: number }>();
+
+    // Pastikan Dandi Store selalu ada di daftar utama
+    map.set("Dandi Store", {
+      name: "Dandi Store",
+      totalDebt: 0,
+      workerCount: new Set(),
+      txCount: 0,
+    });
+
+    initialTransactions.forEach((tx) => {
+      const wName = tx.warung_name && tx.warung_name.trim() !== "" ? tx.warung_name : "Dandi Store";
+      let entry = map.get(wName);
+      if (!entry) {
+        entry = {
+          name: wName,
+          totalDebt: 0,
+          workerCount: new Set(),
+          txCount: 0,
+        };
+        map.set(wName, entry);
+      }
+      entry.totalDebt += Number(tx.amount || 0) - Number(tx.paid_amount || 0);
+      entry.workerCount.add(String(tx.worker_id));
+      entry.txCount += 1;
+    });
+
+    return Array.from(map.values()).map((item) => ({
+      name: item.name,
+      totalDebt: item.totalDebt,
+      uniqueWorkers: item.workerCount.size,
+      txCount: item.txCount,
+    }));
+  }, [initialTransactions]);
+
+  // Transaksi yang aktif ditampilkan (difilter berdasarkan kartu warung yang dipilih)
+  const activeTransactions = useMemo(() => {
+    if (!isAdmin) {
+      return initialTransactions.filter((tx) => 
+        (tx.warung_name || "").toLowerCase() === currentWarung.name.toLowerCase()
+      );
+    }
+    if (selectedWarungFilter === "ALL") {
+      return initialTransactions;
+    }
+    return initialTransactions.filter((tx) => 
+      (tx.warung_name || "Dandi Store").toLowerCase() === selectedWarungFilter.toLowerCase()
+    );
+  }, [initialTransactions, selectedWarungFilter, isAdmin, currentWarung.name]);
+
   // State Katalog Produk Dinamis (Tersimpan di Browser HP)
   const [catalog, setCatalog] = useState(DEFAULT_CATALOG);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [newProductName, setNewProductName] = useState("");
   const [newProductPrice, setNewProductPrice] = useState<number | "">("");
 
-  // Load Katalog dari LocalStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem(`smpt_catalog_${currentWarung.id}`);
@@ -90,7 +160,6 @@ export function WarungPortal({
     } catch (e) {}
   }, [currentWarung.id]);
 
-  // Simpan Katalog ke LocalStorage
   const saveCatalog = (updatedCatalog: typeof DEFAULT_CATALOG) => {
     setCatalog(updatedCatalog);
     try {
@@ -104,17 +173,21 @@ export function WarungPortal({
   const [formWorkerId, setFormWorkerId] = useState("");
   const [formAmount, setFormAmount] = useState<number | "">("");
   const [formNotes, setFormNotes] = useState("");
+  const [formWarungName, setFormWarungName] = useState(
+    selectedWarungFilter !== "ALL" ? selectedWarungFilter : currentWarung.name
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // State Modal Riwayat Khusus Pekerja (Klik kartu pekerja)
   const [selectedWorkerForDetail, setSelectedWorkerForDetail] = useState<{ id: string; name: string; worker_code: string; role?: string } | null>(null);
 
-  // Rekap Saldo Langsung dari Transaksi Aktif
+  // Rekap Saldo Langsung dari Transaksi Warung yang Aktif
   const workerBalances = useMemo(() => {
     const map = new Map<string, { worker: { id: string; name: string; worker_code: string; role?: string }; totalDebt: number; transactionCount: number }>();
 
-    initialTransactions.forEach((tx) => {
+    activeTransactions.forEach((tx) => {
       const key = String(tx.worker_id);
+      const rem = Math.max(0, Number(tx.amount || 0) - Number(tx.paid_amount || 0));
       let entry = map.get(key);
       if (!entry) {
         entry = {
@@ -129,29 +202,32 @@ export function WarungPortal({
         };
         map.set(key, entry);
       }
-      entry.totalDebt += Number(tx.amount) || 0;
+      entry.totalDebt += rem;
       entry.transactionCount += 1;
     });
 
-    return Array.from(map.values()).filter((item) =>
-      item.worker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.worker.worker_code.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [initialTransactions, searchQuery]);
+    return Array.from(map.values())
+      .filter((item) => item.totalDebt > 0)
+      .filter((item) =>
+        item.worker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.worker.worker_code.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+  }, [activeTransactions, searchQuery]);
 
   const filteredTransactions = useMemo(() => {
-    return initialTransactions.filter((tx) =>
+    return activeTransactions.filter((tx) =>
       tx.worker_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.worker_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.notes.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [initialTransactions, searchQuery]);
+  }, [activeTransactions, searchQuery]);
 
   const handleOpenCreate = (workerIdPrefill?: string) => {
     setEditingTx(null);
     setFormWorkerId(workerIdPrefill || (initialWorkers[0]?.id ? String(initialWorkers[0].id) : ""));
     setFormAmount("");
     setFormNotes("");
+    setFormWarungName(selectedWarungFilter !== "ALL" ? selectedWarungFilter : currentWarung.name);
     setIsFormOpen(true);
   };
 
@@ -160,11 +236,11 @@ export function WarungPortal({
     setFormWorkerId(String(tx.worker_id));
     setFormAmount(tx.amount);
     setFormNotes(tx.notes);
+    setFormWarungName(tx.warung_name || "Dandi Store");
     setSelectedWorkerForDetail(null);
     setIsFormOpen(true);
   };
 
-  // Klik Preset Cepat: Menambahkan nominal dan keterangan otomatis
   const handleAddPreset = (item: { name: string; price: number }) => {
     setFormAmount((prev) => (Number(prev) || 0) + item.price);
     setFormNotes((prev) => {
@@ -173,7 +249,6 @@ export function WarungPortal({
     });
   };
 
-  // Tambah Produk Baru ke Katalog
   const handleAddNewProduct = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName || !newProductPrice || Number(newProductPrice) <= 0) {
@@ -189,13 +264,11 @@ export function WarungPortal({
     setNewProductPrice("");
   };
 
-  // Hapus Produk dari Katalog
   const handleDeleteProduct = (productId: string) => {
     if (!confirm("Hapus produk ini dari preset kasir?")) return;
     saveCatalog(catalog.filter((c) => c.id !== productId));
   };
 
-  // Ubah Harga Produk di Katalog
   const handleUpdateProductPrice = (productId: string, newPrice: number) => {
     saveCatalog(
       catalog.map((c) => (c.id === productId ? { ...c, price: newPrice } : c))
@@ -214,23 +287,26 @@ export function WarungPortal({
       if (editingTx) {
         const res = await updateWarungTransactionAction(editingTx.id, {
           worker_id: formWorkerId,
-          notes: formNotes || "Kasbon",
+          notes: formNotes || "Kasbon Warung",
           is_direct_nominal: true,
           direct_amount: Number(formAmount),
           items: [],
-        });
+          warung_name: formWarungName,
+        } as any);
         if (!res.success) throw new Error(res.error);
       } else {
         const res = await createWarungTransactionAction({
           worker_id: formWorkerId,
-          notes: formNotes || "Kasbon",
+          notes: formNotes || "Kasbon Warung",
           is_direct_nominal: true,
           direct_amount: Number(formAmount),
           items: [],
-        });
+          warung_name: formWarungName,
+        } as any);
         if (!res.success) throw new Error(res.error);
       }
       setIsFormOpen(false);
+      window.location.reload();
     } catch (err: any) {
       alert(err.message || "Gagal menyimpan transaksi.");
     } finally {
@@ -239,11 +315,14 @@ export function WarungPortal({
   };
 
   const handleDelete = async (txId: string) => {
-    if (!confirm("Apakah Anda yakin ingin membatalkan nota ini?")) return;
+    if (!confirm("Apakah Anda yakin ingin membatalkan/menghapus nota ini?")) return;
     try {
       const res = await deleteWarungTransactionAction(txId);
       if (!res.success) alert(res.error);
-      else setSelectedWorkerForDetail(null);
+      else {
+        setSelectedWorkerForDetail(null);
+        window.location.reload();
+      }
     } catch (err: any) {
       alert(err.message || "Gagal membatalkan nota.");
     }
@@ -251,10 +330,31 @@ export function WarungPortal({
 
   return (
     <div className="min-h-screen bg-[#f8fafc] pb-24 text-slate-800">
-      <div className="max-w-xl mx-auto px-4 pt-3">
+      <div className="max-w-xl mx-auto px-4 pt-3 space-y-3">
         
-        {/* Tombol Catat Nota Baru */}
-        <div className="flex justify-end mb-3">
+        {/* HEADER & NAVIGASI ADMIN KARTU MULTI-WARUNG */}
+        {isAdmin && selectedWarungFilter !== "ALL" && (
+          <button
+            onClick={() => setSelectedWarungFilter("ALL")}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-orange-600 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition"
+          >
+            <ArrowLeftIcon />
+            <span>Kembali ke Daftar Semua Warung</span>
+          </button>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-orange-600 block">
+              {isAdmin ? "Admin Portal Warung" : "Kasir Warung Mitra"}
+            </span>
+            <h1 className="text-lg font-black text-slate-900">
+              {isAdmin && selectedWarungFilter === "ALL" 
+                ? "Daftar Warung Mitra" 
+                : (selectedWarungFilter === "ALL" ? currentWarung.name : selectedWarungFilter)}
+            </h1>
+          </div>
+
           <button
             onClick={() => handleOpenCreate()}
             className="flex items-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold px-4 py-2 rounded-full text-xs shadow-sm active:scale-95 transition"
@@ -264,134 +364,200 @@ export function WarungPortal({
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <button
-            onClick={() => setActiveTab("rekap")}
-            className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
-              activeTab === "rekap"
-                ? "bg-[#ea580c] text-white"
-                : "bg-white text-slate-700 border border-slate-200"
-            }`}
-          >
-            <span>👥 Rekap Saldo Total per Orang ({workerBalances.length})</span>
-          </button>
+        {/* TAMPILAN UTAMA ADMIN: DAFTAR KARTU PER WARUNG */}
+        {isAdmin && selectedWarungFilter === "ALL" ? (
+          <div className="space-y-3 pt-1">
+            <p className="text-xs text-slate-500 font-medium">
+              Pilih kartu warung di bawah untuk melihat rincian saldo bon per pekerja dan riwayat transaksi:
+            </p>
 
-          <button
-            onClick={() => setActiveTab("transaksi")}
-            className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
-              activeTab === "transaksi"
-                ? "bg-[#ea580c] text-white"
-                : "bg-white text-slate-700 border border-slate-200"
-            }`}
-          >
-            <span>📋 Riwayat Transaksi Harian ({initialTransactions.length})</span>
-          </button>
-        </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {availableWarungs.map((w) => (
+                <div
+                  key={w.name}
+                  onClick={() => setSelectedWarungFilter(w.name)}
+                  className="bg-white border-2 border-slate-200 hover:border-orange-500 rounded-2xl p-4 shadow-xs active:scale-[0.99] transition cursor-pointer space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-orange-100 text-orange-700">
+                        <StoreIcon />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900 text-sm">{w.name}</h3>
+                        <span className="text-[10px] font-semibold text-slate-400">
+                          {w.name === "Dandi Store" ? "Warung Utama Admin" : "Mitra Warung Luar"}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {w.txCount} Nota
+                    </span>
+                  </div>
 
-        {/* Search Bar */}
-        <div className="relative mb-3">
-          <input
-            type="text"
-            placeholder="Cari nama pekerja / menu..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white border border-slate-200 pl-3.5 pr-4 py-2.5 rounded-xl text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#ea580c] shadow-xs"
-          />
-        </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Bon Aktif:</span>
+                      <span className="text-base font-black text-[#e11d48]">
+                        Rp {w.totalDebt.toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Pekerja:</span>
+                      <span className="text-xs font-bold text-slate-700">
+                        {w.uniqueWorkers} Orang
+                      </span>
+                    </div>
+                  </div>
 
-        {/* TAB 1: KARTU REKAP SALDO PER ORANG (BISA DIKLIK) */}
-        {activeTab === "rekap" && (
+                  <div className="text-[11px] font-bold text-orange-600 text-right pt-1">
+                    Buka Rincian Warung →
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* TAMPILAN RINCIAN WARUNG (DRILL-DOWN: REKAP & TRANSAKSI) */
           <div className="space-y-3">
-            {workerBalances.map(({ worker, totalDebt, transactionCount }) => (
-              <div
-                key={worker.id}
-                onClick={() => setSelectedWorkerForDetail(worker)}
-                className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs hover:border-[#ea580c] active:scale-[0.99] transition cursor-pointer"
+            {/* Tab Switcher */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setActiveTab("rekap")}
+                className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
+                  activeTab === "rekap"
+                    ? "bg-[#ea580c] text-white"
+                    : "bg-white text-slate-700 border border-slate-200"
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900 text-sm tracking-tight">{worker.name}</h3>
-                  <span className="bg-[#fef3c7] text-[#92400e] text-[11px] font-semibold px-2.5 py-0.5 rounded-full">
-                    {transactionCount} Nota
-                  </span>
-                </div>
+                <span>👥 Rekap Saldo Total ({workerBalances.length})</span>
+              </button>
 
-                <div className="text-[11px] text-slate-500 font-medium mt-1">
-                  {worker.worker_code} · {worker.role}
-                </div>
+              <button
+                onClick={() => setActiveTab("transaksi")}
+                className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
+                  activeTab === "transaksi"
+                    ? "bg-[#ea580c] text-white"
+                    : "bg-white text-slate-700 border border-slate-200"
+                }`}
+              >
+                <span>📋 Riwayat Nota ({filteredTransactions.length})</span>
+              </button>
+            </div>
 
-                <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-50">
-                  <span className="text-xs text-slate-600 font-normal">Total Tagihan:</span>
-                  <span className="text-base font-bold text-[#e11d48]">
-                    Rp {totalDebt.toLocaleString("id-ID")}
-                  </span>
-                </div>
+            {/* Search Bar */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Cari nama pekerja / menu..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white border border-slate-200 pl-3.5 pr-4 py-2.5 rounded-xl text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#ea580c] shadow-xs"
+              />
+            </div>
 
-                <div className="bg-[#fefce8] border border-[#fef08a]/80 text-[#854d0e] text-[11px] py-1.5 px-3 rounded-lg mt-2.5">
-                  Otomatis masuk potongan slip gaji pada payroll berikutnya.
-                </div>
+            {/* TAB 1: KARTU REKAP SALDO PER ORANG (BISA DIKLIK) */}
+            {activeTab === "rekap" && (
+              <div className="space-y-3">
+                {workerBalances.map(({ worker, totalDebt, transactionCount }) => (
+                  <div
+                    key={worker.id}
+                    onClick={() => setSelectedWorkerForDetail(worker)}
+                    className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs hover:border-[#ea580c] active:scale-[0.99] transition cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-slate-900 text-sm tracking-tight">{worker.name}</h3>
+                      <span className="bg-[#fef3c7] text-[#92400e] text-[11px] font-semibold px-2.5 py-0.5 rounded-full">
+                        {transactionCount} Nota
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 font-medium mt-1">
+                      {worker.worker_code} · {worker.role}
+                    </div>
+
+                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-50">
+                      <span className="text-xs text-slate-600 font-normal">Total Tagihan:</span>
+                      <span className="text-base font-bold text-[#e11d48]">
+                        Rp {totalDebt.toLocaleString("id-ID")}
+                      </span>
+                    </div>
+
+                    <div className="bg-[#fefce8] border border-[#fef08a]/80 text-[#854d0e] text-[11px] py-1.5 px-3 rounded-lg mt-2.5">
+                      Otomatis masuk potongan resmi slip gaji bulanan.
+                    </div>
+                  </div>
+                ))}
+
+                {workerBalances.length === 0 && (
+                  <div className="text-center py-12 text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-slate-200">
+                    Tidak ada pekerja yang memiliki saldo bon aktif saat ini di warung ini.
+                  </div>
+                )}
               </div>
-            ))}
+            )}
 
-            {workerBalances.length === 0 && (
-              <div className="text-center py-12 text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-slate-200">
-                Tidak ada pekerja yang memiliki saldo bon aktif saat ini.
+            {/* TAB 2: TABEL RIWAYAT TRANSAKSI DENGAN EDIT & HAPUS */}
+            {activeTab === "transaksi" && (
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50/50">
+                        <th className="py-3 px-3">Warung</th>
+                        <th className="py-3 px-2">Menu / Pekerja</th>
+                        <th className="py-3 px-2">Nominal</th>
+                        <th className="py-3 px-3 text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredTransactions.map((tx) => (
+                        <tr key={tx.id} className="hover:bg-orange-50/30 transition">
+                          <td className="py-3 px-3 font-semibold text-[#b45309] whitespace-nowrap">
+                            {tx.warung_name || "Dandi Store"}
+                          </td>
+                          <td className="py-3 px-2 text-slate-700">
+                            <div className="font-medium text-slate-800">{tx.notes}</div>
+                            <div className="text-[10px] text-slate-400">{tx.worker_name} ({tx.created_at?.slice(0, 10)})</div>
+                          </td>
+                          <td className="py-3 px-2 font-bold text-slate-900 whitespace-nowrap">
+                            Rp {tx.amount.toLocaleString("id-ID")}
+                          </td>
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => handleOpenEdit(tx)}
+                                className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100 transition"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDelete(tx.id)}
+                                className="text-red-600 font-bold text-xs bg-red-50 px-2 py-1 rounded-lg hover:bg-red-100 transition"
+                              >
+                                Hapus
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredTransactions.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-400 text-xs">
+                            Belum ada riwayat transaksi untuk warung ini.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
         )}
-
-        {/* TAB 2: TABEL RIWAYAT TRANSAKSI */}
-        {activeTab === "transaksi" && (
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50/50">
-                    <th className="py-3 px-3">Warung</th>
-                    <th className="py-3 px-2">Menu / Keterangan</th>
-                    <th className="py-3 px-2">Nominal</th>
-                    <th className="py-3 px-3 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredTransactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-orange-50/30 transition">
-                      <td className="py-3 px-3 font-semibold text-[#b45309] whitespace-nowrap">
-                        {tx.warung_name}
-                      </td>
-                      <td className="py-3 px-2 text-slate-700">
-                        <div className="font-medium text-slate-800">{tx.notes}</div>
-                        <div className="text-[10px] text-slate-400">{tx.worker_name}</div>
-                      </td>
-                      <td className="py-3 px-2 font-bold text-slate-900 whitespace-nowrap">
-                        Rp {tx.amount.toLocaleString("id-ID")}
-                      </td>
-                      <td className="py-3 px-3 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => handleOpenEdit(tx)}
-                          className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2.5 py-1 rounded-lg hover:bg-orange-100"
-                        >
-                          Edit
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredTransactions.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-slate-400 text-xs">
-                        Belum ada riwayat transaksi untuk warung ini.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* DRAWER / MODAL: RINCIAN RIWAYAT PEKERJA (SAAT KARTU DIKLIK) */}
+      {/* DRAWER / MODAL: RINCIAN RIWAYAT NOTA PEKERJA */}
       {selectedWorkerForDetail && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
@@ -403,7 +569,9 @@ export function WarungPortal({
                     {selectedWorkerForDetail.worker_code}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">Rincian Riwayat Nota di {currentWarung.name}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Rincian Riwayat Nota di {selectedWarungFilter === "ALL" ? currentWarung.name : selectedWarungFilter}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedWorkerForDetail(null)}
@@ -415,26 +583,30 @@ export function WarungPortal({
 
             <div className="p-4 overflow-y-auto space-y-3 flex-1">
               {(() => {
-                const workerTx = initialTransactions.filter((t) => String(t.worker_id) === String(selectedWorkerForDetail.id));
+                const workerTx = activeTransactions.filter((t) => String(t.worker_id) === String(selectedWorkerForDetail.id));
                 if (workerTx.length === 0) {
                   return (
                     <div className="text-center py-8 text-slate-400 text-xs">
-                      Belum ada nota untuk pekerja ini di warung Anda.
+                      Belum ada nota untuk pekerja ini di warung ini.
                     </div>
                   );
                 }
 
                 return workerTx.map((tx) => {
                   const dt = new Date(tx.created_at);
-                  const fDate = dt.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-                  const fTime = dt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+                  const fDate = !isNaN(dt.getTime()) 
+                    ? dt.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
+                    : tx.created_at;
+                  const fTime = !isNaN(dt.getTime())
+                    ? dt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB"
+                    : "";
 
                   return (
                     <div key={tx.id} className="border border-slate-200 rounded-xl p-3 bg-white shadow-xs space-y-2">
                       <div className="flex justify-between items-start">
                         <div>
                           <span className="text-xs font-semibold text-slate-700 block">
-                            {fDate} • {fTime} WIB
+                            {fDate} {fTime ? `• ${fTime}` : ""}
                           </span>
                           <span className="text-[11px] text-slate-500">Keterangan: {tx.notes}</span>
                         </div>
@@ -498,6 +670,20 @@ export function WarungPortal({
             </div>
 
             <form onSubmit={handleSubmitForm} className="overflow-y-auto p-4 space-y-3.5 flex-1">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Nama Warung
+                </label>
+                <input
+                  type="text"
+                  value={formWarungName}
+                  onChange={(e) => setFormWarungName(e.target.value)}
+                  disabled={!isAdmin}
+                  className="w-full bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-xs font-bold text-slate-800 focus:ring-1 focus:ring-[#ea580c]"
+                  required
+                />
+              </div>
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                   Pilih Pekerja
@@ -573,7 +759,7 @@ export function WarungPortal({
                 </label>
                 <input
                   type="text"
-                  placeholder="Misal: Kuota, Token, Kasbon, dll."
+                  placeholder="Misal: Kuota, Token, Kasbon, Rokok, dll."
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs focus:ring-1 focus:ring-[#ea580c]"
@@ -607,7 +793,7 @@ export function WarungPortal({
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <div>
                 <h3 className="font-bold text-sm text-slate-900">⚙️ Atur Produk & Harga</h3>
-                <p className="text-[11px] text-slate-500">Preset kasir khusus warung Anda</p>
+                <p className="text-[11px] text-slate-500">Preset kasir khusus warung</p>
               </div>
               <button
                 onClick={() => setIsCatalogModalOpen(false)}
