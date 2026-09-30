@@ -133,7 +133,7 @@ function formatBulanTahun(dateStr?: string | null): string {
 
 function formatRupiahCell(val: number | string): string {
   const n = Number(val) || 0;
-  return `Rp ${n.toLocaleString("id-ID")}.00`;
+  return `Rp  ${n.toLocaleString("id-ID")}`;
 }
 
 function metaSheet(title: string, from: string, to: string, params: URLSearchParams, rowCount: number): XlsxSheet {
@@ -276,7 +276,6 @@ async function loadManagerSection(
   return rows;
 }
 
-const MANAGER_SECTIONS = ["PRODUCTION", "MATERIAL", "WORKFORCE", "FINANCE", "ATTENTION", "HISTORY"] as const;
 async function managerWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: URLSearchParams,
@@ -463,6 +462,7 @@ async function operatorPayrollSlipsWorkbook(
 
 // -------------------------------------------------------------
 // FORMAT 2: DAFTAR GAJI KARYAWAN PT. KREASI DINAMIKA MAJU BERSAMA
+// HANYA UNTUK PEKERJA BULANAN (STAF)
 // -------------------------------------------------------------
 async function payrollSlipsWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -492,6 +492,13 @@ async function payrollSlipsWorkbook(
   const items = itemsRes.data ?? [];
   const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
 
+  // FILTER KHUSUS STAF BULANAN SAJA
+  const monthlyItems = items.filter((it: any) => {
+    const w: any = workerMap.get(it.worker_id);
+    const paySys = String(it.pay_system_snapshot || w?.pay_system || "").toUpperCase();
+    return paySys === "BULANAN";
+  });
+
   const periodMonthStr = formatBulanTahun(run.period_start || run.period_end);
 
   const columns = [
@@ -512,23 +519,25 @@ async function payrollSlipsWorkbook(
   let sumTotalLembur = 0;
   let sumGajiBersih = 0;
 
-  const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
+  const rows: Array<Record<string, any>> = monthlyItems.map((it: any, idx: number) => {
     const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
     const kehadiran = full + half * 0.5;
 
-    const baseAmount = Number(it.base_amount || 0);
+    // Ambil gaji pokok dari snapshot run, jika masih 0 ambil dari master worker monthly_salary
+    const baseAmount = Number(it.base_amount || 0) || Number(w?.monthly_salary || 0);
     const otMin = Number(it.overtime_minutes || 0);
     const otHours = Math.round((otMin / 60) * 10) / 10;
     const manualOtHours = Number(it.manual_overtime_hours || 0);
     const totalOtHours = otHours + manualOtHours;
 
+    // Tarif lembur per jam staf bulanan standar = Gaji Pokok / 190
     const hourlyRate = baseAmount > 0 ? Math.round((baseAmount / 190) * 100) / 100 : 0;
-    const otAmount = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
+    const otAmount = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0) || Math.round(totalOtHours * hourlyRate);
     const mealLembur = Number(it.overtime_bonus || 0);
     const totalLembur = otAmount + mealLembur;
-    const netGaji = Number(it.net_amount || 0);
+    const netGaji = Number(it.net_amount || 0) || (baseAmount + totalLembur);
 
     sumGajiPokok += baseAmount;
     sumTotalLembur += totalLembur;
@@ -537,7 +546,7 @@ async function payrollSlipsWorkbook(
     return {
       no: idx + 1,
       nik: w?.worker_code || `K0${idx + 1}`,
-      nama: it.worker_name_snapshot,
+      nama: it.worker_name_snapshot || w?.name || "-",
       jabatan: (w?.position || w?.department || "STAF").toUpperCase(),
       kehadiran: kehadiran % 1 === 0 ? kehadiran : kehadiran.toFixed(1),
       gaji_pokok: formatRupiahCell(baseAmount),
@@ -579,6 +588,7 @@ async function payrollSlipsWorkbook(
 
 // -------------------------------------------------------------
 // FORMAT 3: PEMBAYARAN UANG MAKAN MINGGUAN (8 KOLOM)
+// HANYA UNTUK STAF BULANAN
 // -------------------------------------------------------------
 async function uangMakanWorkbook(
   supabase: any,
@@ -602,6 +612,15 @@ async function uangMakanWorkbook(
   ]);
 
   const items = itemsRes.data ?? [];
+  const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
+
+  // FILTER KHUSUS STAF BULANAN
+  const monthlyItems = items.filter((it: any) => {
+    const w: any = workerMap.get(it.worker_id);
+    const paySys = String(it.pay_system_snapshot || w?.pay_system || "").toUpperCase();
+    return paySys === "BULANAN";
+  });
+
   const columns = [
     { key: "no", label: "NO", width: 6 },
     { key: "nama", label: "NAMA", width: 22 },
@@ -614,17 +633,19 @@ async function uangMakanWorkbook(
   ];
 
   let grandTotal = 0;
-  const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
+  const rows: Array<Record<string, any>> = monthlyItems.map((it: any, idx: number) => {
+    const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
     const totalHari = full + half * 0.5;
 
+    // 1 hari = Rp 50.000 (35rb makan + 15rb insentif), 0.5 hari = Rp 25.000
     const totalMakan = totalHari * 50000;
     grandTotal += totalMakan;
 
     return {
       no: idx + 1,
-      nama: it.worker_name_snapshot,
+      nama: it.worker_name_snapshot || w?.name || "-",
       hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
       uang_makan: "Rp  35.000,00",
       insentif: "Rp  15.000,00",
@@ -661,6 +682,7 @@ async function uangMakanWorkbook(
 
 // -------------------------------------------------------------
 // FORMAT 4: PEMBAYARAN UPAH HARIAN (12 KOLOM)
+// HANYA UNTUK PEKERJA HARIAN
 // -------------------------------------------------------------
 async function upahHarianWorkbook(
   supabase: any,
@@ -686,6 +708,13 @@ async function upahHarianWorkbook(
   const items = itemsRes.data ?? [];
   const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
 
+  // FILTER KHUSUS PEKERJA HARIAN SAJA
+  const dailyItems = items.filter((it: any) => {
+    const w: any = workerMap.get(it.worker_id);
+    const paySys = String(it.pay_system_snapshot || w?.pay_system || "").toUpperCase();
+    return paySys === "HARIAN";
+  });
+
   const columns = [
     { key: "no", label: "NO", width: 6 },
     { key: "nama", label: "NAMA", width: 22 },
@@ -703,12 +732,13 @@ async function upahHarianWorkbook(
 
   let grandTotal = 0;
 
-  const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
+  const rows: Array<Record<string, any>> = dailyItems.map((it: any, idx: number) => {
     const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
     const totalHari = full + half * 0.5;
 
+    // Ambil tarif harian dari master worker jika run item masih 0
     const dailyRate = Number(w?.daily_salary) || (totalHari > 0 ? Math.round(Number(it.base_amount || 0) / totalHari) : 0);
     const hourlyOtRate = dailyRate > 0 ? Math.round(dailyRate / 8) : 0;
 
