@@ -44,21 +44,20 @@ export function formatMinutesToHours(minutes: number): string {
 }
 
 /**
- * Kalkulator Lembur Resmi Sesuai Ketentuan Pabrik:
- * - Senin - Jumat: 08:00 - 17:00 (Lembur jika pulang > 17:00)
- * - Sabtu: 08:00 - 15:00 (Lembur jika pulang > 15:00)
- * - Minggu: 08:00 - 17:00 (Hari Lembur Penuh / Libur Masuk)
- * 
- * Insentif & Bonus:
+ * Kalkulator Lembur Resmi Sesuai Ketentuan:
+ * - Senin - Jumat: 08:00 - 17:00 (Lembur jika pulang > 17:00 dan minimal >= 30 menit)
+ * - Sabtu: 08:00 - 15:00 (Lembur jika pulang > 15:00 dan minimal >= 30 menit)
+ * - Minggu: 08:00 - 17:00 (Hari Libur Masuk)
+ *
+ * Kompensasi & Tambahan Dinamis:
  * - Harian:
  *   * Lembur / jam = Gaji Harian / 8
- *   * Lembur >= 4 jam = Tambahan Rp 5.000
  *   * Hadir Minggu = Tambahan Rp 20.000
- *   * Lembur Jumat malam (>17:00) di-carry forward ke periode minggu depan
+ *   * Lembur lewat 17:00 minimal 4 jam (pulang >= 21:00) = Tambahan Rp 5.000
  * - Bulanan:
  *   * Lembur / jam = Gaji Bulanan / 190
- *   * Lembur >= 4 jam = Tambahan Rp 17.500
- *   * Masuk/Lembur Minggu = 8 jam lembur + Uang Makan Rp 50.000 (+ Bonus 4H jika >= 4 jam)
+ *   * Masuk Minggu = Lembur standar 8 jam + Uang Makan Rp 50.000
+ *   * Lembur lewat 17:00 minimal 4 jam (pulang >= 21:00) = Tambahan Rp 17.500
  */
 export function calculateShiftOvertime(
   attendanceDate: string,
@@ -70,7 +69,7 @@ export function calculateShiftOvertime(
 ): ShiftOvertimeResult {
   const isBulanan = String(paySystem).toUpperCase() === "BULANAN";
 
-  // Parse date without timezone shifts
+  // Parse date tanpa pergeseran timezone
   const parts = String(attendanceDate).slice(0, 10).split("-");
   const year = parseInt(parts[0], 10) || 2026;
   const month = (parseInt(parts[1], 10) || 1) - 1;
@@ -84,7 +83,10 @@ export function calculateShiftOvertime(
   const isWeekday = dow >= 1 && dow <= 5;
   const dayName = DAY_NAMES[dow] || "Hari";
 
-  // Tentukan jam kerja normal shift (dapat dikonfigurasi via payroll_settings)
+  // Batas minimal lembur dihitung (default: 30 menit. Jika di bawah 30 mnt = 0)
+  const minOtThreshold = Number(shiftSettings?.OT_MIN_THRESHOLD_MINUTES ?? 30);
+
+  // Jadwal jam kerja normal shift
   let standardIn = (shiftSettings?.SHIFT_WEEKDAY_IN as string) || "08:00";
   let standardOut = (shiftSettings?.SHIFT_WEEKDAY_OUT as string) || "17:00";
   let standardOutMinutes = timeToMinutes(standardOut) ?? (17 * 60);
@@ -108,15 +110,10 @@ export function calculateShiftOvertime(
     ? Number(shiftSettings?.BULANAN_SUNDAY_MEAL ?? 50000)
     : 0;
 
-  // Jika admin menginput menit lembur manual secara eksplisit (> 0)
+  // Jika admin menginput menit lembur manual secara eksplisit
   if (typeof manualOvertimeMinutes === "number" && manualOvertimeMinutes > 0) {
     const otMin = Math.round(manualOvertimeMinutes);
     const otHours = Math.round((otMin / 60) * 10) / 10;
-    // Bonus 4 jam (uang makan lembur Rp 17.500 / Rp 5.000)
-    // Hari Biasa: otMin >= 240
-    // Hari Minggu:
-    // - Harian: otMin >= 240 (karena lembur hanya dihitung lewat jam 17:00)
-    // - Bulanan: otMin >= 720 (480 min lembur standar Minggu + 240 min lembur lewat jam 17:00)
     const qualifies4h = isSunday
       ? (isBulanan ? otMin >= 720 : otMin >= 240)
       : otMin >= 240;
@@ -141,23 +138,24 @@ export function calculateShiftOvertime(
       fridayOvertimeNextWeek: isFriday && otMin > 0,
       description: isSunday
         ? (isBulanan
-            ? `Hari Minggu: ${formatMinutesToHours(otMin)} lembur + Uang Makan Rp 50.000${qualifies4h ? " + Uang Makan Lembur Rp 17.500" : ""}`
-            : `Hari Minggu: ${formatMinutesToHours(otMin)} lembur lewat 17:00 + Insentif Rp 20.000${qualifies4h ? " + Bonus Lembur Rp 5.000" : ""}`)
-        : `Lembur manual: ${formatMinutesToHours(otMin)}${qualifies4h ? (isBulanan ? " + Uang Makan Lembur Rp 17.500" : " + Bonus Rp 5.000") : ""}`,
+            ? `Hari Minggu: ${formatMinutesToHours(otMin)} lembur + Uang Makan Rp 50.000${qualifies4h ? " + Tambahan Rp 17.500" : ""}`
+            : `Hari Minggu: ${formatMinutesToHours(otMin)} lembur lewat 17:00 + Tambahan Rp 20.000${qualifies4h ? " + Tambahan Rp 5.000" : ""}`)
+        : `Lembur manual: ${formatMinutesToHours(otMin)}${qualifies4h ? (isBulanan ? " + Tambahan Rp 17.500" : " + Tambahan Rp 5.000") : ""}`,
     };
   }
 
-  const inMin = timeToMinutes(actualIn);
   const outMin = timeToMinutes(actualOut);
-
   let calculatedOtMinutes = 0;
   let description = "";
 
   if (isSunday) {
     if (isBulanan) {
-      // BULANAN: Hari Minggu 08:00 - 17:00 adalah 8 jam lembur (480 mnt) + Uang Makan Minggu Rp 50.000
-      // Jika kerja lewat 17:00, jam lembur bertambah
-      const otPast17 = (outMin !== null && outMin > standardOutMinutes) ? (outMin - standardOutMinutes) : 0;
+      // BULANAN: Hari Minggu 08:00 - 17:00 adalah 8 jam lembur (480 mnt) + Uang Makan Rp 50.000
+      let otPast17 = 0;
+      if (outMin !== null && outMin > standardOutMinutes) {
+        const rawDiff = outMin - standardOutMinutes;
+        otPast17 = rawDiff >= minOtThreshold ? rawDiff : 0;
+      }
       calculatedOtMinutes = 480 + otPast17;
       const qualifies4h = otPast17 >= 240; // Lembur lewat jam 17:00 minimal 4 jam (pulang >= 21:00)
       const bonus4h = qualifies4h ? bonus4hDefault : 0;
@@ -178,15 +176,15 @@ export function calculateShiftOvertime(
         sundayMealAmount: sundayMealDefault,
         fridayOvertimeNextWeek: false,
         description: otPast17 > 0
-          ? `Minggu lembur 8 jam + lewat 17:00 (${formatMinutesToHours(otPast17)}) + Makan Minggu Rp 50rb${qualifies4h ? " + Makan Lembur Rp 17.500" : ""}`
+          ? `Minggu lembur 8 jam + lewat 17:00 (${formatMinutesToHours(otPast17)}) + Makan Minggu Rp 50rb${qualifies4h ? " + Tambahan Rp 17.500" : ""}`
           : "Hari Minggu: lembur standar 8 jam + Uang Makan Minggu Rp 50.000",
       };
     } else {
-      // HARIAN: Hari Minggu jam 08:00 s/d 17:00 HANYA TAMBAHAN Rp 20.000 (jam kerja shift reguler Minggu)
-      // Lembur BARU BERLAKU kalau lewat dari jam 17:00
-      // Dan kalau lembur lewat jam 17:00 minimal 4 jam (pulang >= 21:00), baru dapat tambahan Rp 5.000
+      // HARIAN: Masuk 08:00 - 17:00 dapat Tambahan Rp 20.000
+      // Lembur baru dihitung jika lewat 17:00 dan memenuhi threshold (>= 30 menit)
       if (outMin !== null && outMin > standardOutMinutes) {
-        calculatedOtMinutes = outMin - standardOutMinutes;
+        const rawDiff = outMin - standardOutMinutes;
+        calculatedOtMinutes = rawDiff >= minOtThreshold ? rawDiff : 0;
         const qualifies4h = calculatedOtMinutes >= 240;
         const bonus4h = qualifies4h ? bonus4hDefault : 0;
         return {
@@ -204,10 +202,11 @@ export function calculateShiftOvertime(
           sundayBonusAmount: sundayBonusDefault,
           sundayMealAmount: 0,
           fridayOvertimeNextWeek: false,
-          description: `Minggu masuk (08:00-17:00) + lembur lewat 17:00 ${formatMinutesToHours(calculatedOtMinutes)} + Insentif Rp 20.000${qualifies4h ? " + Bonus Rp 5.000" : ""}`,
+          description: calculatedOtMinutes > 0
+            ? `Minggu masuk (08:00-17:00) + lembur lewat 17:00 ${formatMinutesToHours(calculatedOtMinutes)} + Tambahan Rp 20.000${qualifies4h ? " + Tambahan Rp 5.000" : ""}`
+            : "Hari Minggu: shift standar (08:00 - 17:00) + Tambahan Minggu Rp 20.000 (lembur < 30 mnt diabaikan)",
         };
       } else {
-        // Pulang jam 17:00 atau sebelumnya: 0 menit lembur, HANYA tambahan Rp 20.000
         return {
           dayOfWeek: dow,
           dayName,
@@ -223,15 +222,18 @@ export function calculateShiftOvertime(
           sundayBonusAmount: sundayBonusDefault,
           sundayMealAmount: 0,
           fridayOvertimeNextWeek: false,
-          description: "Hari Minggu: shift standar (08:00 - 17:00) + Insentif Minggu Rp 20.000",
+          description: "Hari Minggu: shift standar (08:00 - 17:00) + Tambahan Minggu Rp 20.000",
         };
       }
     }
   } else if (isSaturday) {
-    // Hari Sabtu: Pulang normal 15:00
+    // Sabtu: Pulang normal 15:00
     if (outMin !== null && outMin > standardOutMinutes) {
-      calculatedOtMinutes = outMin - standardOutMinutes;
-      description = `Sabtu lembur lewat 15:00: ${formatMinutesToHours(calculatedOtMinutes)}`;
+      const rawDiff = outMin - standardOutMinutes;
+      calculatedOtMinutes = rawDiff >= minOtThreshold ? rawDiff : 0;
+      description = calculatedOtMinutes > 0
+        ? `Sabtu lembur lewat 15:00: ${formatMinutesToHours(calculatedOtMinutes)}`
+        : "Sabtu: pulang lewat jam 15:00 kurang dari 30 menit (lembur 0)";
     } else {
       calculatedOtMinutes = 0;
       description = "Sabtu jam normal (08:00 - 15:00), tidak ada lembur";
@@ -239,8 +241,11 @@ export function calculateShiftOvertime(
   } else {
     // Senin - Jumat: Pulang normal 17:00
     if (outMin !== null && outMin > standardOutMinutes) {
-      calculatedOtMinutes = outMin - standardOutMinutes;
-      description = `${dayName} lembur lewat 17:00: ${formatMinutesToHours(calculatedOtMinutes)}`;
+      const rawDiff = outMin - standardOutMinutes;
+      calculatedOtMinutes = rawDiff >= minOtThreshold ? rawDiff : 0;
+      description = calculatedOtMinutes > 0
+        ? `${dayName} lembur lewat 17:00: ${formatMinutesToHours(calculatedOtMinutes)}`
+        : `${dayName}: pulang lewat 17:00 kurang dari 30 menit (lembur 0)`;
     } else {
       calculatedOtMinutes = 0;
       description = `${dayName} jam normal (08:00 - 17:00), tidak ada lembur`;
@@ -270,7 +275,7 @@ export function calculateShiftOvertime(
     sundayMealAmount: sundayMeal,
     fridayOvertimeNextWeek,
     description: qualifies4h
-      ? `${description} + ${isBulanan ? "Uang Makan Lembur Rp 17.500" : "Bonus Rp 5.000"}`
+      ? `${description} + Tambahan ${isBulanan ? "Rp 17.500" : "Rp 5.000"}`
       : description,
   };
 }
