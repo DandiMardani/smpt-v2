@@ -66,19 +66,17 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-900 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black px-4 py-12 text-slate-900">
-      <section className="relative w-full max-w-sm rounded-3xl border border-slate-700/50 bg-white/95 p-6 shadow-2xl backdrop-blur-md sm:p-8">
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-blue-50/60 via-slate-50 to-white px-4 py-12 text-slate-900">
+      <section className="relative w-full max-w-sm rounded-3xl border border-slate-200/80 bg-white p-7 shadow-xl shadow-slate-200/50 sm:p-8">
         
-        {/* Header Ringkas & Lega */}
-        <div className="mb-6 text-center flex flex-col items-center">
-          <div className="relative mb-3.5 p-1 rounded-2xl bg-gradient-to-b from-slate-300 to-slate-600 shadow-md">
-            <div className="overflow-hidden rounded-[13px] bg-black">
-              <img
-                src="/IMG_20261001_015858_661.jpg"
-                alt="Logo KDMB"
-                className="h-14 w-14 object-cover object-center"
-              />
-            </div>
+        {/* Header Bersih Senada Dashboard */}
+        <div className="mb-7 text-center flex flex-col items-center">
+          <div className="relative mb-3.5 flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-white p-1 shadow-md shadow-slate-200/70">
+            <img
+              src="/IMG_20261001_015858_661.jpg"
+              alt="Logo KDMB"
+              className="h-full w-full rounded-xl object-cover object-center"
+            />
           </div>
 
           <h1 className="text-xl font-black tracking-tight text-slate-900">
@@ -115,7 +113,7 @@ export default function LoginPage() {
                 setEmailInput(e.target.value);
                 if (error) setError("");
               }}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-800 focus:bg-white focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               placeholder="nama@email.com atau PKR-00012"
             />
           </div>
@@ -140,7 +138,7 @@ export default function LoginPage() {
                   setPasswordInput(e.target.value);
                   if (error) setError("");
                 }}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 pr-12 text-sm text-slate-900 outline-none transition focus:border-slate-800 focus:bg-white focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 pr-12 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                 placeholder="Masukkan kata sandi"
               />
               <button
@@ -186,11 +184,15 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-slate-900/25 transition hover:bg-slate-800 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Memproses..." : "Masuk ke Sistem"}
           </button>
         </form>
+
+        <p className="mt-7 text-center text-xs font-medium text-slate-400">
+          Kreasi Dinamika Maju Bersama
+        </p>
       </section>
     </main>
   );
