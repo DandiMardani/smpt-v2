@@ -22,17 +22,19 @@ import { addPettyCashAction } from "@/lib/final/actions";
 import { revalidatePath } from "next/cache";
 import { NotaUploadInput } from "./nota-upload-input";
 import { ExportKasKecilBar, type PettyCashItem } from "./export-kas-kecil";
-import { CancelPettyCashBtn } from "./cancel-btn";
 
 type Props = { searchParams: Promise<SearchParams> };
 
-// Server action cepat untuk hapus/batalkan transaksi
-export async function deletePettyCashAction(id: number | string) {
+async function cancelPettyCashAction(formData: FormData) {
   "use server";
+  const id = formData.get("id");
+  if (!id) return;
   const s = await createClient();
-  // Hapus langsung baris yang salah agar tidak merusak saldo
+
+  // Hapus transaksi kas kecil yang salah agar saldo kembali normal
   await s.from("petty_cash_transactions").delete().eq("id", id);
   revalidatePath("/dashboard/kas-kecil");
+  revalidatePath("/dashboard/kasKecil");
 }
 
 export default async function Page({ searchParams }: Props) {
@@ -117,7 +119,7 @@ export default async function Page({ searchParams }: Props) {
         </Card>
       ) : null}
 
-      {/* Filter Tanggal, Export Excel CSV, & Cetak PDF */}
+      {/* Komponen Filter Tanggal, Export Excel CSV, & Cetak PDF */}
       <ExportKasKecilBar data={transactions} />
 
       <Card title="Riwayat">
@@ -186,7 +188,19 @@ export default async function Page({ searchParams }: Props) {
                   </Td>
                   {can ? (
                     <Td className="text-right">
-                      <CancelPettyCashBtn id={x.id} action={deletePettyCashAction} />
+                      {x.status === "AKTIF" ? (
+                        <form action={cancelPettyCashAction}>
+                          <input type="hidden" name="id" value={x.id} />
+                          <button
+                            type="submit"
+                            className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-100 transition active:scale-95"
+                          >
+                            Hapus
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Dibatalkan</span>
+                      )}
                     </Td>
                   ) : null}
                 </tr>
