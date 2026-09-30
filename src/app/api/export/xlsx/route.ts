@@ -34,7 +34,7 @@ const SIMPLE_REPORTS: Record<string, SimpleReport> = {
   log_bahan: { title: "Log Bahan Baku", sheet: "Log Bahan", permission: "log_bahan.view", table: "stock_ledger_entries", dateColumn: "created_at", timestampDate: true, orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", materialColumn: "material_id" },
   stok_gudang: { title: "Stok Gudang", sheet: "Stok Gudang", permission: "stok_gudang.view", table: "stock_balances", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", materialColumn: "material_id" },
   cutting: { title: "Hasil Cutting", sheet: "Cutting", permission: "cutting.view", table: "cutting_daily_results", dateColumn: "result_date", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", statusColumn: "status" },
-  sablon: { title: "Riwayat WIP Sablon", sheet: "Sablon WIP", permission: "sablon.view", table: "stock_ledger_entries", dateColumn: "created_at", timestampDate: true, orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", fixedEq: { item_kind: "CUTTING_COMPONENT" }, fixedIlike: { movement_kind: "%SABLON%" } },
+  sablon: { title: "Riwayat WIP Sablon", sheet: "Sablon WIP", permission: "sablon.view", table: "stock_ledger_entries", dateColumn: "created_at", timestampDate: true, orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", fixedEq: { item_kind: "CUTTING_COMPONENT" }, fixedIlike: { movementKind: "%SABLON%" } },
   roll_lot: { title: "Stock Roll Lot", sheet: "Roll Lot", permission: "stok_gudang.view", table: "v_material_lot_status", orderColumn: "id", projectColumn: "current_project_id", productColumn: "current_product_id", materialColumn: "material_id", statusColumn: "status" },
   siap_produksi: { title: "Pemakaian Siap Produksi", sheet: "Siap Produksi", permission: "produksi.view", table: "ready_production_usages", dateColumn: "usage_date", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", materialColumn: "material_id" },
   spk: { title: "SPK Produksi", sheet: "SPK", permission: "spk.view", table: "production_orders", dateColumn: "order_date", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", workerColumn: "operator_worker_id", statusColumn: "status" },
@@ -92,14 +92,19 @@ function label(key: string): string {
     target_production: "Target Produk", target_item_qty: "Target Item", remaining_equivalent: "Sisa Equivalent", over_equivalent: "Over Equivalent",
   };
   if (aliases[key]) return aliases[key];
-  return key.split("_").map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(" ");
+  return key.split("_").map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part)).join(" ");
 }
 
 function columnsFromRows(rows: Array<Record<string, unknown>>) {
   const keys: string[] = [];
   const seen = new Set<string>();
   for (const row of rows.slice(0, 100)) {
-    for (const key of Object.keys(row)) if (!seen.has(key)) { seen.add(key); keys.push(key); }
+    for (const key of Object.keys(row)) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        keys.push(key);
+      }
+    }
   }
   return (keys.length ? keys : ["info"]).map((key) => ({ key, label: label(key) }));
 }
@@ -110,7 +115,7 @@ function formatIndoDate(dateStr?: string | null): string {
   if (isNaN(d.getTime())) return String(dateStr);
   const months = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
   ];
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
@@ -121,14 +126,14 @@ function formatBulanTahun(dateStr?: string | null): string {
   if (isNaN(d.getTime())) return String(dateStr);
   const months = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
   ];
   return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 function formatRupiahCell(val: number | string): string {
   const n = Number(val) || 0;
-  return `Rp ${n.toLocaleString("id-ID")}.00`;
+  return `Rp  ${n.toLocaleString("id-ID")}`;
 }
 
 function metaSheet(title: string, from: string, to: string, params: URLSearchParams, rowCount: number): XlsxSheet {
@@ -136,7 +141,10 @@ function metaSheet(title: string, from: string, to: string, params: URLSearchPar
   const wsLabel = wsRaw === "HAJI" ? "Haji" : wsRaw === "REGULER" ? "Reguler" : "Semua";
   return {
     name: "Info Export",
-    columns: [{ key: "field", label: "Keterangan" }, { key: "value", label: "Nilai" }],
+    columns: [
+      { key: "field", label: "Keterangan" },
+      { key: "value", label: "Nilai" },
+    ],
     rows: [
       { field: "Laporan", value: title },
       { field: "Periode", value: `${from} s/d ${to}` },
@@ -154,11 +162,19 @@ function metaSheet(title: string, from: string, to: string, params: URLSearchPar
 
 async function accessContext(supabase: Awaited<ReturnType<typeof createClient>>) {
   const [{ data: userData, error: userError }, roleResult, permissionResult] = await Promise.all([
-    supabase.auth.getUser(), supabase.rpc("current_user_role"), supabase.rpc("current_user_permissions"),
+    supabase.auth.getUser(),
+    supabase.rpc("current_user_role"),
+    supabase.rpc("current_user_permissions"),
   ]);
   if (userError || !userData.user) return null;
-  if (roleResult.error || permissionResult.error) throw new Error(roleResult.error?.message || permissionResult.error?.message || "Akses gagal dibaca.");
-  const permissions = new Set(((permissionResult.data ?? []) as Array<{ permission_code?: string }>).map((x) => String(x.permission_code ?? "").trim()).filter(Boolean));
+  if (roleResult.error || permissionResult.error) {
+    throw new Error(roleResult.error?.message || permissionResult.error?.message || "Akses gagal dibaca.");
+  }
+  const permissions = new Set(
+    ((permissionResult.data ?? []) as Array<{ permission_code?: string }>)
+      .map((x) => String(x.permission_code ?? "").trim())
+      .filter(Boolean)
+  );
   return { role: String(roleResult.data ?? "").toUpperCase(), permissions };
 }
 
@@ -167,7 +183,7 @@ async function loadSimpleReport(
   report: SimpleReport,
   params: URLSearchParams,
   from: string,
-  to: string,
+  to: string
 ): Promise<Array<Record<string, unknown>>> {
   const project = positiveId(params.get("project") || params.get("project_id"));
   const product = positiveId(params.get("product"));
@@ -204,7 +220,11 @@ async function loadSimpleReport(
   const all: Array<Record<string, unknown>> = [];
 
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
-    let query: any = (supabase as any).from(report.table).select("*").order(report.orderColumn, { ascending: false }).range(offset, Math.min(offset + PAGE_SIZE - 1, MAX_ROWS - 1));
+    let query: any = (supabase as any)
+      .from(report.table)
+      .select("*")
+      .order(report.orderColumn, { ascending: false })
+      .range(offset, Math.min(offset + PAGE_SIZE - 1, MAX_ROWS - 1));
     if (report.dateColumn) {
       if (report.timestampDate) {
         query = query.gte(report.dateColumn, `${from}T00:00:00+07:00`).lte(report.dateColumn, `${to}T23:59:59.999+07:00`);
@@ -229,14 +249,13 @@ async function loadSimpleReport(
   return all;
 }
 
-const MANAGER_SECTIONS = ["PRODUCTION", "MATERIAL", "WORKFORCE", "FINANCE", "ATTENTION", "HISTORY"] as const;
 async function loadManagerSection(
   supabase: Awaited<ReturnType<typeof createClient>>,
   section: string,
   from: string,
   to: string,
   project: number | null,
-  product: number | null,
+  product: number | null
 ) {
   const rows: Array<Record<string, unknown>> = [];
   for (let offset = 0; offset < MAX_MANAGER_ROWS_PER_SECTION; offset += MANAGER_PAGE_SIZE) {
@@ -257,12 +276,13 @@ async function loadManagerSection(
   return rows;
 }
 
+const MANAGER_SECTIONS = ["PRODUCTION", "MATERIAL", "WORKFORCE", "FINANCE", "ATTENTION", "HISTORY"] as const;
 async function managerWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: URLSearchParams,
   from: string,
   to: string,
-  onlySection?: string,
+  onlySection?: string
 ): Promise<XlsxSheet[]> {
   const project = positiveId(params.get("project"));
   const product = positiveId(params.get("product"));
@@ -270,7 +290,10 @@ async function managerWorkbook(
   if (summaryError) throw summaryError;
   const summaryRows: Array<Record<string, unknown>> = [];
   const walk = (value: unknown, prefix = "") => {
-    if (Array.isArray(value)) { summaryRows.push({ metric: prefix || "data", value: JSON.stringify(value) }); return; }
+    if (Array.isArray(value)) {
+      summaryRows.push({ metric: prefix || "data", value: JSON.stringify(value) });
+      return;
+    }
     if (value && typeof value === "object") {
       for (const [key, child] of Object.entries(value as Record<string, unknown>)) walk(child, prefix ? `${prefix}.${key}` : key);
       return;
@@ -292,7 +315,7 @@ async function laporanWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: URLSearchParams,
   from: string,
-  to: string,
+  to: string
 ): Promise<XlsxSheet[]> {
   const [production, stock, finance, audit] = await Promise.all([
     loadSimpleReport(supabase, { title: "Progress Produksi", sheet: "Progress Produksi", permission: "laporan.view", table: "v_production_progress", orderColumn: "order_id" }, params, from, to),
@@ -310,11 +333,11 @@ async function laporanWorkbook(
 }
 
 // -------------------------------------------------------------
-// LAPORAN 1: BORONGAN OPERATOR FORMAT CV. SMPT (SARIAYU MOM & BABY)
+// FORMAT 1: BORONGAN OPERATOR (SARIAYU MOM & BABY)
 // -------------------------------------------------------------
 async function operatorPayrollSlipsWorkbook(
   supabase: any,
-  params: URLSearchParams,
+  params: URLSearchParams
 ): Promise<{ sheets: XlsxSheet[]; filename: string }> {
   const runId = positiveId(params.get("run_id"));
 
@@ -338,9 +361,7 @@ async function operatorPayrollSlipsWorkbook(
       .eq("run_id", run.id)
       .order("worker_id", { ascending: true })
       .order("id", { ascending: true }),
-    supabase
-      .from("workers")
-      .select("id, worker_code, name, department, position, identity_no, phone, pay_system"),
+    supabase.from("workers").select("id, worker_code, name, department, position, identity_no, phone, pay_system"),
   ]);
 
   if (itemsRes.error) throw itemsRes.error;
@@ -380,18 +401,22 @@ async function operatorPayrollSlipsWorkbook(
     const workerTotal = workerItems.reduce((acc, it) => {
       const q = Number(it.qty_approved || 0);
       const pr = Number(it.operator_price_snapshot || 0);
-      return acc + (Number(it.operator_value) || (q * pr));
+      return acc + (Number(it.operator_value) || q * pr);
     }, 0);
     grandTotal += workerTotal;
 
-    const opCode = w?.worker_code ? (w.worker_code.startsWith("OP") ? w.worker_code : `OP${String(opSeq).padStart(3, "0")}`) : `OP${String(opSeq).padStart(3, "0")}`;
+    const opCode = w?.worker_code
+      ? w.worker_code.startsWith("OP")
+        ? w.worker_code
+        : `OP${String(opSeq).padStart(3, "0")}`
+      : `OP${String(opSeq).padStart(3, "0")}`;
     const workerName = (w?.name || workerItems[0]?.worker_name_snapshot || "-").toUpperCase();
     const department = (w?.department || w?.position || "OPERATOR").toUpperCase();
 
     workerItems.forEach((it: any, index: number) => {
       const q = Number(it.qty_approved || 0);
       const pr = Number(it.operator_price_snapshot || 0);
-      const subtotal = Number(it.operator_value) || (q * pr);
+      const subtotal = Number(it.operator_value) || q * pr;
       const workCode = it.work_item_code_snapshot || `T${String(it.work_item_id || it.id).padStart(3, "0")}`;
 
       rows.push({
@@ -430,19 +455,14 @@ async function operatorPayrollSlipsWorkbook(
   rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
   rows.push({ kode_op: "", kode: "Bony Daty", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "Dandi Mardani", total: "" });
 
-  const mainSheet: XlsxSheet = {
-    name: "Pengajuan Borongan",
-    columns,
-    rows,
-    headerColor: "1E293B",
+  return {
+    sheets: [{ name: "Pengajuan Borongan", columns, rows, headerColor: "1E293B" }],
+    filename: `SMPT-Pengajuan-Borongan-${fileSlug(projectName)}-${run.period_start}-${run.period_end}.xlsx`,
   };
-
-  const filename = `SMPT-Pengajuan-Borongan-${fileSlug(projectName)}-${run.period_start}-${run.period_end}.xlsx`;
-  return { sheets: [mainSheet], filename };
 }
 
 // -------------------------------------------------------------
-// LAPORAN 2: DAFTAR GAJI KARYAWAN PT. KREASI DINAMIKA MAJU BERSAMA
+// FORMAT 2: DAFTAR GAJI KARYAWAN PT. KREASI DINAMIKA MAJU BERSAMA
 // -------------------------------------------------------------
 async function payrollSlipsWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -464,14 +484,8 @@ async function payrollSlipsWorkbook(
   const run = runData as any;
 
   const [itemsRes, workersRes] = await Promise.all([
-    supabase
-      .from("payroll_run_items")
-      .select("*")
-      .eq("payroll_run_id", run.id)
-      .order("id", { ascending: true }),
-    supabase
-      .from("workers")
-      .select("id, worker_code, name, department, position, identity_no, phone, pay_system, monthly_salary, daily_salary"),
+    supabase.from("payroll_run_items").select("*").eq("payroll_run_id", run.id).order("id", { ascending: true }),
+    supabase.from("workers").select("id, worker_code, name, department, position, identity_no, phone, pay_system, monthly_salary, daily_salary"),
   ]);
 
   if (itemsRes.error) throw itemsRes.error;
@@ -502,7 +516,7 @@ async function payrollSlipsWorkbook(
     const w = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
-    const kehadiran = full + (half * 0.5);
+    const kehadiran = full + half * 0.5;
 
     const baseAmount = Number(it.base_amount || 0);
     const otMin = Number(it.overtime_minutes || 0);
@@ -557,19 +571,14 @@ async function payrollSlipsWorkbook(
   rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: "" });
   rows.push({ no: "", nik: "Bony Daty", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "Dandi Mardani", total_lembur: "", gaji_bersih: "" });
 
-  const mainSheet: XlsxSheet = {
-    name: "Daftar Gaji",
-    columns,
-    rows,
-    headerColor: "1E293B",
+  return {
+    sheets: [{ name: "Daftar Gaji", columns, rows, headerColor: "1E293B" }],
+    filename: `Daftar-Gaji-Karyawan-${fileSlug(periodMonthStr)}-${run.payroll_code}.xlsx`,
   };
-
-  const filename = `Daftar-Gaji-Karyawan-${fileSlug(periodMonthStr)}-${run.payroll_code}.xlsx`;
-  return { sheets: [mainSheet], filename };
 }
 
 // -------------------------------------------------------------
-// LAPORAN 3: FORM PEMBAYARAN UANG MAKAN MINGGUAN (8 KOLOM)
+// FORMAT 3: PEMBAYARAN UANG MAKAN MINGGUAN (8 KOLOM)
 // -------------------------------------------------------------
 async function uangMakanWorkbook(
   supabase: any,
@@ -588,17 +597,11 @@ async function uangMakanWorkbook(
   const run = runData?.[0] || {};
 
   const [itemsRes, workersRes] = await Promise.all([
-    supabase
-      .from("payroll_run_items")
-      .select("*")
-      .eq("payroll_run_id", run.id || 0)
-      .order("id", { ascending: true }),
+    supabase.from("payroll_run_items").select("*").eq("payroll_run_id", run.id || 0).order("id", { ascending: true }),
     supabase.from("workers").select("id, worker_code, name, department, position, pay_system"),
   ]);
 
   const items = itemsRes.data ?? [];
-  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
-
   const columns = [
     { key: "no", label: "NO", width: 6 },
     { key: "nama", label: "NAMA", width: 22 },
@@ -614,7 +617,7 @@ async function uangMakanWorkbook(
   const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
-    const totalHari = full + (half * 0.5);
+    const totalHari = full + half * 0.5;
 
     const totalMakan = totalHari * 50000;
     grandTotal += totalMakan;
@@ -623,10 +626,10 @@ async function uangMakanWorkbook(
       no: idx + 1,
       nama: it.worker_name_snapshot,
       hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
-      uang_makan: "Rp 35,000.00",
-      insentif: "Rp 15,000.00",
+      uang_makan: "Rp  35.000,00",
+      insentif: "Rp  15.000,00",
       kasbon: "",
-      total: formatRupiahCell(totalMakan),
+      total: formatRupiahCell(totalMakan) + ",00",
       paraf: idx + 1,
     };
   });
@@ -638,7 +641,7 @@ async function uangMakanWorkbook(
     uang_makan: "",
     insentif: "",
     kasbon: "",
-    total: formatRupiahCell(grandTotal),
+    total: formatRupiahCell(grandTotal) + ",00",
     paraf: "",
   });
 
@@ -657,7 +660,7 @@ async function uangMakanWorkbook(
 }
 
 // -------------------------------------------------------------
-// LAPORAN 4: FORM PEMBAYARAN UPAH HARIAN (12 KOLOM)
+// FORMAT 4: PEMBAYARAN UPAH HARIAN (12 KOLOM)
 // -------------------------------------------------------------
 async function upahHarianWorkbook(
   supabase: any,
@@ -676,11 +679,7 @@ async function upahHarianWorkbook(
   const run = runData?.[0] || {};
 
   const [itemsRes, workersRes] = await Promise.all([
-    supabase
-      .from("payroll_run_items")
-      .select("*")
-      .eq("payroll_run_id", run.id || 0)
-      .order("id", { ascending: true }),
+    supabase.from("payroll_run_items").select("*").eq("payroll_run_id", run.id || 0).order("id", { ascending: true }),
     supabase.from("workers").select("id, worker_code, name, department, position, identity_no, daily_salary, pay_system"),
   ]);
 
@@ -708,7 +707,7 @@ async function upahHarianWorkbook(
     const w = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
-    const totalHari = full + (half * 0.5);
+    const totalHari = full + half * 0.5;
 
     const dailyRate = Number(w?.daily_salary) || (totalHari > 0 ? Math.round(Number(it.base_amount || 0) / totalHari) : 0);
     const hourlyOtRate = dailyRate > 0 ? Math.round(dailyRate / 8) : 0;
@@ -718,9 +717,9 @@ async function upahHarianWorkbook(
     const manualOtHours = Number(it.manual_overtime_hours || 0);
     const totalOtHours = otHours + manualOtHours;
 
-    const totalLembur = (Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0));
+    const totalLembur = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
     const mealLembur = Number(it.overtime_bonus || 0);
-    const totalUpah = (totalHari * dailyRate) + totalLembur + mealLembur;
+    const totalUpah = totalHari * dailyRate + totalLembur + mealLembur;
     grandTotal += totalUpah;
 
     return {
@@ -771,7 +770,7 @@ async function upahHarianWorkbook(
 export async function GET(request: NextRequest) {
   try {
     const params = request.nextUrl.searchParams;
-    const key = String(params.get("report") || "").trim().toLowerCase();
+    const rawKey = String(params.get("report") || "").trim().toLowerCase();
     const today = jakartaToday();
     const from = validDate(params.get("from"), today);
     const to = validDate(params.get("to"), today);
@@ -785,25 +784,26 @@ export async function GET(request: NextRequest) {
     let sheets: XlsxSheet[];
     let customFilename: string | null = null;
 
-    if (
-      key === "payroll_slips" ||
-      key === "operator_payroll_slips" ||
-      key === "pembayaran_uang_makan" ||
-      key === "pembayaran_upah_harian"
-    ) {
+    // Normalisasi alias report payroll
+    const isOperatorReport = rawKey === "operator_payroll_slips" || rawKey === "payroll_borongan" || params.get("run_type") === "operator";
+    const isMealReport = rawKey === "pembayaran_uang_makan" || rawKey === "uang_makan";
+    const isDailyReport = rawKey === "pembayaran_upah_harian" || rawKey === "upah_harian";
+    const isPayrollReport = rawKey === "payroll_slips" || rawKey === "payroll" || rawKey.startsWith("payroll");
+
+    if (isOperatorReport || isMealReport || isDailyReport || isPayrollReport) {
       if (!access.permissions.has("payroll.view") && !["MANAGER", "ADMIN"].includes(access.role)) {
         return NextResponse.json({ error: "Tidak punya akses melihat payroll." }, { status: 403 });
       }
 
-      if (key === "operator_payroll_slips" || params.get("run_type") === "operator") {
+      if (isOperatorReport) {
         const result = await operatorPayrollSlipsWorkbook(supabase, params);
         sheets = result.sheets;
         customFilename = result.filename;
-      } else if (key === "pembayaran_uang_makan") {
+      } else if (isMealReport) {
         const result = await uangMakanWorkbook(supabase, params);
         sheets = result.sheets;
         customFilename = result.filename;
-      } else if (key === "pembayaran_upah_harian") {
+      } else if (isDailyReport) {
         const result = await upahHarianWorkbook(supabase, params);
         sheets = result.sheets;
         customFilename = result.filename;
@@ -812,16 +812,16 @@ export async function GET(request: NextRequest) {
         sheets = result.sheets;
         customFilename = result.filename;
       }
-    } else if (key === "manager_dashboard" || key === "manager_section") {
+    } else if (rawKey === "manager_dashboard" || rawKey === "manager_section") {
       if (!["MANAGER", "ADMIN"].includes(access.role)) return NextResponse.json({ error: "Export Dashboard Manager hanya untuk MANAGER/ADMIN." }, { status: 403 });
-      title = key === "manager_section" ? `Manager ${String(params.get("section") || "Detail")}` : "Manager Dashboard";
-      sheets = await managerWorkbook(supabase, params, from, to, key === "manager_section" ? String(params.get("section") || "") : undefined);
-    } else if (key === "laporan") {
+      title = rawKey === "manager_section" ? `Manager ${String(params.get("section") || "Detail")}` : "Manager Dashboard";
+      sheets = await managerWorkbook(supabase, params, from, to, rawKey === "manager_section" ? String(params.get("section") || "") : undefined);
+    } else if (rawKey === "laporan") {
       if (!access.permissions.has("laporan.view")) return NextResponse.json({ error: "Tidak punya akses laporan." }, { status: 403 });
       title = "Laporan SMPT";
       sheets = await laporanWorkbook(supabase, params, from, to);
     } else {
-      const report = SIMPLE_REPORTS[key];
+      const report = SIMPLE_REPORTS[rawKey];
       if (!report) return NextResponse.json({ error: "Jenis export tidak valid." }, { status: 400 });
       if (!access.permissions.has(report.permission)) return NextResponse.json({ error: "Tidak punya permission untuk export ini." }, { status: 403 });
       const rows = await loadSimpleReport(supabase, report, params, from, to);
