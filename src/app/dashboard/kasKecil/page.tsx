@@ -180,9 +180,15 @@ export default async function Page({ searchParams }: Props) {
                     )}
                   </Td>
                   <Td>
-                    <Badge variant={x.status === "DIBATALKAN" ? "neutral" : "default"}>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                        x.status === "DIBATALKAN"
+                          ? "bg-slate-100 text-slate-500 line-through"
+                          : "bg-blue-50 text-blue-700"
+                      }`}
+                    >
                       {x.status}
-                    </Badge>
+                    </span>
                   </Td>
                   {can ? (
                     <Td className="text-right">
