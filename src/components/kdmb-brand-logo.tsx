@@ -1,24 +1,67 @@
-export function KdmbBrandLogo({ className = "h-14 w-14" }: { className?: string }) {
+export function KdmbBrandLogo({ className = "h-16 w-32" }: { className?: string }) {
   return (
     <div
-      className={`relative inline-flex items-center justify-center rounded-2xl bg-white border border-slate-200/90 shadow-sm p-2 transition select-none ${className}`}
+      className={`inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm ${className}`}
     >
-      <div className="flex items-center tracking-tighter font-black text-slate-900 leading-none text-xl sm:text-2xl">
+      <svg
+        viewBox="0 0 240 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="h-full w-full select-none"
+      >
+        {/* Garis Frame Siku (Atap dan Dinding Kanan membingkai MB) */}
+        <path
+          d="M92 12 H228 V86"
+          stroke="#0F172A"
+          strokeWidth="7"
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+        />
+
         {/* Huruf K */}
-        <span>K</span>
+        <path
+          d="M18 16 V84 M18 52 L54 16 M26 44 L58 84"
+          stroke="#0F172A"
+          strokeWidth="9"
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+        />
 
-        {/* Huruf D dengan garis strip di tengah */}
-        <span className="relative inline-block mx-[1px]">
-          <span>D</span>
-          <span className="absolute left-[-2px] top-1/2 -translate-y-1/2 w-[10px] h-[2px] bg-slate-900 rounded-full pointer-events-none" />
-        </span>
+        {/* Huruf D dengan Garis Lintang Horizontal */}
+        <path
+          d="M74 18 V82 C104 82 110 74 110 50 C110 26 104 18 74 18 Z"
+          stroke="#0F172A"
+          strokeWidth="8"
+          strokeLinecap="square"
+        />
+        <line
+          x1="62"
+          y1="50"
+          x2="94"
+          y2="50"
+          stroke="#0F172A"
+          strokeWidth="7"
+          strokeLinecap="square"
+        />
 
-        {/* Huruf M dan B yang dibungkus garis siku atas-kanan */}
-        <div className="relative inline-flex items-center border-t-2 border-r-2 border-slate-900 pt-0.5 pr-1 pl-0.5 ml-0.5 rounded-tr-[3px]">
-          <span>M</span>
-          <span className="ml-[1px]">B</span>
-        </div>
-      </div>
+        {/* Huruf M */}
+        <path
+          d="M124 82 V22 L144 58 L164 22 V82"
+          stroke="#0F172A"
+          strokeWidth="8"
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+        />
+
+        {/* Huruf B */}
+        <path
+          d="M180 22 H204 C214 22 216 32 206 48 H180 M180 48 H208 C218 48 218 80 204 80 H180 V22"
+          stroke="#0F172A"
+          strokeWidth="8"
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+        />
+      </svg>
     </div>
   );
 }
