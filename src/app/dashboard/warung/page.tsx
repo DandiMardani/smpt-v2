@@ -12,7 +12,7 @@ export default async function WarungPage() {
   const warungId = user.id;
   const userEmail = (user.email || "").toLowerCase();
 
-  // Admin Dandi memiliki otoritas melihat semua warung
+  // Admin Dandi memiliki otoritas melihat seluruh kartu warung
   const isAdmin =
     userEmail.includes("dandi") ||
     userEmail.includes("admin") ||
@@ -37,7 +37,7 @@ export default async function WarungPage() {
     workers = data || [];
   }
 
-  // 2. Normalisasi nota lama Dandi Store agar warung_name terisi seragam
+  // 2. Normalisasi nota lama Dandi Store agar seragam
   if (isAdmin) {
     await supabase
       .from("cash_advances")
@@ -48,7 +48,7 @@ export default async function WarungPage() {
 
   // 3. Hak Akses Query Data Transaksi:
   // - Admin: Ambil SELURUH kasbon warung agar bisa melihat kartu per-warung
-  // - User Warung Mitra: HANYA ambil data yang sesuai warung_id atau warung_name miliknya
+  // - User Warung Mitra: HANYA ambil data yang sesuai warung miliknya
   let query = supabase
     .from("cash_advances")
     .select("id, worker_id, amount, paid_amount, notes, created_at, advance_date, status, installments_paid, warung_name, warung_id")
@@ -84,8 +84,10 @@ export default async function WarungPage() {
     };
   });
 
+  const PortalComponent = WarungPortal as any;
+
   return (
-    <WarungPortal
+    <PortalComponent
       initialWorkers={workers}
       initialTransactions={transactions}
       currentWarung={{ id: warungId, name: defaultWarungName }}
