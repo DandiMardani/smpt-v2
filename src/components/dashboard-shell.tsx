@@ -11,7 +11,7 @@ import {
   useCallback,
 } from "react";
 import { logout } from "@/app/auth/actions";
-import type { MenuEntry, MenuGroupChild, MenuLeaf } from "@/lib/access/menu";
+import type { MenuEntry, MenuGroupChild } from "@/lib/access/menu";
 
 type UserProfile = {
   displayName: string;
@@ -39,9 +39,8 @@ type FlatMenuItem = {
   subgroupTitle?: string;
 };
 
-// Category SVG Icons
-function getCategoryIcon(groupId: string, className = "h-5 w-5") {
-  switch (groupId) {
+function getCategoryIcon(id: string, className = "h-4 w-4") {
+  switch (id) {
     case "dashboard":
       return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -84,7 +83,6 @@ function getCategoryIcon(groupId: string, className = "h-5 w-5") {
         </svg>
       );
     case "sdmPayroll":
-    case "manajemenPekerja":
       return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -93,28 +91,7 @@ function getCategoryIcon(groupId: string, className = "h-5 w-5") {
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       );
-    case "kasbonGroup":
-      return (
-        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
-          <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
-          <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
-        </svg>
-      );
-    case "payrollGroup":
-      return (
-        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect width="20" height="14" x="2" y="5" rx="2" />
-          <line x1="2" x2="22" y1="10" y2="10" />
-        </svg>
-      );
-    case "keamananAkses":
-      return (
-        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        </svg>
-      );
+    case "keuanganGroup":
     case "keuanganLaporan":
       return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -123,10 +100,18 @@ function getCategoryIcon(groupId: string, className = "h-5 w-5") {
           <path d="M12 18V6" />
         </svg>
       );
+    case "sistemGroup":
+    case "keamananAkses":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
     default:
       return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="8" />
           <line x1="12" y1="8" x2="12" y2="12" />
           <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
@@ -473,28 +458,6 @@ export function DashboardShell({
                 <span>SDM</span>
               </button>
             </div>
-            <div className="mt-2 flex items-center justify-between text-[10px] font-semibold text-slate-500 px-1">
-              <span>Ruang Kerja:</span>
-              <span
-                className={`px-2 py-0.5 rounded-full font-bold ${
-                  workspace === "REGULER"
-                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                    : workspace === "HAJI"
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : workspace === "GUDANG"
-                    ? "bg-sky-50 text-sky-700 border border-sky-200"
-                    : "bg-amber-50 text-amber-700 border border-amber-200"
-                }`}
-              >
-                {workspace === "REGULER"
-                  ? "🎒 Proyek Umum"
-                  : workspace === "HAJI"
-                  ? "🕋 Proyek Haji"
-                  : workspace === "GUDANG"
-                  ? "📦 Gudang & Logistik"
-                  : "👥 SDM & Payroll"}
-              </span>
-            </div>
           </div>
         ) : (
           <div className="flex justify-center border-b border-slate-100 py-2">
@@ -502,55 +465,9 @@ export function DashboardShell({
               type="button"
               onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
               title={`Beralih mode (${workspace})`}
-              className={`flex h-9 w-9 items-center justify-center rounded-xl border text-sm font-bold shadow-xs transition ${
-                workspace === "REGULER"
-                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                  : workspace === "HAJI"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : workspace === "GUDANG"
-                  ? "border-sky-200 bg-sky-50 text-sky-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700"
-              }`}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold shadow-xs transition"
             >
               {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
-            </button>
-          </div>
-        )}
-
-        {/* Desktop Search Filter Bar */}
-        {!sidebarCollapsed ? (
-          <div className="px-3.5 pt-3 pb-1">
-            <div className="relative">
-              <input
-                type="text"
-                value={sidebarFilter}
-                onChange={(e) => setSidebarFilter(e.target.value)}
-                placeholder="Cari menu... (Ctrl+K)"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-1.5 pl-8 pr-8 text-xs text-slate-800 placeholder-slate-400 transition focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-              />
-              <svg className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              {sidebarFilter ? (
-                <button type="button" onClick={() => setSidebarFilter("")} className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600">✕</button>
-              ) : (
-                <kbd className="absolute right-2 top-2 rounded border border-slate-200 bg-white px-1 text-[9px] font-bold text-slate-400">⌘K</kbd>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex justify-center pt-3 pb-1">
-            <button
-              type="button"
-              onClick={() => setSearchOpen(true)}
-              title="Cari Menu (Ctrl+K)"
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 transition shadow-xs"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
             </button>
           </div>
         )}
@@ -574,11 +491,6 @@ export function DashboardShell({
                         {getCategoryIcon(entry.id, "h-4 w-4")}
                       </div>
                       <span className="truncate flex-1">{entry.text}</span>
-                      {badgeCounts[entry.id] ? (
-                        <span className="rounded-full bg-amber-400 px-1.5 py-0.2 text-[10px] font-extrabold text-amber-950">
-                          {badgeCounts[entry.id]}
-                        </span>
-                      ) : null}
                     </Link>
                   );
                 }
@@ -607,7 +519,6 @@ export function DashboardShell({
                       {entry.children.map((child) => {
                         if (child.type === "item") {
                           const active = isLinkActive(child.href);
-                          const count = badgeCounts[child.id] ?? 0;
                           return (
                             <Link
                               key={child.id}
@@ -617,185 +528,24 @@ export function DashboardShell({
                               }`}
                             >
                               <span className="truncate">{child.text}</span>
-                              {count > 0 ? (
-                                <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${active ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
-                                  {count}
-                                </span>
-                              ) : null}
                             </Link>
                           );
                         }
-
-                        const subActive = child.children.some((sub) => sub.href === pathname);
-                        return (
-                          <details key={child.id} open={subActive || Boolean(sidebarFilter) || undefined} className="group/sub">
-                            <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
-                              <span>{child.text}</span>
-                              <svg className="h-3 w-3 text-slate-400 transition-transform duration-200 group-open/sub:rotate-90" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                              </svg>
-                            </summary>
-                            <div className="mt-0.5 space-y-0.5 pl-2">
-                              {child.children.map((subItem) => {
-                                const active = isLinkActive(subItem.href);
-                                const count = badgeCounts[subItem.id] ?? 0;
-                                return (
-                                  <Link
-                                    key={subItem.id}
-                                    href={subItem.href}
-                                    className={`group/sublink flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs font-medium transition ${
-                                      active ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                                    }`}
-                                  >
-                                    <span className="truncate">{subItem.text}</span>
-                                    {count > 0 ? (
-                                      <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${active ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
-                                        {count}
-                                      </span>
-                                    ) : null}
-                                  </Link>
-                                );
-                              })}
-                            </div>
-                          </details>
-                        );
+                        return null;
                       })}
                     </div>
                   </details>
                 );
               })}
             </nav>
-          ) : (
-            <nav className="flex flex-col items-center space-y-2">
-              {effectiveMenuEntries.map((entry) => {
-                if (entry.type === "item") {
-                  const active = isLinkActive(entry.href);
-                  return (
-                    <Link
-                      key={entry.id}
-                      href={entry.href}
-                      title={entry.text}
-                      className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
-                        active ? "bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                      }`}
-                    >
-                      {getCategoryIcon(entry.id, "h-5 w-5")}
-                      {badgeCounts[entry.id] ? (
-                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white shadow-xs">
-                          {badgeCounts[entry.id]}
-                        </span>
-                      ) : null}
-                    </Link>
-                  );
-                }
-
-                const hasActive = entry.children.some((child) =>
-                  child.type === "item" ? isLinkActive(child.href) : child.children.some((sub) => isLinkActive(sub.href))
-                );
-                const isFlyoutOpen = activeFlyoutGroup === entry.id;
-
-                const flatGroupLinks: { id: string; text: string; href: string }[] = [];
-                for (const child of entry.children) {
-                  if (child.type === "item") {
-                    flatGroupLinks.push(child);
-                  } else {
-                    for (const sub of child.children) flatGroupLinks.push(sub);
-                  }
-                }
-
-                return (
-                  <div
-                    key={entry.id}
-                    className="relative"
-                    onMouseEnter={() => {
-                      if (flyoutTimeoutRef.current) clearTimeout(flyoutTimeoutRef.current);
-                      setActiveFlyoutGroup(entry.id);
-                    }}
-                    onMouseLeave={() => {
-                      flyoutTimeoutRef.current = setTimeout(() => setActiveFlyoutGroup(null), 200);
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setActiveFlyoutGroup(isFlyoutOpen ? null : entry.id)}
-                      title={entry.text}
-                      className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
-                        hasActive ? "bg-blue-100 text-blue-700 font-bold border border-blue-200" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                      }`}
-                    >
-                      {getCategoryIcon(entry.id, "h-5 w-5")}
-                    </button>
-
-                    {isFlyoutOpen ? (
-                      <div className="absolute left-full top-0 z-50 ml-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-3 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-                        <div className="mb-2 border-b border-slate-100 pb-2">
-                          <p className="text-xs font-black uppercase tracking-wider text-slate-800">{entry.text}</p>
-                          <p className="text-[10px] text-slate-400">Pilih modul navigasi</p>
-                        </div>
-                        <div className="max-h-80 overflow-y-auto space-y-1">
-                          {flatGroupLinks.map((link) => {
-                            const isItemActive = isLinkActive(link.href);
-                            const count = badgeCounts[link.id] ?? 0;
-                            return (
-                              <Link
-                                key={link.id}
-                                href={link.href}
-                                onClick={() => setActiveFlyoutGroup(null)}
-                                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                                  isItemActive ? "bg-blue-600 text-white font-bold" : "text-slate-700 hover:bg-slate-100"
-                                }`}
-                              >
-                                <span className="truncate">{link.text}</span>
-                                {count > 0 ? (
-                                  <span className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold ${isItemActive ? "bg-white text-blue-700" : "bg-amber-100 text-amber-900 border border-amber-300"}`}>
-                                    {count}
-                                  </span>
-                                ) : null}
-                              </Link>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </nav>
-          )}
-        </div>
-
-        {/* Desktop User Footer */}
-        <div className="border-t border-slate-100 p-3">
-          {!sidebarCollapsed ? (
-            <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2 border border-slate-100">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-xs">
-                {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-bold text-slate-800">{userProfile.displayName || userProfile.email}</p>
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <p className="truncate text-[10px] font-semibold text-blue-600">{userProfile.role}</p>
-                </div>
-              </div>
-              <Link href="/dashboard/akun" title="Pengaturan Akun" className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700">
-                ⚙️
-              </Link>
-            </div>
-          ) : (
-            <div className="flex justify-center">
-              <Link href="/dashboard/akun" title={`${userProfile.displayName || userProfile.email} (${userProfile.role})`} className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-xs">
-                {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
-              </Link>
-            </div>
-          )}
+          ) : null}
         </div>
       </aside>
 
       {/* 2. DYNAMIC MAIN LAYOUT */}
       <div className={`flex min-h-screen flex-col w-full max-w-full min-w-0 overflow-x-clip transition-[padding] duration-300 ease-in-out ${sidebarCollapsed ? "lg:pl-20" : "lg:pl-72"}`}>
         <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-md transition-all duration-300 shadow-xs w-full max-w-full">
-          <div className={`mx-auto flex h-16 w-full items-center justify-between gap-2 px-3 sm:px-6 transition-all duration-300 min-w-0 ${contentWide ? "max-w-none" : "max-w-7xl"}`}>
+          <div className="mx-auto flex h-16 w-full items-center justify-between gap-2 px-3 sm:px-6 transition-all duration-300 min-w-0">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 type="button"
@@ -810,35 +560,16 @@ export function DashboardShell({
                 </svg>
               </button>
 
-              <button
-                type="button"
-                onClick={handleToggleSidebar}
-                title={sidebarCollapsed ? "Perlebar Sidebar (Ctrl+B)" : "Ciutkan Sidebar (Ctrl+B)"}
-                className="hidden lg:flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-xs hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 transition active:scale-95"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                  <line x1="9" y1="3" x2="9" y2="21" />
-                  <path d={sidebarCollapsed ? "m14 9 3 3-3 3" : "m17 9-3 3 3 3"} />
-                </svg>
-              </button>
-
               <nav className="flex items-center gap-1.5 min-w-0 text-xs font-semibold">
                 <Link href="/dashboard" className="flex items-center gap-1 text-slate-400 hover:text-slate-700 transition shrink-0">
-                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                    <polyline points="9 22 9 12 15 12 15 22" />
-                  </svg>
-                  <span className="hidden sm:inline">Home</span>
+                  <span>Home</span>
                 </Link>
-
                 {currentBreadcrumb.group ? (
                   <>
-                    <span className="text-slate-300 hidden md:inline">/</span>
-                    <span className="text-slate-500 truncate hidden md:inline">{currentBreadcrumb.group}</span>
+                    <span className="text-slate-300">/</span>
+                    <span className="text-slate-500 truncate hidden sm:inline">{currentBreadcrumb.group}</span>
                   </>
                 ) : null}
-
                 <span className="text-slate-300">/</span>
                 <span className="font-extrabold text-slate-900 truncate">{currentBreadcrumb.page}</span>
               </nav>
@@ -850,273 +581,61 @@ export function DashboardShell({
                 type="button"
                 onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
                 title={`Beralih mode: ${workspace}`}
-                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-extrabold transition shadow-xs hover:shadow-md active:scale-95 ${
-                  workspace === "REGULER"
-                    ? "border-indigo-200 bg-indigo-50/90 text-indigo-700 hover:bg-indigo-100"
-                    : workspace === "HAJI"
-                    ? "border-emerald-200 bg-emerald-50/90 text-emerald-700 hover:bg-emerald-100"
-                    : workspace === "GUDANG"
-                    ? "border-sky-200 bg-sky-50/90 text-sky-700 hover:bg-sky-100"
-                    : "border-amber-200 bg-amber-50/90 text-amber-700 hover:bg-amber-100"
-                }`}
+                className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-100"
               >
-                <span className="text-sm">
-                  {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
-                </span>
-                <span className="hidden sm:inline">
-                  {workspace === "REGULER"
-                    ? "Proyek Reguler"
-                    : workspace === "HAJI"
-                    ? "Proyek Haji"
-                    : workspace === "GUDANG"
-                    ? "Gudang & Logistik"
-                    : "SDM & Payroll"}
-                </span>
-                <span className="text-[10px] opacity-60">⇄</span>
+                <span>{workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}</span>
+                <span className="hidden sm:inline">{workspace}</span>
               </button>
 
-              {/* Tombol Search Mobile (Ikon Kaca Pembesar di Header HP) */}
-              <button
-                type="button"
-                onClick={() => setSearchOpen(true)}
-                title="Cari modul (Ctrl+K)"
-                className="flex sm:hidden h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-600 shadow-xs hover:bg-slate-100 active:scale-95"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-              </button>
-
-              {/* Desktop Command Palette Trigger */}
-              <button
-                type="button"
-                onClick={() => setSearchOpen(true)}
-                className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-xs text-slate-500 shadow-xs hover:border-slate-300 hover:bg-white hover:text-slate-800 transition"
-              >
-                <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-                <span className="hidden md:inline">Cari modul...</span>
-                <kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-400">Ctrl+K</kbd>
-              </button>
-
-              {/* Wide Mode Toggle */}
-              <button
-                type="button"
-                onClick={handleToggleWide}
-                title={contentWide ? "Tampilan Terpusat" : "Tampilan Lebar Penuh"}
-                className={`hidden md:flex h-9 w-9 items-center justify-center rounded-xl border shadow-xs transition active:scale-95 ${
-                  contentWide ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {contentWide ? (
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="4 14 10 14 10 20" />
-                    <polyline points="20 10 14 10 14 4" />
-                    <line x1="14" y1="10" x2="21" y2="3" />
-                    <line x1="3" y1="21" x2="10" y2="14" />
-                  </svg>
-                ) : (
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="15 3 21 3 21 9" />
-                    <polyline points="9 21 3 21 3 15" />
-                    <line x1="21" y1="3" x2="14" y2="10" />
-                    <line x1="3" y1="21" x2="10" y2="14" />
-                  </svg>
-                )}
-              </button>
-
-              {/* Fullscreen Toggle */}
-              <button
-                type="button"
-                onClick={handleToggleFullscreen}
-                title="Layar Penuh"
-                className="hidden lg:flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-xs hover:border-slate-300 hover:bg-slate-50 transition active:scale-95"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                  <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-                  <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-                  <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-                </svg>
-              </button>
-
-              {pendingGudangCount > 0 ? (
-                <Link
-                  href="/dashboard/barangKeluarGudang"
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-900 shadow-xs hover:bg-amber-100 transition"
-                >
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                  </span>
-                  <span className="hidden sm:inline">Gudang</span>
-                  <span className="rounded-full bg-amber-500 px-1.5 text-[10px] text-white">{pendingGudangCount}</span>
-                </Link>
-              ) : null}
-
-              {/* User Dropdown */}
-              <div className="relative" ref={userDropdownRef}>
-                <button
-                  type="button"
-                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2 rounded-xl border border-slate-200/90 bg-white p-1 pr-2.5 shadow-xs hover:border-slate-300 transition"
-                >
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-black text-white shadow-xs">
-                    {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
-                  </div>
-                  <div className="text-left hidden sm:block">
-                    <p className="truncate text-xs font-bold text-slate-800 max-w-[120px]">
-                      {userProfile.displayName || userProfile.email.split("@")[0]}
-                    </p>
-                  </div>
-                  <svg className="h-3 w-3 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                  </svg>
-                </button>
-
-                {userDropdownOpen ? (
-                  <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl z-50">
-                    <div className="border-b border-slate-100 p-3">
-                      <p className="text-xs font-bold text-slate-900 truncate">{userProfile.displayName || "Pengguna"}</p>
-                      <p className="text-[11px] text-slate-500 truncate">{userProfile.email}</p>
-                      <span className="mt-1.5 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200/60">
-                        Role: {userProfile.role}
-                      </span>
-                    </div>
-
-                    <div className="p-1 space-y-1">
-                      <Link href="/dashboard/akun" onClick={() => setUserDropdownOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        👤 Profil & Akun Saya
-                      </Link>
-                      <button type="button" onClick={() => { setUserDropdownOpen(false); handleToggleWide(); }} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        <span>📐 Mode Lebar Penuh</span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${contentWide ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
-                          {contentWide ? "AKTIF" : "STANDAR"}
-                        </span>
-                      </button>
-                    </div>
-
-                    <div className="border-t border-slate-100 p-1">
-                      <form action={logout}>
-                        <button type="submit" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition">
-                          🚪 Keluar Sistem
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              {/* User Avatar */}
+              <Link href="/dashboard/akun" className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-xs">
+                {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
+              </Link>
             </div>
           </div>
         </header>
 
-        <main className={`w-full max-w-full min-w-0 flex-1 p-3 pb-24 sm:p-6 sm:pb-24 lg:pb-12 transition-all duration-300 ${contentWide ? "max-w-none px-3 sm:px-6 lg:px-8" : "mx-auto max-w-7xl px-3 sm:px-6 lg:px-8"}`}>
+        {/* Padding Bawah Ditambah (pb-32 di mobile) agar konten & footer tidak tenggelam di balik Floating Dock */}
+        <main className="w-full max-w-full min-w-0 flex-1 p-3 pb-32 sm:p-6 sm:pb-32 lg:pb-12">
           {children}
         </main>
-
-        <footer className="border-t border-slate-200/70 bg-white/50 py-4 text-center text-xs font-medium text-slate-400">
-          Kreasi Dinamika Maju Bersama © 2026 · Sistem Manajemen Produksi Terpadu (SMPT V2)
-        </footer>
       </div>
 
-      {/* 3. COMMAND PALETTE MODAL (CTRL+K SEARCH) */}
-      {searchOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-6 pt-16 sm:pt-20">
-          <div onClick={() => setSearchOpen(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" />
-          <div className="relative w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3.5">
-              <svg className="h-5 w-5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ketik untuk mencari menu atau modul (cth: SPK, Titipan)..."
-                className="w-full text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
-              />
-              <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-400 shrink-0">ESC</kbd>
-            </div>
-            <div className="max-h-96 overflow-y-auto p-2 space-y-1">
-              {searchResults.length === 0 ? (
-                <div className="py-12 text-center text-xs text-slate-400">Tidak ditemukan menu dengan kata kunci &quot;{searchQuery}&quot;</div>
-              ) : (
-                searchResults.map((item, idx) => {
-                  const isSelected = idx === selectedSearchIndex;
-                  return (
-                    <Link
-                      key={item.id}
-                      href={item.href}
-                      onClick={() => setSearchOpen(false)}
-                      className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-xs transition ${
-                        isSelected ? "bg-blue-600 text-white font-bold shadow-xs" : "text-slate-700 hover:bg-slate-100"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={isSelected ? "text-white" : "text-slate-400"}>{getCategoryIcon(item.id, "h-4 w-4")}</span>
-                        <span className="truncate">{item.title}</span>
-                      </div>
-                      <span className={`text-[10px] font-semibold truncate ${isSelected ? "text-blue-100" : "text-slate-400"}`}>
-                        {item.groupTitle} {item.subgroupTitle ? `› ${item.subgroupTitle}` : ""}
-                      </span>
-                    </Link>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* 4. ORIGINAL FAMILIAR MOBILE DRAWER */}
+      {/* 3. MOBILE DRAWER ELEGAN (SATU KARTU PROFIL RINGKAS) */}
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity duration-300" />
 
           <aside className="relative flex h-full w-[85vw] max-w-sm flex-col bg-white shadow-2xl transition-transform duration-300 ease-out">
-            {/* Header KD */}
-            <div className="border-b border-slate-100 px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-black text-white shadow-xs">
-                  KD
+            {/* Header Profil Terpadu (Menghemat 40% Ruang Atas) */}
+            <div className="border-b border-slate-100 p-4 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-sm font-black text-white shadow-md shadow-blue-500/20">
+                  {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "KD"}
                 </div>
-                <div>
-                  <p className="text-xs font-extrabold text-slate-900">Kreasi Dinamika</p>
-                  <p className="text-[10px] font-semibold text-blue-600">SMPT V2 Mobile</p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-xs font-black text-slate-900">{userProfile.displayName || "Kreasi Dinamika"}</p>
+                    <span className="rounded bg-blue-100 px-1.5 py-0.2 text-[9px] font-extrabold text-blue-700">
+                      {userProfile.role}
+                    </span>
+                  </div>
+                  <p className="truncate text-[10px] font-medium text-slate-400">{userProfile.email}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-slate-800"
               >
                 ✕
               </button>
             </div>
 
-            {/* Profile info in drawer */}
-            <div className="bg-slate-50/80 px-5 py-3 border-b border-slate-100 flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xs font-bold text-white shadow-xs">
-                {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-xs font-bold text-slate-800">
-                  {userProfile.displayName || userProfile.email}
-                </p>
-                <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
-                  {userProfile.role}
-                </span>
-              </div>
-            </div>
-
-            {/* 4 Tombol Pilihan Mode */}
-            <div className="p-3 bg-slate-50 border-b border-slate-100">
-              <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/70 p-1 text-[11px] font-bold">
+            {/* 4 Tombol Pilihan Ruang Kerja */}
+            <div className="p-3 bg-slate-50/80 border-b border-slate-100">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 px-0.5">Ruang Kerja Aktif:</p>
+              <div className="grid grid-cols-4 gap-1.5 rounded-xl bg-slate-200/60 p-1 text-[11px] font-bold">
                 <button
                   type="button"
                   onClick={() => handleWorkspaceChange("REGULER")}
@@ -1125,7 +644,7 @@ export function DashboardShell({
                   }`}
                 >
                   <span>🎒</span>
-                  <span>Reguler</span>
+                  <span className="text-[10px]">Reguler</span>
                 </button>
                 <button
                   type="button"
@@ -1135,7 +654,7 @@ export function DashboardShell({
                   }`}
                 >
                   <span>🕋</span>
-                  <span>Haji</span>
+                  <span className="text-[10px]">Haji</span>
                 </button>
                 <button
                   type="button"
@@ -1145,7 +664,7 @@ export function DashboardShell({
                   }`}
                 >
                   <span>📦</span>
-                  <span>Gudang</span>
+                  <span className="text-[10px]">Gudang</span>
                 </button>
                 <button
                   type="button"
@@ -1155,13 +674,13 @@ export function DashboardShell({
                   }`}
                 >
                   <span>👥</span>
-                  <span>SDM</span>
+                  <span className="text-[10px]">SDM</span>
                 </button>
               </div>
             </div>
 
-            {/* Scrollable menu */}
-            <div className="flex-1 overflow-y-auto px-4 py-4">
+            {/* Scrollable Navigation Area (Lega & Jelas) */}
+            <div className="flex-1 overflow-y-auto px-3.5 py-3">
               <nav className="space-y-1.5">
                 {effectiveMenuEntries.map((entry) => {
                   if (entry.type === "item") {
@@ -1171,11 +690,13 @@ export function DashboardShell({
                         key={entry.id}
                         href={entry.href}
                         onClick={() => setMobileOpen(false)}
-                        className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
-                          active ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"
+                        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold transition ${
+                          active ? "bg-blue-600 text-white shadow-sm shadow-blue-500/30" : "text-slate-700 hover:bg-slate-100"
                         }`}
                       >
-                        {getCategoryIcon(entry.id, "h-4 w-4")}
+                        <div className={active ? "text-white" : "text-slate-400"}>
+                          {getCategoryIcon(entry.id, "h-4 w-4")}
+                        </div>
                         <span>{entry.text}</span>
                       </Link>
                     );
@@ -1191,13 +712,16 @@ export function DashboardShell({
                       }}
                       className="group rounded-xl"
                     >
-                      <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
-                        <span>{entry.text}</span>
-                        <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition" viewBox="0 0 20 20" fill="currentColor">
+                      <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-50 transition [&::-webkit-details-marker]:hidden">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">{getCategoryIcon(entry.id, "h-3.5 w-3.5")}</span>
+                          <span>{entry.text}</span>
+                        </div>
+                        <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition-transform" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
                         </svg>
                       </summary>
-                      <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-3">
+                      <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2.5 ml-4">
                         {entry.children.map((child) => {
                           if (child.type === "item") {
                             const active = isLinkActive(child.href);
@@ -1206,31 +730,15 @@ export function DashboardShell({
                                 key={child.id}
                                 href={child.href}
                                 onClick={() => setMobileOpen(false)}
-                                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
-                                  active ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                                className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
+                                  active ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                                 }`}
                               >
                                 <span>{child.text}</span>
                               </Link>
                             );
                           }
-                          return (
-                            <div key={child.id} className="space-y-0.5 py-1">
-                              <p className="px-2 text-[10px] font-bold text-slate-400 uppercase">{child.text}</p>
-                              {child.children.map((sub) => (
-                                <Link
-                                  key={sub.id}
-                                  href={sub.href}
-                                  onClick={() => setMobileOpen(false)}
-                                  className={`flex items-center justify-between rounded-lg px-2 py-1 text-xs ${
-                                    isLinkActive(sub.href) ? "bg-blue-600 text-white font-bold" : "text-slate-600 hover:bg-slate-100"
-                                  }`}
-                                >
-                                  <span>{sub.text}</span>
-                                </Link>
-                              ))}
-                            </div>
-                          );
+                          return null;
                         })}
                       </div>
                     </details>
@@ -1239,22 +747,30 @@ export function DashboardShell({
               </nav>
             </div>
 
-            {/* Mobile Drawer Footer */}
-            <div className="border-t border-slate-100 p-4 space-y-2 bg-slate-50/50">
+            {/* Mobile Drawer Footer Ringkas */}
+            <div className="border-t border-slate-100 p-3 bg-slate-50/70 flex gap-2">
               <Link
                 href="/dashboard/akun"
                 onClick={() => setMobileOpen(false)}
-                className="flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
+                className="flex-1 flex items-center justify-center rounded-xl border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
               >
-                Akun Saya
+                👤 Akun Saya
               </Link>
+              <form action={logout} className="flex-1">
+                <button
+                  type="submit"
+                  className="w-full flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition"
+                >
+                  🚪 Keluar
+                </button>
+              </form>
             </div>
           </aside>
         </div>
       ) : null}
 
-      {/* 5. FLOATING MOBILE BOTTOM NAVIGATION DOCK */}
-      <nav className="fixed bottom-3 inset-x-3 z-40 mx-auto flex h-14 max-w-sm items-center justify-around rounded-2xl border border-slate-200/90 bg-white/92 px-2 shadow-2xl backdrop-blur-xl ring-1 ring-slate-900/5 lg:hidden">
+      {/* 4. FLOATING MOBILE BOTTOM NAVIGATION DOCK */}
+      <nav className="fixed bottom-3 inset-x-3 z-40 mx-auto flex h-14 max-w-sm items-center justify-around rounded-2xl border border-slate-200/90 bg-white/95 px-2 shadow-2xl backdrop-blur-xl ring-1 ring-slate-900/5 lg:hidden">
         <Link
           href="/dashboard"
           className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
@@ -1299,7 +815,7 @@ export function DashboardShell({
           <>
             <Link
               href="/dashboard/produksiReguler"
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
                 pathname.startsWith("/dashboard/produksiReguler") ? "text-indigo-700 bg-indigo-50/80" : "text-slate-500 hover:text-slate-900"
               }`}
             >
@@ -1321,7 +837,7 @@ export function DashboardShell({
         {workspace === "GUDANG" && (
           <Link
             href="/dashboard/barangMasukGudang"
-            className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
               pathname.includes("barangMasukGudang") ? "text-sky-700 bg-sky-50/80" : "text-slate-500 hover:text-slate-900"
             }`}
           >
