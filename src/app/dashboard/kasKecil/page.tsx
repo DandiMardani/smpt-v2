@@ -20,21 +20,35 @@ import { money, n, param, qty, type SearchParams } from "@/lib/final/final-utils
 import { createClient } from "@/lib/supabase/server";
 import { addPettyCashAction } from "@/lib/final/actions";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { NotaUploadInput } from "./nota-upload-input";
 import { ExportKasKecilBar, type PettyCashItem } from "./export-kas-kecil";
 
 type Props = { searchParams: Promise<SearchParams> };
 
+// Server Action Hapus Transaksi Kas Kecil (Langsung Refresh & Anti Hang)
 async function cancelPettyCashAction(formData: FormData) {
   "use server";
   const id = formData.get("id");
   if (!id) return;
-  const s = await createClient();
+  
+  try {
+    const s = await createClient();
+    // 1. Coba hapus baris transaksi
+    const resDelete = await s.from("petty_cash_transactions").delete().eq("id", id);
+    
+    // 2. Jika delete ditolak RLS, update statusnya menjadi DIBATALKAN
+    if (resDelete.error) {
+      await s.from("petty_cash_transactions").update({ status: "DIBATALKAN" }).eq("id", id);
+    }
+  } catch (err) {
+    console.error("Gagal hapus transaksi kas kecil:", err);
+  }
 
-  // Hapus transaksi kas kecil yang salah agar saldo kembali normal
-  await s.from("petty_cash_transactions").delete().eq("id", id);
-  revalidatePath("/dashboard/kas-kecil");
+  // Refresh kedua variasi URL (kasKecil & kas-kecil)
   revalidatePath("/dashboard/kasKecil");
+  revalidatePath("/dashboard/kas-kecil");
+  redirect("/dashboard/kasKecil?success=Transaksi+berhasil+dihapus");
 }
 
 export default async function Page({ searchParams }: Props) {
