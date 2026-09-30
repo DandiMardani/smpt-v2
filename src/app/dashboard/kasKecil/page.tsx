@@ -19,10 +19,27 @@ import { requirePermission } from "@/lib/access/current-user";
 import { money, n, param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { addPettyCashAction } from "@/lib/final/actions";
+import { revalidatePath } from "next/cache";
 import { NotaUploadInput } from "./nota-upload-input";
 import { ExportKasKecilBar, type PettyCashItem } from "./export-kas-kecil";
 
 type Props = { searchParams: Promise<SearchParams> };
+
+// Server Action untuk membatalkan / menghapus transaksi kas kecil
+async function cancelPettyCashAction(formData: FormData) {
+  "use server";
+  const id = formData.get("id");
+  if (!id) return;
+  const s = await createClient();
+  
+  // Update status transaksi menjadi DIBATALKAN agar tidak memotong saldo
+  await s
+    .from("petty_cash_transactions")
+    .update({ status: "DIBATALKAN" })
+    .eq("id", id);
+
+  revalidatePath("/dashboard/kas-kecil");
+}
 
 export default async function Page({ searchParams }: Props) {
   const a = await requirePermission("kas_kecil.view");
@@ -120,18 +137,19 @@ export default async function Page({ searchParams }: Props) {
               <Th>Nominal</Th>
               <Th>Bukti Nota</Th>
               <Th>Status</Th>
+              {can ? <Th className="text-right">Aksi</Th> : null}
             </tr>
           </thead>
           <tbody>
             {transactions.length === 0 ? (
               <tr>
-                <Td colSpan={7}>
+                <Td colSpan={8}>
                   <Empty>Belum ada transaksi kas kecil.</Empty>
                 </Td>
               </tr>
             ) : (
               transactions.map((x) => (
-                <tr key={x.id}>
+                <tr key={x.id} className={x.status === "DIBATALKAN" ? "opacity-40 bg-slate-50" : ""}>
                   <Td className="font-mono font-semibold">{x.transaction_code}</Td>
                   <Td>{x.transaction_date}</Td>
                   <Td>
@@ -162,8 +180,27 @@ export default async function Page({ searchParams }: Props) {
                     )}
                   </Td>
                   <Td>
-                    <Badge>{x.status}</Badge>
+                    <Badge variant={x.status === "DIBATALKAN" ? "neutral" : "default"}>
+                      {x.status}
+                    </Badge>
                   </Td>
+                  {can ? (
+                    <Td className="text-right">
+                      {x.status === "AKTIF" ? (
+                        <form action={cancelPettyCashAction}>
+                          <input type="hidden" name="id" value={x.id} />
+                          <button
+                            type="submit"
+                            className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-100 transition active:scale-95"
+                          >
+                            Batalkan
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Dibatalkan</span>
+                      )}
+                    </Td>
+                  ) : null}
                 </tr>
               ))
             )}
