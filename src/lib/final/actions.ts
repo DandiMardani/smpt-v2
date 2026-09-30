@@ -709,22 +709,18 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         const hasOut = r.actual_out && r.actual_out !== "--:--" && r.actual_out.trim() !== "";
 
         const d = new Date(r.attendance_date + "T00:00:00Z");
-        const dayOfWeek = d.getUTCDay(); // 0: Minggu, 6: Sabtu, 1-5: Senin-Jumat
+        const dayOfWeek = d.getUTCDay();
 
         if (!hasIn) {
-          // JIKA TIDAK SCAN MASUK: Pekerja ALPHA! Reset data
           if (r.attendance_status === "HADIR" || r.day_class || hasOut) {
             absentIds.push(r.id);
           }
         } else {
-          // JIKA ADA SCAN MASUK:
           if (dayOfWeek === 6) {
-            // SABTU: Jam pulang normal 15:00 (Lembur = 0)
             if (!hasOut || r.actual_out === "17:00:00" || r.actual_out === "17:00") {
               saturdayFixIds.push(r.id);
             }
           } else if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-            // SENIN - JUMAT: Jam pulang normal 17:00 (Lembur = 0)
             if (!hasOut) {
               weekdayFixIds.push(r.id);
             }
@@ -732,7 +728,6 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }
       }
 
-      // 1. Reset yang tidak masuk jadi Alpha
       for (let i = 0; i < absentIds.length; i += 100) {
         const chunk = absentIds.slice(i, i + 100);
         await s.from("attendance_records").update({
@@ -747,7 +742,6 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }).in("id", chunk);
       }
 
-      // 2. Koreksi Sabtu: pulang 15:00 (Lembur 0)
       for (let i = 0; i < saturdayFixIds.length; i += 100) {
         const chunk = saturdayFixIds.slice(i, i + 100);
         await s.from("attendance_records").update({
@@ -760,7 +754,6 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }).in("id", chunk);
       }
 
-      // 3. Koreksi Senin-Jumat: pulang 17:00 (Lembur 0)
       for (let i = 0; i < weekdayFixIds.length; i += 100) {
         const chunk = weekdayFixIds.slice(i, i + 100);
         await s.from("attendance_records").update({
@@ -994,7 +987,6 @@ export async function syncPayrollAdvancesAction(f: FormData) {
 
       const workerMap = new Map((workersList ?? []).map((w: any) => [w.id, w]));
 
-      // Tarik presensi terverifikasi periode ini
       const { data: attRecords } = await s
         .from("attendance_records")
         .select("worker_id, day_class, overtime_minutes, attendance_date, attendance_status")
@@ -1034,7 +1026,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
           if (run.payroll_type === "BULANAN") {
             baseAmt = Number(w?.monthly_salary ?? w?.base_salary ?? it.base_amount ?? 0);
           } else {
-            baseAmt = 0; // Uang mingguan bulanan = gaji pokok 0
+            baseAmt = 0;
             mealAmt = fullDays * 50000;
           }
           const hourlyRate = baseAmt > 0 ? Math.round((baseAmt / 190) * 100) / 100 : 0;
@@ -1045,7 +1037,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
           if (fullDays > 0 || halfDays > 0) {
             baseAmt = Math.round((fullDays + halfDays * 0.5) * dailyRate);
           } else {
-            baseAmt = 0; // Tidak masuk sama sekali otomatis Rp 0
+            baseAmt = 0;
           }
 
           const hourlyRate = dailyRate > 0 ? Math.round((dailyRate / 8) * 100) / 100 : 0;
@@ -1325,6 +1317,25 @@ export async function payCashAdvanceAction(f: FormData) {
   );
 }
 
+export async function deletePettyCashAction(f: FormData) {
+  await mutate(
+    "/dashboard/kasKecil",
+    "kas_kecil.write",
+    async () => {
+      const s = await createClient();
+      const targetId = id(f, "id");
+      if (!targetId) throw new Error("ID transaksi tidak valid.");
+      
+      const { error } = await s.from("petty_cash_transactions").delete().eq("id", targetId);
+      if (error) {
+        const { error: updErr } = await s.from("petty_cash_transactions").update({ status: "DIBATALKAN" }).eq("id", targetId);
+        if (updErr) throw updErr;
+      }
+    },
+    "Transaksi Kas Kecil berhasil dihapus."
+  );
+}
+
 export async function addPettyCashAction(f: FormData) {
   await mutate(
     "/dashboard/kasKecil",
@@ -1333,9 +1344,36 @@ export async function addPettyCashAction(f: FormData) {
       const s = await createClient();
 
       const file = (f.get("receipt_file") as File | null) || (f.get("receipt_file_gallery") as File | null);
+      const base64Data = t(f, "receipt_base64");
       let receiptUrl: string | null = null;
 
-      if (file && typeof file === "object" && file.size > 0 && file.name) {
+      // 1. Dukungan Base64 Galeri Terkompresi (Mobile Safe)
+      if (base64Data && base64Data.startsWith("data:image")) {
+        const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          const contentType = matches[1];
+          const buffer = Buffer.from(matches[2], "base64");
+          const ext = contentType.split("/")[1] || "jpg";
+          const filePath = `nota_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+
+          const { error: uploadError } = await s.storage
+            .from("nota-kas-kecil")
+            .upload(filePath, buffer, {
+              contentType,
+              upsert: false,
+            });
+
+          if (!uploadError) {
+            const { data: publicUrlData } = s.storage
+              .from("nota-kas-kecil")
+              .getPublicUrl(filePath);
+            receiptUrl = publicUrlData.publicUrl;
+          }
+        }
+      }
+
+      // 2. Fallback File Biasa
+      if (!receiptUrl && file && typeof file === "object" && file.size > 0 && file.name) {
         const ext = file.name.split(".").pop() || "jpg";
         const filePath = `nota_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
 
@@ -1346,15 +1384,12 @@ export async function addPettyCashAction(f: FormData) {
             upsert: false,
           });
 
-        if (uploadError) {
-          throw new Error(`Gagal mengunggah foto nota: ${uploadError.message}`);
+        if (!uploadError) {
+          const { data: publicUrlData } = s.storage
+            .from("nota-kas-kecil")
+            .getPublicUrl(filePath);
+          receiptUrl = publicUrlData.publicUrl;
         }
-
-        const { data: publicUrlData } = s.storage
-          .from("nota-kas-kecil")
-          .getPublicUrl(filePath);
-
-        receiptUrl = publicUrlData.publicUrl;
       }
 
       const { error } = await s.from("petty_cash_transactions").insert({
@@ -1365,6 +1400,7 @@ export async function addPettyCashAction(f: FormData) {
         description: t(f, "description"),
         document_no: t(f, "document_no") || null,
         receipt_url: receiptUrl,
+        status: "AKTIF",
       });
       if (error) throw error;
     },
