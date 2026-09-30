@@ -4,10 +4,10 @@ import React, { useState, useMemo, useEffect } from "react";
 import { 
   createWarungTransactionAction, 
   updateWarungTransactionAction, 
-  deleteWarungTransactionAction 
+  deleteWarungTransactionAction,
+  recordWarungPaymentAction
 } from "./actions";
 
-// Ikon Native SVG
 const CloseIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -41,6 +41,12 @@ const StoreIcon = () => (
 const ArrowLeftIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+  </svg>
+);
+
+const CheckCircleIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
 
@@ -88,16 +94,13 @@ export function WarungPortal({
   currentWarung,
   isAdmin = false,
 }: WarungPortalProps) {
-  // Jika admin, mulai dari daftar pilihan kartu warung ("ALL"). Jika user biasa, langsung kunci ke warung miliknya.
   const [selectedWarungFilter, setSelectedWarungFilter] = useState<string>(isAdmin ? "ALL" : currentWarung.name);
   const [activeTab, setActiveTab] = useState<"rekap" | "transaksi">("rekap");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Daftar Semua Warung Unik (Untuk Admin Card-View)
   const availableWarungs = useMemo(() => {
     const map = new Map<string, { name: string; totalDebt: number; workerCount: Set<string>; txCount: number }>();
 
-    // Pastikan Dandi Store selalu ada di daftar utama
     map.set("Dandi Store", {
       name: "Dandi Store",
       totalDebt: 0,
@@ -117,8 +120,11 @@ export function WarungPortal({
         };
         map.set(wName, entry);
       }
-      entry.totalDebt += Number(tx.amount || 0) - Number(tx.paid_amount || 0);
-      entry.workerCount.add(String(tx.worker_id));
+      const rem = Math.max(0, Number(tx.amount || 0) - Number(tx.paid_amount || 0));
+      if (rem > 0) {
+        entry.totalDebt += rem;
+        entry.workerCount.add(String(tx.worker_id));
+      }
       entry.txCount += 1;
     });
 
@@ -130,7 +136,6 @@ export function WarungPortal({
     }));
   }, [initialTransactions]);
 
-  // Transaksi yang aktif ditampilkan (difilter berdasarkan kartu warung yang dipilih)
   const activeTransactions = useMemo(() => {
     if (!isAdmin) {
       return initialTransactions.filter((tx) => 
@@ -145,7 +150,32 @@ export function WarungPortal({
     );
   }, [initialTransactions, selectedWarungFilter, isAdmin, currentWarung.name]);
 
-  // State Katalog Produk Dinamis (Tersimpan di Browser HP)
+  const warungSummary = useMemo(() => {
+    let totalRemaining = 0;
+    let totalPaid = 0;
+    const workerSet = new Set<string>();
+
+    activeTransactions.forEach((tx) => {
+      const amt = Number(tx.amount || 0);
+      const paid = Number(tx.paid_amount || 0);
+      const rem = Math.max(0, amt - paid);
+
+      totalRemaining += rem;
+      totalPaid += paid;
+
+      if (rem > 0) {
+        workerSet.add(String(tx.worker_id));
+      }
+    });
+
+    return {
+      totalRemaining,
+      totalPaid,
+      totalWorkers: workerSet.size,
+      totalTransactions: activeTransactions.length,
+    };
+  }, [activeTransactions]);
+
   const [catalog, setCatalog] = useState(DEFAULT_CATALOG);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [newProductName, setNewProductName] = useState("");
@@ -167,21 +197,23 @@ export function WarungPortal({
     } catch (e) {}
   };
 
-  // State Modal Input Nota / Edit
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<WarungTransaction | null>(null);
   const [formWorkerId, setFormWorkerId] = useState("");
   const [formAmount, setFormAmount] = useState<number | "">("");
+  const [formPaidAmount, setFormPaidAmount] = useState<number | "">("");
   const [formNotes, setFormNotes] = useState("");
   const [formWarungName, setFormWarungName] = useState(
     selectedWarungFilter !== "ALL" ? selectedWarungFilter : currentWarung.name
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // State Modal Riwayat Khusus Pekerja (Klik kartu pekerja)
   const [selectedWorkerForDetail, setSelectedWorkerForDetail] = useState<{ id: string; name: string; worker_code: string; role?: string } | null>(null);
 
-  // Rekap Saldo Langsung dari Transaksi Warung yang Aktif
+  const [paymentModalTx, setPaymentModalTx] = useState<WarungTransaction | null>(null);
+  const [paymentAmountInput, setPaymentAmountInput] = useState<number | "">("");
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
   const workerBalances = useMemo(() => {
     const map = new Map<string, { worker: { id: string; name: string; worker_code: string; role?: string }; totalDebt: number; transactionCount: number }>();
 
@@ -203,7 +235,9 @@ export function WarungPortal({
         map.set(key, entry);
       }
       entry.totalDebt += rem;
-      entry.transactionCount += 1;
+      if (rem > 0) {
+        entry.transactionCount += 1;
+      }
     });
 
     return Array.from(map.values())
@@ -226,6 +260,7 @@ export function WarungPortal({
     setEditingTx(null);
     setFormWorkerId(workerIdPrefill || (initialWorkers[0]?.id ? String(initialWorkers[0].id) : ""));
     setFormAmount("");
+    setFormPaidAmount(0);
     setFormNotes("");
     setFormWarungName(selectedWarungFilter !== "ALL" ? selectedWarungFilter : currentWarung.name);
     setIsFormOpen(true);
@@ -235,10 +270,17 @@ export function WarungPortal({
     setEditingTx(tx);
     setFormWorkerId(String(tx.worker_id));
     setFormAmount(tx.amount);
+    setFormPaidAmount(tx.paid_amount || 0);
     setFormNotes(tx.notes);
     setFormWarungName(tx.warung_name || "Dandi Store");
     setSelectedWorkerForDetail(null);
     setIsFormOpen(true);
+  };
+
+  const handleOpenPayment = (tx: WarungTransaction) => {
+    setPaymentModalTx(tx);
+    const rem = Math.max(0, Number(tx.amount || 0) - Number(tx.paid_amount || 0));
+    setPaymentAmountInput(rem);
   };
 
   const handleAddPreset = (item: { name: string; price: number }) => {
@@ -290,6 +332,7 @@ export function WarungPortal({
           notes: formNotes || "Kasbon Warung",
           is_direct_nominal: true,
           direct_amount: Number(formAmount),
+          paid_amount: Number(formPaidAmount) || 0,
           items: [],
           warung_name: formWarungName,
         } as any);
@@ -311,6 +354,41 @@ export function WarungPortal({
       alert(err.message || "Gagal menyimpan transaksi.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmitPayment = async (isFullPay = false) => {
+    if (!paymentModalTx) return;
+    const currentPaid = Number(paymentModalTx.paid_amount || 0);
+    const amount = Number(paymentModalTx.amount || 0);
+    const remaining = Math.max(0, amount - currentPaid);
+
+    let targetTotalPaid = 0;
+    if (isFullPay) {
+      targetTotalPaid = amount;
+    } else {
+      const bayarNominal = Number(paymentAmountInput) || 0;
+      if (bayarNominal <= 0) {
+        alert("Masukkan nominal pembayaran yang valid.");
+        return;
+      }
+      if (bayarNominal > remaining) {
+        alert("Nominal pembayaran melebihi sisa tagihan.");
+        return;
+      }
+      targetTotalPaid = currentPaid + bayarNominal;
+    }
+
+    setIsProcessingPayment(true);
+    try {
+      const res = await recordWarungPaymentAction(paymentModalTx.id, targetTotalPaid);
+      if (!res.success) throw new Error(res.error);
+      setPaymentModalTx(null);
+      window.location.reload();
+    } catch (err: any) {
+      alert(err.message || "Gagal memperbarui pembayaran.");
+    } finally {
+      setIsProcessingPayment(false);
     }
   };
 
@@ -420,6 +498,38 @@ export function WarungPortal({
         ) : (
           /* TAMPILAN RINCIAN WARUNG (DRILL-DOWN: REKAP & TRANSAKSI) */
           <div className="space-y-3">
+            
+            {/* CARD RINGKASAN TOTAL TAGIHAN & JUMLAH ORANG */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs">
+              <div className="grid grid-cols-2 gap-3 divide-x divide-slate-100">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Total Sisa Tagihan
+                  </span>
+                  <div className="text-lg font-black text-[#e11d48] mt-0.5">
+                    Rp {warungSummary.totalRemaining.toLocaleString("id-ID")}
+                  </div>
+                  {warungSummary.totalPaid > 0 && (
+                    <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
+                      ✓ Terbayar: Rp {warungSummary.totalPaid.toLocaleString("id-ID")}
+                    </span>
+                  )}
+                </div>
+
+                <div className="pl-3 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Total Pekerja
+                  </span>
+                  <div className="text-lg font-black text-slate-900 mt-0.5">
+                    {warungSummary.totalWorkers} <span className="text-xs font-medium text-slate-500">Orang</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    {warungSummary.totalTransactions} Total Nota Masuk
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* Tab Switcher */}
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -468,7 +578,7 @@ export function WarungPortal({
                     <div className="flex items-center justify-between">
                       <h3 className="font-bold text-slate-900 text-sm tracking-tight">{worker.name}</h3>
                       <span className="bg-[#fef3c7] text-[#92400e] text-[11px] font-semibold px-2.5 py-0.5 rounded-full">
-                        {transactionCount} Nota
+                        {transactionCount} Nota Aktif
                       </span>
                     </div>
 
@@ -477,7 +587,7 @@ export function WarungPortal({
                     </div>
 
                     <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-50">
-                      <span className="text-xs text-slate-600 font-normal">Total Tagihan:</span>
+                      <span className="text-xs text-slate-600 font-normal">Sisa Tagihan:</span>
                       <span className="text-base font-bold text-[#e11d48]">
                         Rp {totalDebt.toLocaleString("id-ID")}
                       </span>
@@ -497,7 +607,7 @@ export function WarungPortal({
               </div>
             )}
 
-            {/* TAB 2: TABEL RIWAYAT TRANSAKSI DENGAN EDIT & HAPUS */}
+            {/* TAB 2: TABEL RIWAYAT TRANSAKSI DENGAN STATUS & PEMBAYARAN */}
             {activeTab === "transaksi" && (
               <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
@@ -506,41 +616,77 @@ export function WarungPortal({
                       <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50/50">
                         <th className="py-3 px-3">Warung</th>
                         <th className="py-3 px-2">Menu / Pekerja</th>
-                        <th className="py-3 px-2">Nominal</th>
+                        <th className="py-3 px-2">Total & Status</th>
                         <th className="py-3 px-3 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredTransactions.map((tx) => (
-                        <tr key={tx.id} className="hover:bg-orange-50/30 transition">
-                          <td className="py-3 px-3 font-semibold text-[#b45309] whitespace-nowrap">
-                            {tx.warung_name || "Dandi Store"}
-                          </td>
-                          <td className="py-3 px-2 text-slate-700">
-                            <div className="font-medium text-slate-800">{tx.notes}</div>
-                            <div className="text-[10px] text-slate-400">{tx.worker_name} ({tx.created_at?.slice(0, 10)})</div>
-                          </td>
-                          <td className="py-3 px-2 font-bold text-slate-900 whitespace-nowrap">
-                            Rp {tx.amount.toLocaleString("id-ID")}
-                          </td>
-                          <td className="py-3 px-3 text-right whitespace-nowrap">
-                            <div className="inline-flex items-center gap-1">
-                              <button
-                                onClick={() => handleOpenEdit(tx)}
-                                className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100 transition"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDelete(tx.id)}
-                                className="text-red-600 font-bold text-xs bg-red-50 px-2 py-1 rounded-lg hover:bg-red-100 transition"
-                              >
-                                Hapus
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {filteredTransactions.map((tx) => {
+                        const amount = Number(tx.amount || 0);
+                        const paid = Number(tx.paid_amount || 0);
+                        const remaining = Math.max(0, amount - paid);
+                        const isLunas = remaining === 0 || tx.status === "LUNAS";
+                        const isPartial = paid > 0 && remaining > 0;
+
+                        return (
+                          <tr key={tx.id} className="hover:bg-orange-50/30 transition">
+                            <td className="py-3 px-3 font-semibold text-[#b45309] whitespace-nowrap">
+                              {tx.warung_name || "Dandi Store"}
+                            </td>
+                            <td className="py-3 px-2 text-slate-700">
+                              <div className="font-medium text-slate-800">{tx.notes}</div>
+                              <div className="text-[10px] text-slate-400">{tx.worker_name} ({tx.created_at?.slice(0, 10)})</div>
+                            </td>
+                            <td className="py-3 px-2 whitespace-nowrap">
+                              <div className="font-bold text-slate-900">
+                                Rp {amount.toLocaleString("id-ID")}
+                              </div>
+                              {isLunas ? (
+                                <span className="inline-block bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                  LUNAS
+                                </span>
+                              ) : isPartial ? (
+                                <div className="text-[10px]">
+                                  <span className="bg-amber-100 text-amber-900 font-bold px-1.5 py-0.5 rounded">
+                                    SEBAGIAN
+                                  </span>
+                                  <div className="text-red-600 font-bold mt-0.5">
+                                    Sisa: Rp {remaining.toLocaleString("id-ID")}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="inline-block bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                  BELUM DIBAYAR
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                {!isLunas && (
+                                  <button
+                                    onClick={() => handleOpenPayment(tx)}
+                                    className="text-emerald-700 font-bold text-xs bg-emerald-50 px-2 py-1 rounded-lg hover:bg-emerald-100 transition"
+                                  >
+                                    Bayar
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleOpenEdit(tx)}
+                                  className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100 transition"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(tx.id)}
+                                  className="text-red-600 font-bold text-xs bg-red-50 px-2 py-1 rounded-lg hover:bg-red-100 transition"
+                                >
+                                  Hapus
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {filteredTransactions.length === 0 && (
                         <tr>
                           <td colSpan={4} className="py-8 text-center text-slate-400 text-xs">
@@ -556,6 +702,87 @@ export function WarungPortal({
           </div>
         )}
       </div>
+
+      {/* MODAL BAYAR / CICIL NOTA */}
+      {paymentModalTx && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex justify-center items-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl p-4 shadow-2xl space-y-3.5 animate-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900">Pembayaran Kasbon Warung</h3>
+                <p className="text-[11px] text-slate-500">{paymentModalTx.worker_name} · {paymentModalTx.notes}</p>
+              </div>
+              <button
+                onClick={() => setPaymentModalTx(null)}
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Nota Awal:</span>
+                <span className="font-bold text-slate-800">Rp {Number(paymentModalTx.amount || 0).toLocaleString("id-ID")}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Sudah Dibayar:</span>
+                <span className="font-bold text-emerald-600">Rp {Number(paymentModalTx.paid_amount || 0).toLocaleString("id-ID")}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1">
+                <span className="font-bold text-slate-700">Sisa Tagihan:</span>
+                <span className="font-black text-[#e11d48]">
+                  Rp {Math.max(0, Number(paymentModalTx.amount || 0) - Number(paymentModalTx.paid_amount || 0)).toLocaleString("id-ID")}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                Jumlah yang Dibayarkan Sekarang (Rp)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max={Math.max(0, Number(paymentModalTx.amount || 0) - Number(paymentModalTx.paid_amount || 0))}
+                value={paymentAmountInput}
+                onChange={(e) => setPaymentAmountInput(e.target.value === "" ? "" : Number(e.target.value))}
+                className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-extrabold text-[#ea580c] focus:ring-1 focus:ring-[#ea580c]"
+                placeholder="Masukkan nominal setoran..."
+              />
+              {Number(paymentAmountInput) > 0 && (
+                <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
+                  <span>Estimasi Sisa Baru:</span>
+                  <span className="font-bold text-slate-800">
+                    Rp {Math.max(0, Number(paymentModalTx.amount || 0) - Number(paymentModalTx.paid_amount || 0) - Number(paymentAmountInput)).toLocaleString("id-ID")}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                disabled={isProcessingPayment || !paymentAmountInput || Number(paymentAmountInput) <= 0}
+                onClick={() => handleSubmitPayment(false)}
+                className="w-full bg-[#ea580c] hover:bg-[#c2410c] disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm"
+              >
+                {isProcessingPayment ? "Memproses..." : "Simpan Pembayaran Sebagian"}
+              </button>
+
+              <button
+                type="button"
+                disabled={isProcessingPayment}
+                onClick={() => handleSubmitPayment(true)}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <CheckCircleIcon />
+                <span>Bayar Lunas Langsung (Full)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* DRAWER / MODAL: RINCIAN RIWAYAT NOTA PEKERJA */}
       {selectedWorkerForDetail && (
@@ -601,6 +828,11 @@ export function WarungPortal({
                     ? dt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) + " WIB"
                     : "";
 
+                  const amount = Number(tx.amount || 0);
+                  const paid = Number(tx.paid_amount || 0);
+                  const remaining = Math.max(0, amount - paid);
+                  const isLunas = remaining === 0 || tx.status === "LUNAS";
+
                   return (
                     <div key={tx.id} className="border border-slate-200 rounded-xl p-3 bg-white shadow-xs space-y-2">
                       <div className="flex justify-between items-start">
@@ -609,19 +841,49 @@ export function WarungPortal({
                             {fDate} {fTime ? `• ${fTime}` : ""}
                           </span>
                           <span className="text-[11px] text-slate-500">Keterangan: {tx.notes}</span>
+                          <div className="mt-1 flex items-center gap-1.5">
+                            {isLunas ? (
+                              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                LUNAS
+                              </span>
+                            ) : paid > 0 ? (
+                              <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                Terbayar Sebagian: Rp {paid.toLocaleString("id-ID")}
+                              </span>
+                            ) : (
+                              <span className="bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                Belum Dibayar
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-sm font-bold text-[#e11d48]">
-                          Rp {tx.amount.toLocaleString("id-ID")}
-                        </span>
+                        <div className="text-right">
+                          <span className="text-xs text-slate-400 block">Total: Rp {amount.toLocaleString("id-ID")}</span>
+                          <span className="text-sm font-bold text-[#e11d48]">
+                            Sisa: Rp {remaining.toLocaleString("id-ID")}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex justify-end gap-2 pt-1 border-t border-slate-100">
+                      <div className="flex justify-end items-center gap-2 pt-1 border-t border-slate-100">
+                        {!isLunas && (
+                          <button
+                            onClick={() => {
+                              setSelectedWorkerForDetail(null);
+                              handleOpenPayment(tx);
+                            }}
+                            className="flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition"
+                          >
+                            <CheckCircleIcon />
+                            <span>Bayar</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleOpenEdit(tx)}
                           className="flex items-center gap-1 text-[11px] text-slate-700 hover:text-orange-600 font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-orange-50 transition"
                         >
                           <EditIcon />
-                          <span>Edit Nota</span>
+                          <span>Edit</span>
                         </button>
                         <button
                           onClick={() => handleDelete(tx.id)}
@@ -740,7 +1002,7 @@ export function WarungPortal({
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                  Total Nominal (Rp)
+                  Total Nominal Nota (Rp)
                 </label>
                 <input
                   type="number"
@@ -752,6 +1014,25 @@ export function WarungPortal({
                   required
                 />
               </div>
+
+              {editingTx && (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                    Sudah Dibayar (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={Number(formAmount) || 0}
+                    value={formPaidAmount}
+                    onChange={(e) => setFormPaidAmount(e.target.value === "" ? "" : Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold text-emerald-600 focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <span className="text-[10px] text-slate-400 block mt-1">
+                    Sisa Tagihan: Rp {Math.max(0, (Number(formAmount) || 0) - (Number(formPaidAmount) || 0)).toLocaleString("id-ID")}
+                  </span>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
@@ -803,7 +1084,6 @@ export function WarungPortal({
               </button>
             </div>
 
-            {/* Form Tambah Produk Baru */}
             <form onSubmit={handleAddNewProduct} className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl space-y-2">
               <span className="text-[11px] font-bold text-slate-700 block uppercase">+ Tambah Produk Baru</span>
               <div className="flex gap-2">
@@ -830,7 +1110,6 @@ export function WarungPortal({
               </button>
             </form>
 
-            {/* Daftar Produk & Edit Harga */}
             <div>
               <span className="text-[11px] font-bold text-slate-700 block uppercase mb-1.5">
                 Daftar Produk & Ubah Harga ({catalog.length})
