@@ -10,7 +10,7 @@ const MAX_ROWS = 50000;
 const MANAGER_PAGE_SIZE = 100;
 const MAX_MANAGER_ROWS_PER_SECTION = 20000;
 
-// Daftar staf bulanan sah CV. SMPT
+// Daftar referensi staf bulanan sah CV. SMPT
 const BULANAN_NAMES = ["SURATNO", "DANDI MARDANI", "USMAN ALAMSYAH", "JAJANG ROSADI", "SUHERMANTO", "SUHERMAN", "NEDIH"];
 
 type SimpleReport = {
@@ -252,6 +252,8 @@ async function loadSimpleReport(
   return all;
 }
 
+const MANAGER_SECTIONS = ["PRODUCTION", "MATERIAL", "WORKFORCE", "FINANCE", "ATTENTION", "HISTORY"] as const;
+
 async function loadManagerSection(
   supabase: Awaited<ReturnType<typeof createClient>>,
   section: string,
@@ -279,7 +281,6 @@ async function loadManagerSection(
   return rows;
 }
 
-const MANAGER_SECTIONS = ["PRODUCTION", "MATERIAL", "WORKFORCE", "FINANCE", "ATTENTION", "HISTORY"] as const;
 async function managerWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: URLSearchParams,
@@ -474,7 +475,7 @@ function isBulananWorker(worker: any, itemSnapshot?: string): boolean {
 
 // -------------------------------------------------------------
 // FORMAT 2: DAFTAR GAJI KARYAWAN PT. KREASI DINAMIKA MAJU BERSAMA
-// HANYA UNTUK STAF BULANAN
+// HANYA UNTUK STAF BULANAN (REAL DATA SLIP)
 // -------------------------------------------------------------
 async function payrollSlipsWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -536,6 +537,7 @@ async function payrollSlipsWorkbook(
     const half = Number(it.half_days || 0);
     const kehadiran = full + half * 0.5;
 
+    // Ambil nilai murni dari slip database
     const baseAmount = Number(it.base_amount || 0) || Number(w?.monthly_salary || 0);
     const otMin = Number(it.overtime_minutes || 0);
     const otHours = Math.round((otMin / 60) * 10) / 10;
@@ -543,10 +545,10 @@ async function payrollSlipsWorkbook(
     const totalOtHours = otHours + manualOtHours;
 
     const hourlyRate = baseAmount > 0 ? Math.round((baseAmount / 190) * 100) / 100 : 0;
-    const otAmount = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0) || Math.round(totalOtHours * hourlyRate);
+    const otAmount = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
     const mealLembur = Number(it.overtime_bonus || 0);
     const totalLembur = otAmount + mealLembur;
-    const netGaji = Number(it.net_amount || 0) || (baseAmount + totalLembur);
+    const netGaji = Number(it.net_amount || 0);
 
     sumGajiPokok += baseAmount;
     sumTotalLembur += totalLembur;
@@ -597,7 +599,7 @@ async function payrollSlipsWorkbook(
 
 // -------------------------------------------------------------
 // FORMAT 3: PEMBAYARAN UANG MAKAN MINGGUAN (8 KOLOM)
-// HANYA UNTUK STAF BULANAN
+// HANYA UNTUK STAF BULANAN (REAL DATA SLIP MURNI)
 // -------------------------------------------------------------
 async function uangMakanWorkbook(
   supabase: any,
@@ -645,11 +647,11 @@ async function uangMakanWorkbook(
     const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
-    // Jika data absensi run masih 0, fallback default kehadiran normal (5 hari)
-    const rawHari = full + half * 0.5;
-    const totalHari = rawHari > 0 ? rawHari : (w?.name?.toUpperCase().includes("DANDI") ? 4.5 : (w?.name?.toUpperCase().includes("JAJANG") ? 6 : 5));
+    
+    // MURNI BACA DATA DARI DATABASE: Hari Hadir = Full + 0.5*Half
+    const totalHari = full + half * 0.5;
 
-    // 1 hari = Rp 50.000 (35rb makan + 15rb insentif), 0.5 hari = Rp 25.000
+    // Perhitungan: Rp 50.000 / hari (35rb makan + 15rb insentif)
     const totalMakan = totalHari * 50000;
     grandTotal += totalMakan;
 
@@ -692,7 +694,7 @@ async function uangMakanWorkbook(
 
 // -------------------------------------------------------------
 // FORMAT 4: PEMBAYARAN UPAH HARIAN (12 KOLOM)
-// HANYA UNTUK PEKERJA HARIAN (BUKAN STAF BULANAN)
+// HANYA UNTUK PEKERJA HARIAN (REAL DATA SLIP MURNI)
 // -------------------------------------------------------------
 async function upahHarianWorkbook(
   supabase: any,
@@ -747,6 +749,7 @@ async function upahHarianWorkbook(
     const half = Number(it.half_days || 0);
     const totalHari = full + half * 0.5;
 
+    // Baca murni dari snapshot & master worker
     const dailyRate = Number(w?.daily_salary) || (totalHari > 0 ? Math.round(Number(it.base_amount || 0) / totalHari) : 0);
     const hourlyOtRate = dailyRate > 0 ? Math.round(dailyRate / 8) : 0;
 
