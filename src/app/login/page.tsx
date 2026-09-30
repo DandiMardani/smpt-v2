@@ -193,7 +193,7 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-6 text-center text-xs text-gray-400">
-          Kreasi Dinamika Maju Bersama © 2026
+          Kreasi Dinamika Maju Bersama
         </p>
       </section>
     </main>
