@@ -34,7 +34,7 @@ const SIMPLE_REPORTS: Record<string, SimpleReport> = {
   log_bahan: { title: "Log Bahan Baku", sheet: "Log Bahan", permission: "log_bahan.view", table: "stock_ledger_entries", dateColumn: "created_at", timestampDate: true, orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", materialColumn: "material_id" },
   stok_gudang: { title: "Stok Gudang", sheet: "Stok Gudang", permission: "stok_gudang.view", table: "stock_balances", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", materialColumn: "material_id" },
   cutting: { title: "Hasil Cutting", sheet: "Cutting", permission: "cutting.view", table: "cutting_daily_results", dateColumn: "result_date", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", statusColumn: "status" },
-  sablon: { title: "Riwayat WIP Sablon", sheet: "Sablon WIP", permission: "sablon.view", table: "stock_ledger_entries", dateColumn: "created_at", timestampDate: true, orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", fixedEq: { item_kind: "CUTTING_COMPONENT" }, fixedIlike: { movementKind: "%SABLON%" } },
+  sablon: { title: "Riwayat WIP Sablon", sheet: "Sablon WIP", permission: "sablon.view", table: "stock_ledger_entries", dateColumn: "created_at", timestampDate: true, orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", fixedEq: { item_kind: "CUTTING_COMPONENT" }, fixedIlike: { movement_kind: "%SABLON%" } },
   roll_lot: { title: "Stock Roll Lot", sheet: "Roll Lot", permission: "stok_gudang.view", table: "v_material_lot_status", orderColumn: "id", projectColumn: "current_project_id", productColumn: "current_product_id", materialColumn: "material_id", statusColumn: "status" },
   siap_produksi: { title: "Pemakaian Siap Produksi", sheet: "Siap Produksi", permission: "produksi.view", table: "ready_production_usages", dateColumn: "usage_date", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", materialColumn: "material_id" },
   spk: { title: "SPK Produksi", sheet: "SPK", permission: "spk.view", table: "production_orders", dateColumn: "order_date", orderColumn: "id", projectColumn: "project_id", productColumn: "product_id", workerColumn: "operator_worker_id", statusColumn: "status" },
@@ -133,7 +133,7 @@ function formatBulanTahun(dateStr?: string | null): string {
 
 function formatRupiahCell(val: number | string): string {
   const n = Number(val) || 0;
-  return `Rp  ${n.toLocaleString("id-ID")}`;
+  return `Rp ${n.toLocaleString("id-ID")}.00`;
 }
 
 function metaSheet(title: string, from: string, to: string, params: URLSearchParams, rowCount: number): XlsxSheet {
@@ -397,7 +397,7 @@ async function operatorPayrollSlipsWorkbook(
   let opSeq = 1;
 
   groupedByWorker.forEach((workerItems, wId) => {
-    const w = workerMap.get(wId);
+    const w: any = workerMap.get(wId);
     const workerTotal = workerItems.reduce((acc, it) => {
       const q = Number(it.qty_approved || 0);
       const pr = Number(it.operator_price_snapshot || 0);
@@ -490,7 +490,7 @@ async function payrollSlipsWorkbook(
 
   if (itemsRes.error) throw itemsRes.error;
   const items = itemsRes.data ?? [];
-  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
+  const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
 
   const periodMonthStr = formatBulanTahun(run.period_start || run.period_end);
 
@@ -513,7 +513,7 @@ async function payrollSlipsWorkbook(
   let sumGajiBersih = 0;
 
   const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
-    const w = workerMap.get(it.worker_id);
+    const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
     const kehadiran = full + half * 0.5;
@@ -684,7 +684,7 @@ async function upahHarianWorkbook(
   ]);
 
   const items = itemsRes.data ?? [];
-  const workerMap = new Map((workersRes.data ?? []).map((w: any) => [w.id, w]));
+  const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
 
   const columns = [
     { key: "no", label: "NO", width: 6 },
@@ -704,7 +704,7 @@ async function upahHarianWorkbook(
   let grandTotal = 0;
 
   const rows: Array<Record<string, any>> = items.map((it: any, idx: number) => {
-    const w = workerMap.get(it.worker_id);
+    const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
     const totalHari = full + half * 0.5;
@@ -784,7 +784,6 @@ export async function GET(request: NextRequest) {
     let sheets: XlsxSheet[];
     let customFilename: string | null = null;
 
-    // Normalisasi alias report payroll
     const isOperatorReport = rawKey === "operator_payroll_slips" || rawKey === "payroll_borongan" || params.get("run_type") === "operator";
     const isMealReport = rawKey === "pembayaran_uang_makan" || rawKey === "uang_makan";
     const isDailyReport = rawKey === "pembayaran_upah_harian" || rawKey === "upah_harian";
