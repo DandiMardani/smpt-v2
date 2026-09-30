@@ -45,7 +45,6 @@ export function KasbonForm({ workers }: { workers: WorkerItem[] }) {
       </div>
 
       <input type="hidden" name="category" value="KASBON_PERUSAHAAN" />
-      {/* Field krusial: Kirim nominal angsuran per bulan ke server */}
       <input type="hidden" name="installment_amount" value={effectiveMonthly} />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -121,6 +120,7 @@ export function KasbonForm({ workers }: { workers: WorkerItem[] }) {
             </label>
             <div className="flex items-center gap-2">
               <CurrencyNumberInput
+                name="custom_installment_display"
                 value={effectiveMonthly}
                 onChange={(val) => {
                   setCustomInstallment(val);
