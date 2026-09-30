@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState, type FormEvent } from "react";
+import { KdmbBrandLogo } from "@/components/kdmb-brand-logo";
 
 export default function LoginPage() {
   const [error, setError] = useState("");
@@ -69,9 +70,11 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-[#eaf2ff] via-[#f7f9fc] to-white px-4 py-12 text-gray-900">
       <section className="w-full max-w-md rounded-2xl border border-gray-200/80 bg-white p-7 shadow-xl sm:p-9">
         <div className="mb-7 text-center sm:text-left">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100 text-2xl font-black text-[#0d6efd] shadow-xs sm:mx-0">
-            KD
+          {/* Logo Vektor KDMB (Background Putih, Garis/Teks Hitam) */}
+          <div className="mb-5 flex justify-center sm:justify-start">
+            <KdmbBrandLogo className="h-14 w-32" />
           </div>
+
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#0d6efd]">
             Sistem Manajemen Produksi Terpadu
           </p>
