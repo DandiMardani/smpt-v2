@@ -136,14 +136,17 @@ export function WorkerFinancialSummary({
   const isBulanan = worker.pay_system === "BULANAN";
   const isHarian = !isBorongan && !isBulanan;
 
+  // Slip resmi dan tombol cetak HANYA aktif jika statusnya benar-benar SUDAH DIBAYAR (Lunas)
   const isSlipPaid = Boolean(
     officialSlip &&
     (officialSlip.paymentStatus === "SUDAH DIBAYAR" || (officialSlip as any).status === "PAID")
   );
 
+  // Perhitungan saldo kasbon & potongan berjalan real-time
   const totalWarung = warungDebts.reduce((acc, x) => acc + (n(x.amount) - n(x.paid_amount)), 0);
   const totalCompanyLoan = companyLoans.reduce((acc, x) => acc + (n(x.amount) - n(x.paid_amount)), 0);
 
+  // Angsuran kasbon kantor aktif bulan ini
   const activeCompanyInstallment = companyLoans.reduce((acc, x) => {
     const rem = n(x.amount) - n(x.paid_amount);
     const instCount = Number(x.installment_count) || 1;
@@ -154,6 +157,7 @@ export function WorkerFinancialSummary({
   const totalDeductionPending = totalWarung + (isBulanan ? activeCompanyInstallment : totalCompanyLoan);
   const estimatedNet = Math.max(0, estimatedGross - totalDeductionPending);
 
+  // Selama status BELUM DIBAYAR, angka 100% LIVE mengikuti data real-time
   const displayedGross = isSlipPaid && officialSlip ? officialSlip.grossAmount : estimatedGross;
   const displayedDeduction = isSlipPaid && officialSlip ? officialSlip.deductionAmount : totalDeductionPending;
   const displayedNet = isSlipPaid && officialSlip ? officialSlip.netAmount : estimatedNet;
@@ -164,9 +168,7 @@ export function WorkerFinancialSummary({
     ? totalWarung
     : (isSlipPaid && officialSlip && officialSlip.kasbonWarungAmount !== undefined ? officialSlip.kasbonWarungAmount : 0);
 
-  // Keterangan dinamis untuk upah bulanan (menjelaskan asal nominal bruto)
-  const bulananAddedWage = (breakdown?.overtimeWage || 0) + (breakdown?.bonus4h || 0) + (breakdown?.sundayMealOrBonus || 0);
-
+  // Generator WhatsApp untuk slip resmi
   const getOfficialWhatsAppText = () => {
     if (!officialSlip) return "";
     const isSlipBorongan = officialSlip.type === "BORONGAN";
@@ -229,7 +231,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
 
   return (
     <div className="space-y-5">
-      {/* ================= KARTU STATUS KEUANGAN ================= */}
+      {/* ================= KARTU STATUS KEUANGAN (BERJALAN / SLIP RESMI) ================= */}
       <div
         className={`rounded-2xl border-2 p-5 sm:p-6 shadow-sm space-y-5 ${
           isSlipPaid
@@ -344,6 +346,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
           </div>
         </div>
 
+        {/* Pemberitahuan khusus Karyawan Harian jika slip belum lunas */}
         {isHarian && !isSlipPaid && (
           <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 space-y-1">
             <div className="font-bold flex items-center gap-1.5">
@@ -355,7 +358,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
           </div>
         )}
 
-        {/* SOP Lapangan Box */}
+        {/* SOP Lapangan & Ketentuan Lupa Absen Box */}
         {showRulesInfo && (
           <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 to-purple-50/60 p-4 text-xs space-y-3">
             <div className="flex items-center gap-2 border-b border-indigo-200/80 pb-2">
@@ -366,6 +369,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3 text-indigo-950">
+              {/* Karyawan Harian */}
               <div className="rounded-lg bg-white/80 border border-indigo-200/70 p-3 space-y-1">
                 <div className="font-black text-indigo-900 flex items-center gap-1.5">
                   <span>📅</span> Karyawan Harian (Sabtu - Jumat)
@@ -378,17 +382,19 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
                 </p>
               </div>
 
+              {/* Karyawan Bulanan */}
               <div className="rounded-lg bg-white/80 border border-indigo-200/70 p-3 space-y-1">
                 <div className="font-black text-indigo-900 flex items-center gap-1.5">
                   <span>💼</span> Karyawan Bulanan (Siklus Bulanan)
                 </div>
                 <p className="text-[11px] leading-relaxed text-indigo-800">
                   • Gaji pokok utuh (Senin–Sabtu).<br />
-                  • <b>Hari Minggu</b> (08:00–17:00) dihitung: Lembur 8 jam (Pokok ÷ 190/jam) + Uang Makan Minggu <b>Rp 50.000</b> + Bonus Lembur 4 jam <b>Rp 17.500</b>.<br />
-                  • Uang makan mingguan berjalan sesuai hari kehadiran aktual.
+                  • <b>Hari Minggu</b> (08:00–17:00) dihitung: Lembur 8 jam (Pokok ÷ 190/jam) + Uang Makan Minggu <b>Rp 50.000</b> (dibayar mingguan).<br />
+                  • Lembur tambahan malam (&gt;17:00) minimal 4 jam mendapat bonus lembur <b>Rp 17.500</b>.
                 </p>
               </div>
 
+              {/* Operator Borongan */}
               <div className="rounded-lg bg-white/80 border border-indigo-200/70 p-3 space-y-1">
                 <div className="font-black text-indigo-900 flex items-center gap-1.5">
                   <span>✂️</span> Borongan & Solusi Lupa Absen
@@ -404,7 +410,7 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
 
         {/* 4 Kartu Metrik Keuangan Utama */}
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Card 1: Upah Bruto */}
+          {/* Card 1: Upah Bruto dengan Riwayat Pergerakan Gaji */}
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-gray-500">
@@ -413,12 +419,65 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
               <div className="mt-1 text-2xl font-black text-gray-900">{money(displayedGross)}</div>
               <div className="mt-1 text-[11px] text-gray-600">
                 {isBulanan
-                  ? (bulananAddedWage > 0 || overtimeHours > 0
-                      ? `Pokok (${money(breakdown?.baseAmount || 3000000)}) + Tambahan Lembur`
+                  ? ((breakdown?.overtimeWage || 0) > 0 || overtimeHours > 0
+                      ? `Pokok (${money(breakdown?.baseAmount || 3000000)}) + Lembur`
                       : "Gaji Pokok Bulanan Tetap")
                   : isBorongan
                   ? `${qty(isSlipPaid && officialSlip?.totalQtyApproved ? officialSlip.totalQtyApproved : (breakdown?.boronganItems?.reduce((a, b) => a + (b.goodQty || 0), 0) || 0))} PCS disetujui`
                   : `${workedDays} Hari Kerja + ${overtimeHours} Jam Lembur`}
+              </div>
+            </div>
+
+            {/* Riwayat Pergerakan Komponen Gaji Berjalan */}
+            <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-1.5 text-[11px]">
+              <div className="font-bold text-gray-700 text-[10px] uppercase tracking-wider">
+                Riwayat Pergerakan Upah:
+              </div>
+              <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
+                {/* 1. Komponen Gaji Pokok */}
+                <div className="rounded-lg bg-gray-50 border border-gray-200/70 p-2 flex justify-between items-start gap-1">
+                  <div className="leading-tight">
+                    <span className="font-bold text-gray-800">
+                      {isBulanan ? "Gaji Pokok Bulanan" : "Upah Kerja Pokok"}
+                    </span>
+                    <span className="text-gray-500 text-[10px] block mt-0.5">
+                      {isBulanan ? "Gaji bulanan standar" : `${workedDays} hari kehadiran`}
+                    </span>
+                  </div>
+                  <span className="font-black text-gray-800 whitespace-nowrap text-xs">
+                    {money(breakdown?.baseAmount || 0)}
+                  </span>
+                </div>
+
+                {/* 2. Komponen Upah Lembur */}
+                {(breakdown?.overtimeWage || 0) > 0 ? (
+                  <div className="rounded-lg bg-blue-50/60 border border-blue-200/70 p-2 flex justify-between items-start gap-1">
+                    <div className="leading-tight">
+                      <span className="font-bold text-blue-800">Upah Lembur</span>
+                      <span className="text-blue-600 text-[10px] block mt-0.5">
+                        {overtimeHours} Jam ({money(breakdown?.otHourlyRate || 15789)}/jam)
+                      </span>
+                    </div>
+                    <span className="font-black text-blue-700 whitespace-nowrap text-xs">
+                      +{money(breakdown?.overtimeWage || 0)}
+                    </span>
+                  </div>
+                ) : null}
+
+                {/* 3. Komponen Bonus Tambahan Lembur >17:00 */}
+                {(breakdown?.bonus4h || 0) > 0 ? (
+                  <div className="rounded-lg bg-emerald-50/60 border border-emerald-200/70 p-2 flex justify-between items-start gap-1">
+                    <div className="leading-tight">
+                      <span className="font-bold text-emerald-800">Bonus Lembur ≥4 Jam</span>
+                      <span className="text-emerald-600 text-[10px] block mt-0.5">
+                        Lembur shift malam &gt;17:00
+                      </span>
+                    </div>
+                    <span className="font-black text-emerald-700 whitespace-nowrap text-xs">
+                      +{money(breakdown?.bonus4h || 0)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -611,20 +670,6 @@ Catatan: Dokumen resmi penggajian CV. SMPT - Kreasi Dinamika.`;
                         </div>
                       </div>
                       <div className="font-extrabold text-emerald-700">+{money(breakdown.bonus4h)}</div>
-                    </div>
-                  ) : null}
-
-                  {breakdown.sundayMealOrBonus > 0 ? (
-                    <div className="py-2 flex justify-between items-center">
-                      <div>
-                        <div className="font-bold text-indigo-700">
-                          {isBulanan ? "Uang Makan Masuk Hari Minggu" : "Insentif Kehadiran Hari Minggu"} ({breakdown.sundayCount || 1} Hari)
-                        </div>
-                        <div className="text-[11px] text-gray-500">
-                          {isBulanan ? "Uang makan Rp 50.000 per kehadiran hari Minggu" : "Tambahan Rp 20.000 per hari Minggu"}
-                        </div>
-                      </div>
-                      <div className="font-extrabold text-indigo-700">+{money(breakdown.sundayMealOrBonus)}</div>
                     </div>
                   ) : null}
 
