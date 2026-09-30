@@ -88,6 +88,8 @@ export default async function Page({ searchParams }: Props) {
   const currentWorkerId = (workerIdResult.data as number | null) ?? null;
   const activeAdvances = (advancesResult.data ?? []) as any[];
   const operatorRunMap = new Map(operatorRuns.map((run) => [run.id, run]));
+  const payrollRunMap = new Map(payrollRuns.map((run) => [run.id, run]));
+  const workerMap = new Map(workers.map((w) => [w.id, w]));
 
   // Petakan live kasbon aktif per pekerja
   const activeAdvMap = new Map<number, { kasbonP: number; kasbonW: number }>();
@@ -95,7 +97,7 @@ export default async function Page({ searchParams }: Props) {
     if (a.status !== "AKTIF") continue;
     const cur = activeAdvMap.get(a.worker_id) || { kasbonP: 0, kasbonW: 0 };
     const rem = Math.max(0, Number(a.amount || 0) - Number(a.paid_amount || 0));
-    if (a.category === "KASBON_PERUSAHAAN") {
+    if (a.category === "KASBON_PERUSAHAAN" || a.category === "KASBON_KANTOR") {
       const inst = Number(a.installment_amount || 0);
       cur.kasbonP += inst > 0 ? Math.min(inst, rem) : rem;
     } else if (a.category === "KASBON_WARUNG") {
@@ -104,7 +106,7 @@ export default async function Page({ searchParams }: Props) {
     activeAdvMap.set(a.worker_id, cur);
   }
 
-  // Sinkronkan secara otomatis untuk run yang BELUM DIBAYAR (status !== 'PAID' dan !== 'DIBATALKAN')
+  // Sinkronisasi khusus run yang BELUM DIBAYAR (status !== 'PAID' dan !== 'DIBATALKAN')
   const unpaidRuns = payrollRuns.filter((r) => r.status !== "PAID" && r.status !== "DIBATALKAN");
   const unpaidRunIds = new Set(unpaidRuns.map((r) => r.id));
 
@@ -112,14 +114,24 @@ export default async function Page({ searchParams }: Props) {
   const synchronizedPayrollItems = payrollItems.map((it) => {
     if (!unpaidRunIds.has(it.payroll_run_id)) return it;
     const live = activeAdvMap.get(it.worker_id);
-    if (!live) return it;
+    const runInfo = payrollRunMap.get(it.payroll_run_id);
+    const workerInfo = workerMap.get(it.worker_id);
+
+    // KETENTUAN UTAMA:
+    // Jika sistem pekerja BULANAN dan periode payroll ini adalah MINGGUAN / UANG MAKAN,
+    // maka potongan kasbon perusahaan & warung WAJIB Rp 0 (tidak boleh dipotong di uang makan)
+    const isBulananWorker = workerInfo?.pay_system === "BULANAN" || it.pay_system_snapshot === "BULANAN";
+    const isWeeklyOrMealRun =
+      runInfo?.payroll_type === "MINGGUAN" ||
+      runInfo?.payroll_type === "UANG_MAKAN" ||
+      /makan|mingguan/i.test(runInfo?.notes || "") ||
+      /makan|mingguan/i.test(runInfo?.payroll_code || "");
+
+    const effP = (isBulananWorker && isWeeklyOrMealRun) ? 0 : (live?.kasbonP ?? Number(it.kasbon_perusahaan_amount || 0));
+    const effW = (isBulananWorker && isWeeklyOrMealRun) ? 0 : (live?.kasbonW ?? Number(it.kasbon_warung_amount || 0));
 
     const curP = Number(it.kasbon_perusahaan_amount || 0);
     const curW = Number(it.kasbon_warung_amount || 0);
-    const effP = live.kasbonP;
-    const effW = live.kasbonW;
-
-    if (Math.abs(curP - effP) < 0.01 && Math.abs(curW - effW) < 0.01) return it;
 
     const gross =
       Number(it.base_amount || 0) +
@@ -132,6 +144,10 @@ export default async function Page({ searchParams }: Props) {
     const deduction = Math.round((effP + effW) * 100) / 100;
     const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
 
+    if (Math.abs(curP - effP) < 0.01 && Math.abs(curW - effW) < 0.01 && Math.abs(Number(it.net_amount || 0) - net) < 0.01) {
+      return it;
+    }
+
     const updated = {
       ...it,
       kasbon_perusahaan_amount: effP,
@@ -143,7 +159,7 @@ export default async function Page({ searchParams }: Props) {
     return updated;
   });
 
-  // Jika ada kasbon yang berubah setelah finalisasi run, simpan ke database di background
+  // Pembaruan data sinkronisasi ke database
   if (itemsToSyncDb.length > 0 && canWrite) {
     (async () => {
       try {
@@ -180,40 +196,48 @@ export default async function Page({ searchParams }: Props) {
     (settingsMap as any)[r.key] = r.value_numeric ?? r.value_text;
   });
 
+  const latestRunId = payrollRuns[0]?.id ?? "";
+
   return (
     <PageShell
       eyebrow="SDM & Payroll"
       title="Payroll & Slip Gaji"
-      description="Kelola finalisasi upah HARIAN & BULANAN, cetak slip gaji resmi, dan kirimkan slip gaji langsung ke WhatsApp pekerja dengan format teks rapi atau gambar slip."
+      description="Kelola finalisasi upah HARIAN & BULANAN, pencairan uang makan mingguan tanpa potongan kasbon, cetak slip gaji resmi, dan ekspor dokumen laporan format CV. SMPT."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
 
-      {/* Export Shortcuts */}
+      {/* Tombol Ekspor Laporan Sesuai Format CV. SMPT */}
       <div className="flex flex-wrap items-center gap-2">
         <a
-          href={`/api/export/xlsx?report=payroll_slips&run_id=${payrollRuns[0]?.id ?? ""}`}
+          href={`/api/export/xlsx?report=pembayaran_uang_makan&run_id=${latestRunId}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-1.5 text-xs font-bold text-amber-900 shadow-xs hover:bg-amber-100 transition"
+        >
+          🍱 Export Form Pembayaran Uang Makan (Excel)
+        </a>
+        <a
+          href={`/api/export/xlsx?report=pembayaran_upah_harian&run_id=${latestRunId}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3.5 py-1.5 text-xs font-bold text-blue-900 shadow-xs hover:bg-blue-100 transition"
+        >
+          📑 Export Form Pembayaran Upah Harian (Excel)
+        </a>
+        <a
+          href={`/api/export/xlsx?report=payroll_slips&run_id=${latestRunId}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
         >
-          📥 Export Slip Gaji Terkini
+          📥 Export Slip Bulanan
         </a>
         <a
           href={`/api/export/xlsx?report=operator_payroll_slips&run_id=${operatorRuns[0]?.id ?? ""}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-xs font-semibold text-violet-800 shadow-xs hover:bg-violet-100 transition"
         >
-          📥 Export Slip Borongan Terkini
-        </a>
-        <a
-          href={`/api/export/xlsx?report=payroll&from=${new Date().toISOString().slice(0,4)}-01-01&to=${new Date().toISOString().slice(0,10)}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
-        >
-          📊 Rekap Payroll Tahun Ini
+          📥 Export Slip Borongan
         </a>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Flow>
-          HARIAN/BULANAN memakai Master Pekerja + absensi terverifikasi. Slip gaji dapat dicetak satuan, dicetak massal per periode, atau dikirimkan langsung ke nomor WhatsApp pekerja lengkap dengan rincian pendapatan, potongan kasbon, dan upah bersih (netto).
+          Pencairan Uang Makan Mingguan staf BULANAN dihitung murni dari hari masuk aktif tanpa pemotongan kasbon warung maupun kasbon kantor. Potongan kasbon resmi hanya berlaku pada proses Payroll Bulanan akhir bulan.
         </Flow>
         {canWrite ? (
           <div className="shrink-0">
