@@ -1,63 +1,61 @@
-export function KdmbBrandLogo({ className = "h-16 w-32" }: { className?: string }) {
+export function KdmbBrandLogo({ className = "h-20 w-20" }: { className?: string }) {
   return (
     <div
-      className={`inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm ${className}`}
+      className={`inline-flex items-center justify-center aspect-square rounded-2xl bg-white border-2 border-slate-900 shadow-md p-2 transition select-none ${className}`}
     >
       <svg
-        viewBox="0 0 240 100"
+        viewBox="0 0 100 100"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="h-full w-full select-none"
+        className="h-full w-full"
       >
-        {/* Garis Frame Siku (Atap dan Dinding Kanan membingkai MB) */}
+        {/* Garis Bingkai Siku Atas-Kanan (Khas Pin KDMB) */}
         <path
-          d="M92 12 H228 V86"
+          d="M38 31 H91 V71"
           stroke="#0F172A"
-          strokeWidth="7"
+          strokeWidth="3.8"
           strokeLinecap="square"
-          strokeLinejoin="miter"
         />
 
         {/* Huruf K */}
         <path
-          d="M18 16 V84 M18 52 L54 16 M26 44 L58 84"
+          d="M9 36 V69 M9 53 L26 36 M13 49 L27 69"
           stroke="#0F172A"
-          strokeWidth="9"
+          strokeWidth="4.5"
           strokeLinecap="square"
           strokeLinejoin="miter"
         />
 
-        {/* Huruf D dengan Garis Lintang Horizontal */}
+        {/* Huruf D dengan Garis Tengah */}
         <path
-          d="M74 18 V82 C104 82 110 74 110 50 C110 26 104 18 74 18 Z"
+          d="M33 37 V68 C49 68 53 62 53 52.5 C53 43 49 37 33 37 Z"
           stroke="#0F172A"
-          strokeWidth="8"
+          strokeWidth="4.2"
           strokeLinecap="square"
         />
         <line
-          x1="62"
-          y1="50"
-          x2="94"
-          y2="50"
+          x1="26"
+          y1="52.5"
+          x2="43"
+          y2="52.5"
           stroke="#0F172A"
-          strokeWidth="7"
-          strokeLinecap="square"
+          strokeWidth="3.6"
         />
 
         {/* Huruf M */}
         <path
-          d="M124 82 V22 L144 58 L164 22 V82"
+          d="M59 68 V37 L69 54 L79 37 V68"
           stroke="#0F172A"
-          strokeWidth="8"
+          strokeWidth="4.2"
           strokeLinecap="square"
           strokeLinejoin="miter"
         />
 
         {/* Huruf B */}
         <path
-          d="M180 22 H204 C214 22 216 32 206 48 H180 M180 48 H208 C218 48 218 80 204 80 H180 V22"
+          d="M87 37 H95 C99 37 100 42 96 49 H87 M87 49 H97 C101 49 101 68 95 68 H87 V37"
           stroke="#0F172A"
-          strokeWidth="8"
+          strokeWidth="4"
           strokeLinecap="square"
           strokeLinejoin="miter"
         />
