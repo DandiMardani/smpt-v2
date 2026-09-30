@@ -18,6 +18,7 @@ import { text } from "@/lib/final/final-utils";
 import { param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
 import { createBackup, cleanupArchivedData } from "./actions";
+import { ArchiveDownloadForm } from "./archive-download-form";
 
 type Props = { searchParams: Promise<SearchParams> };
 type Backup = {
@@ -58,7 +59,6 @@ export default async function Page({ searchParams }: Props) {
   const h = (healthRes.data ?? {}) as Record<string, unknown>;
   const backups = (backupsRes.data ?? []) as Backup[];
 
-  // Hitung tanggal default (1 bulan ke belakang)
   const today = new Date().toISOString().slice(0, 10);
   const firstDayLastMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
     .toISOString()
@@ -76,7 +76,6 @@ export default async function Page({ searchParams }: Props) {
         <b>Proteksi Stok Terjamin:</b> Fitur arsip dan pembersihan berkala hanya memproses data transaksional (Presensi, Nota Warung, dan Kasbon). Data inventaris gudang, stok kain, aksesoris, dan SPK terkunci serta tidak dapat dihapus melalui panel ini.
       </Flow>
 
-      {/* Ringkasan Data Operasional */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="SPK" value={text(h.production_orders, "0")} />
         <Metric label="QC" value={text(h.qc_inspections, "0")} />
@@ -85,79 +84,17 @@ export default async function Page({ searchParams }: Props) {
         <Metric label="Negative Logistics" value={text(h.negative_logistics_stock, "0")} />
       </div>
 
-      {/* Panel Utama: Download Arsip & Pembersihan Terproteksi */}
       <div className="grid gap-4 xl:grid-cols-2">
-        {/* Formulir 1: Download Arsip Excel */}
         <Card title="1. Unduh Arsip Excel (.xlsx)">
           <p className="text-sm leading-6 text-slate-600">
-            Pilih rentang tanggal dan jenis data operasional yang ingin dicadangkan. Sistem akan menggabungkan modul yang dipilih ke dalam satu file Excel multi-sheet.
+            Pilih rentang tanggal dan modul yang ingin dicadangkan. Sistem akan memproses dan langsung memunculkan konfirmasi tanpa membuka layar kosong.
           </p>
-
-          <form action="/api/export/archive" method="GET" target="_blank" className="mt-4 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Tanggal Mulai">
-                <input
-                  type="date"
-                  name="start_date"
-                  defaultValue={firstDayLastMonth}
-                  required
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="Tanggal Selesai">
-                <input
-                  type="date"
-                  name="end_date"
-                  defaultValue={today}
-                  required
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Pilih Modul Transaksi:
-              </p>
-              <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="attendance"
-                  value="true"
-                  defaultChecked
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                Presensi & Absensi Pekerja
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="warung"
-                  value="true"
-                  defaultChecked
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                Nota Warung (Dandi Store & Mitra)
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="kasbon"
-                  value="true"
-                  defaultChecked
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                Kasbon & Pinjaman Karyawan
-              </label>
-            </div>
-
-            <button type="submit" className={buttonClass}>
-              📥 Download Arsip Excel
-            </button>
-          </form>
+          <ArchiveDownloadForm
+            defaultStartDate={firstDayLastMonth}
+            defaultEndDate={today}
+          />
         </Card>
 
-        {/* Formulir 2: Pembersihan Data Lama Terproteksi */}
         <Card title="2. Bersihkan Data Lama (Optional)">
           <div className="text-sm leading-6 text-amber-900 bg-amber-50 border border-amber-200 p-3 rounded-xl font-medium space-y-1">
             <p>⚠️ <b>Perhatian Sebelum Menghapus:</b></p>
@@ -237,7 +174,6 @@ export default async function Page({ searchParams }: Props) {
         </Card>
       </div>
 
-      {/* Snapshot Database Lengkap */}
       <div className="grid gap-4 xl:grid-cols-2">
         <Card title="Buat Snapshot Cadangan Database">
           <p className="text-sm leading-6 text-slate-600">
