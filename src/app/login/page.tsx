@@ -2,7 +2,6 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState, type FormEvent } from "react";
-import { KdmbBrandLogo } from "@/components/kdmb-brand-logo";
 
 export default function LoginPage() {
   const [error, setError] = useState("");
@@ -67,27 +66,34 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-[#eaf2ff] via-[#f7f9fc] to-white px-4 py-12 text-gray-900">
-      <section className="w-full max-w-md rounded-2xl border border-gray-200/80 bg-white p-7 shadow-xl sm:p-9">
-        <div className="mb-7 text-center sm:text-left">
-          {/* Logo Vektor KDMB (Background Putih, Garis/Teks Hitam) */}
-          <div className="mb-5 flex justify-center sm:justify-start">
-            <KdmbBrandLogo className="h-14 w-32" />
+    <main className="flex min-h-screen items-center justify-center bg-slate-900 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black px-4 py-12 text-slate-900">
+      <section className="relative w-full max-w-md rounded-3xl border border-slate-700/50 bg-white/95 p-7 shadow-2xl backdrop-blur-md sm:p-9">
+        
+        {/* Header & Logo Pin KDMB */}
+        <div className="mb-8 text-center flex flex-col items-center">
+          <div className="relative mb-5 p-1 rounded-2xl bg-gradient-to-b from-slate-300 to-slate-600 shadow-md">
+            <div className="overflow-hidden rounded-[14px] bg-black">
+              <img
+                src="/IMG_20261001_015858_661.jpg"
+                alt="Logo KDMB"
+                className="h-16 w-16 object-cover object-center transition duration-300 hover:scale-105"
+              />
+            </div>
           </div>
 
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#0d6efd]">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.25em] text-slate-500">
             Sistem Manajemen Produksi Terpadu
           </p>
-          <h1 className="mt-1 text-2xl font-black tracking-tight text-gray-900 sm:text-3xl">
+          <h1 className="mt-1.5 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
             Kreasi Dinamika Maju Bersama
           </h1>
-          <p className="mt-1.5 text-sm text-gray-500">
+          <p className="mt-1 text-xs sm:text-sm text-slate-500">
             Silakan masuk dengan akun perusahaan Anda.
           </p>
         </div>
 
         {error ? (
-          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-xs">
+          <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs sm:text-sm font-semibold text-rose-800 shadow-xs">
             {error}
           </div>
         ) : null}
@@ -96,7 +102,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="email"
-              className="mb-1.5 block text-xs font-semibold text-gray-700"
+              className="mb-1.5 block text-xs font-bold text-slate-700"
             >
               Email atau ID Pekerja
             </label>
@@ -112,7 +118,7 @@ export default function LoginPage() {
                 setEmailInput(e.target.value);
                 if (error) setError("");
               }}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 outline-none transition focus:border-[#0d6efd] focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 shadow-xs"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-800 focus:bg-white focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
               placeholder="nama@email.com atau PKR-00012"
             />
           </div>
@@ -120,7 +126,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="mb-1.5 block text-xs font-semibold text-gray-700"
+              className="mb-1.5 block text-xs font-bold text-slate-700"
             >
               Kata Sandi
             </label>
@@ -137,7 +143,7 @@ export default function LoginPage() {
                   setPasswordInput(e.target.value);
                   if (error) setError("");
                 }}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 pr-12 text-sm text-gray-900 outline-none transition focus:border-[#0d6efd] focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 shadow-xs"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 pr-12 text-sm text-slate-900 outline-none transition focus:border-slate-800 focus:bg-white focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 placeholder="Masukkan kata sandi"
               />
               <button
@@ -145,8 +151,7 @@ export default function LoginPage() {
                 onClick={() => setShowPassword((current) => !current)}
                 disabled={loading}
                 aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
-                aria-pressed={showPassword}
-                className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-gray-400 transition hover:text-gray-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-slate-400 transition hover:text-slate-700 focus:outline-none"
               >
                 {showPassword ? (
                   <svg
@@ -157,7 +162,6 @@ export default function LoginPage() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     className="h-5 w-5"
-                    aria-hidden="true"
                   >
                     <path d="M3 3l18 18" />
                     <path d="M10.58 10.58a2 2 0 0 0 2.83 2.83" />
@@ -173,7 +177,6 @@ export default function LoginPage() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     className="h-5 w-5"
-                    aria-hidden="true"
                   >
                     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
                     <circle cx="12" cy="12" r="3" />
@@ -186,13 +189,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-[#0d6efd] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0b5ed7] active:bg-[#0a58ca] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-slate-900/25 transition hover:bg-slate-800 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Memproses..." : "Masuk ke Sistem"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-gray-400">
+        <p className="mt-7 text-center text-xs font-semibold text-slate-400">
           Kreasi Dinamika Maju Bersama
         </p>
       </section>
