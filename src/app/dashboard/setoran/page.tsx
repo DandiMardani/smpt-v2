@@ -105,14 +105,14 @@ export default async function Page() {
       if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
         sundayCount += 1;
         // Shift normal Minggu adalah 8 jam (480 menit).
-        // Bonus lembur hanya terhitung jika ada lembur malam di atas jam 17:00 (kelebihan > 480 menit setara >= 240 menit)
+        // Bonus lembur hanya terhitung jika ada lembur malam di atas jam 17:00 (>= 12 jam total kerja)
         if (isBulananWorker) {
-          if (rawDayOt >= 720) count4h += 1; // 8 jam shift normal + 4 jam lembur malam
+          if (rawDayOt >= 720) count4h += 1;
         } else {
           if (rawDayOt >= 240) count4h += 1;
         }
       } else {
-        // Hari kerja biasa: lembur di atas jam 17:00 terhitung bonus jika >= 4 jam (240 menit)
+        // Hari biasa: lembur >= 4 jam (>17:00) mendapat bonus
         if (rawDayOt >= 240) count4h += 1;
       }
     }
@@ -165,14 +165,15 @@ export default async function Page() {
         const otHourlyRate = baseAmount > 0 ? baseAmount / Math.max(1, otDiv) : 0;
         const overtimeWage = Math.round((otMins / 60) * otHourlyRate);
         const bonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
-        const sundayMealOrBonus = sundayCount * Number(settingsMap.BULANAN_SUNDAY_MEAL || 50000);
-        estimatedGross = baseAmount + overtimeWage + bonus4h + sundayMealOrBonus;
+        // Uang makan Minggu dibayar terpisah mingguan, tidak digabung ke bruto bulanan
+        const sundayMealOrBonus = 0;
+        estimatedGross = baseAmount + overtimeWage + bonus4h;
 
         breakdown = {
           baseAmount,
           overtimeWage,
           bonus4h,
-          sundayMealOrBonus,
+          sundayMealOrBonus: 0,
           regularMeal: 0,
           totalGross: estimatedGross,
           otHourlyRate: Math.round(otHourlyRate),
@@ -315,24 +316,22 @@ export default async function Page() {
           const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
           const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
 
-          const slipMeal = Number(officialSlip.mealAmount) || 0;
-          const finalSundayMeal = slipMeal > 0 ? slipMeal : (sundayCount * Number(settingsMap.BULANAN_SUNDAY_MEAL || 50000));
-
-          // Bonus Rp 17.500 hanya jika terpicu dari absensi di atas jam 17:00
+          // Bonus Rp 17.500 hanya jika lembur malam di atas jam 17:00
           const finalBonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
 
-          estimatedGross = monthlySalary + totalOtWage + finalBonus4h + finalSundayMeal;
+          // Uang makan Minggu dibayar mingguan terpisah, tidak dimasukkan ke total bruto bulanan
+          estimatedGross = monthlySalary + totalOtWage + finalBonus4h;
 
           breakdown = {
             baseAmount: monthlySalary,
             overtimeWage: totalOtWage,
             bonus4h: finalBonus4h,
-            sundayMealOrBonus: finalSundayMeal,
+            sundayMealOrBonus: 0,
             regularMeal: 0,
             totalGross: estimatedGross,
             otHourlyRate: Math.round(otHourlyRate),
             otMinutes: totalOtMins,
-            sundayCount: finalSundayMeal > 0 ? Math.round(finalSundayMeal / 50000) : 0,
+            sundayCount,
             count4h,
           };
         } else {
