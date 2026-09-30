@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { 
   createWarungTransactionAction, 
   updateWarungTransactionAction, 
@@ -94,6 +95,15 @@ export function WarungPortal({
   currentWarung,
   isAdmin = false,
 }: WarungPortalProps) {
+  const router = useRouter();
+
+  // Local state agar update data langsung terjadi tanpa reload halaman
+  const [transactions, setTransactions] = useState<WarungTransaction[]>(initialTransactions);
+
+  useEffect(() => {
+    setTransactions(initialTransactions);
+  }, [initialTransactions]);
+
   const [selectedWarungFilter, setSelectedWarungFilter] = useState<string>(isAdmin ? "ALL" : currentWarung.name);
   const [activeTab, setActiveTab] = useState<"rekap" | "transaksi">("rekap");
   const [searchQuery, setSearchQuery] = useState("");
@@ -108,7 +118,7 @@ export function WarungPortal({
       txCount: 0,
     });
 
-    initialTransactions.forEach((tx) => {
+    transactions.forEach((tx) => {
       const wName = tx.warung_name && tx.warung_name.trim() !== "" ? tx.warung_name : "Dandi Store";
       let entry = map.get(wName);
       if (!entry) {
@@ -134,21 +144,21 @@ export function WarungPortal({
       uniqueWorkers: item.workerCount.size,
       txCount: item.txCount,
     }));
-  }, [initialTransactions]);
+  }, [transactions]);
 
   const activeTransactions = useMemo(() => {
     if (!isAdmin) {
-      return initialTransactions.filter((tx) => 
+      return transactions.filter((tx) => 
         (tx.warung_name || "").toLowerCase() === currentWarung.name.toLowerCase()
       );
     }
     if (selectedWarungFilter === "ALL") {
-      return initialTransactions;
+      return transactions;
     }
-    return initialTransactions.filter((tx) => 
+    return transactions.filter((tx) => 
       (tx.warung_name || "Dandi Store").toLowerCase() === selectedWarungFilter.toLowerCase()
     );
-  }, [initialTransactions, selectedWarungFilter, isAdmin, currentWarung.name]);
+  }, [transactions, selectedWarungFilter, isAdmin, currentWarung.name]);
 
   const warungSummary = useMemo(() => {
     let totalRemaining = 0;
@@ -273,7 +283,6 @@ export function WarungPortal({
     setFormPaidAmount(tx.paid_amount || 0);
     setFormNotes(tx.notes);
     setFormWarungName(tx.warung_name || "Dandi Store");
-    setSelectedWorkerForDetail(null);
     setIsFormOpen(true);
   };
 
@@ -326,6 +335,8 @@ export function WarungPortal({
 
     setIsSubmitting(true);
     try {
+      const selectedWorker = initialWorkers.find((w) => String(w.id) === String(formWorkerId));
+
       if (editingTx) {
         const res = await updateWarungTransactionAction(editingTx.id, {
           worker_id: formWorkerId,
@@ -337,6 +348,25 @@ export function WarungPortal({
           warung_name: formWarungName,
         } as any);
         if (!res.success) throw new Error(res.error);
+
+        // Update state lokal langsung tanpa reload
+        setTransactions((prev) =>
+          prev.map((t) =>
+            t.id === editingTx.id
+              ? {
+                  ...t,
+                  worker_id: formWorkerId,
+                  worker_name: selectedWorker?.name || t.worker_name,
+                  worker_code: selectedWorker?.worker_code || t.worker_code,
+                  amount: Number(formAmount),
+                  paid_amount: Number(formPaidAmount) || 0,
+                  remaining_amount: Math.max(0, Number(formAmount) - (Number(formPaidAmount) || 0)),
+                  notes: formNotes || "Kasbon Warung",
+                  warung_name: formWarungName,
+                }
+              : t
+          )
+        );
       } else {
         const res = await createWarungTransactionAction({
           worker_id: formWorkerId,
@@ -347,9 +377,27 @@ export function WarungPortal({
           warung_name: formWarungName,
         } as any);
         if (!res.success) throw new Error(res.error);
+
+        // Tambah ke state lokal
+        const newTx: WarungTransaction = {
+          id: (res as any)?.data?.id ? String((res as any).data.id) : Date.now().toString(),
+          worker_id: formWorkerId,
+          worker_name: selectedWorker?.name || "Pekerja",
+          worker_code: selectedWorker?.worker_code || "-",
+          amount: Number(formAmount),
+          paid_amount: 0,
+          remaining_amount: Number(formAmount),
+          notes: formNotes || "Kasbon Warung",
+          created_at: new Date().toISOString(),
+          status: "AKTIF",
+          installments_paid: 0,
+          warung_name: formWarungName,
+        };
+        setTransactions((prev) => [newTx, ...prev]);
       }
+
       setIsFormOpen(false);
-      window.location.reload();
+      router.refresh();
     } catch (err: any) {
       alert(err.message || "Gagal menyimpan transaksi.");
     } finally {
@@ -383,8 +431,23 @@ export function WarungPortal({
     try {
       const res = await recordWarungPaymentAction(paymentModalTx.id, targetTotalPaid);
       if (!res.success) throw new Error(res.error);
+
+      const isLunas = targetTotalPaid >= amount;
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.id === paymentModalTx.id
+            ? {
+                ...t,
+                paid_amount: targetTotalPaid,
+                remaining_amount: Math.max(0, amount - targetTotalPaid),
+                status: isLunas ? "LUNAS" : t.status,
+              }
+            : t
+        )
+      );
+
       setPaymentModalTx(null);
-      window.location.reload();
+      router.refresh();
     } catch (err: any) {
       alert(err.message || "Gagal memperbarui pembayaran.");
     } finally {
@@ -396,11 +459,14 @@ export function WarungPortal({
     if (!confirm("Apakah Anda yakin ingin membatalkan/menghapus nota ini?")) return;
     try {
       const res = await deleteWarungTransactionAction(txId);
-      if (!res.success) alert(res.error);
-      else {
-        setSelectedWorkerForDetail(null);
-        window.location.reload();
+      if (!res.success) {
+        alert(res.error);
+        return;
       }
+
+      // Hapus langsung dari state lokal
+      setTransactions((prev) => prev.filter((t) => t.id !== txId));
+      router.refresh();
     } catch (err: any) {
       alert(err.message || "Gagal membatalkan nota.");
     }
@@ -414,7 +480,7 @@ export function WarungPortal({
         {isAdmin && selectedWarungFilter !== "ALL" && (
           <button
             onClick={() => setSelectedWarungFilter("ALL")}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-orange-600 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-orange-600 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition cursor-pointer"
           >
             <ArrowLeftIcon />
             <span>Kembali ke Daftar Semua Warung</span>
@@ -435,7 +501,7 @@ export function WarungPortal({
 
           <button
             onClick={() => handleOpenCreate()}
-            className="flex items-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold px-4 py-2 rounded-full text-xs shadow-sm active:scale-95 transition"
+            className="flex items-center gap-1.5 bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold px-4 py-2 rounded-full text-xs shadow-sm active:scale-95 transition cursor-pointer"
           >
             <PlusIcon />
             <span>Catat Nota Baru</span>
@@ -534,7 +600,7 @@ export function WarungPortal({
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setActiveTab("rekap")}
-                className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
+                className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs cursor-pointer ${
                   activeTab === "rekap"
                     ? "bg-[#ea580c] text-white"
                     : "bg-white text-slate-700 border border-slate-200"
@@ -545,7 +611,7 @@ export function WarungPortal({
 
               <button
                 onClick={() => setActiveTab("transaksi")}
-                className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs ${
+                className={`py-2.5 px-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-center shadow-xs cursor-pointer ${
                   activeTab === "transaksi"
                     ? "bg-[#ea580c] text-white"
                     : "bg-white text-slate-700 border border-slate-200"
@@ -665,20 +731,20 @@ export function WarungPortal({
                                 {!isLunas && (
                                   <button
                                     onClick={() => handleOpenPayment(tx)}
-                                    className="text-emerald-700 font-bold text-xs bg-emerald-50 px-2 py-1 rounded-lg hover:bg-emerald-100 transition"
+                                    className="text-emerald-700 font-bold text-xs bg-emerald-50 px-2 py-1 rounded-lg hover:bg-emerald-100 transition cursor-pointer"
                                   >
                                     Bayar
                                   </button>
                                 )}
                                 <button
                                   onClick={() => handleOpenEdit(tx)}
-                                  className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100 transition"
+                                  className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100 transition cursor-pointer"
                                 >
                                   Edit
                                 </button>
                                 <button
                                   onClick={() => handleDelete(tx.id)}
-                                  className="text-red-600 font-bold text-xs bg-red-50 px-2 py-1 rounded-lg hover:bg-red-100 transition"
+                                  className="text-red-600 font-bold text-xs bg-red-50 px-2 py-1 rounded-lg hover:bg-red-100 transition cursor-pointer"
                                 >
                                   Hapus
                                 </button>
@@ -714,7 +780,7 @@ export function WarungPortal({
               </div>
               <button
                 onClick={() => setPaymentModalTx(null)}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-100"
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
               >
                 <CloseIcon />
               </button>
@@ -765,7 +831,7 @@ export function WarungPortal({
                 type="button"
                 disabled={isProcessingPayment || !paymentAmountInput || Number(paymentAmountInput) <= 0}
                 onClick={() => handleSubmitPayment(false)}
-                className="w-full bg-[#ea580c] hover:bg-[#c2410c] disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm"
+                className="w-full bg-[#ea580c] hover:bg-[#c2410c] disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition shadow-sm cursor-pointer"
               >
                 {isProcessingPayment ? "Memproses..." : "Simpan Pembayaran Sebagian"}
               </button>
@@ -774,7 +840,7 @@ export function WarungPortal({
                 type="button"
                 disabled={isProcessingPayment}
                 onClick={() => handleSubmitPayment(true)}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <CheckCircleIcon />
                 <span>Bayar Lunas Langsung (Full)</span>
@@ -802,7 +868,7 @@ export function WarungPortal({
               </div>
               <button
                 onClick={() => setSelectedWorkerForDetail(null)}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-200 transition"
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-200 transition cursor-pointer"
               >
                 <CloseIcon />
               </button>
@@ -868,11 +934,8 @@ export function WarungPortal({
                       <div className="flex justify-end items-center gap-2 pt-1 border-t border-slate-100">
                         {!isLunas && (
                           <button
-                            onClick={() => {
-                              setSelectedWorkerForDetail(null);
-                              handleOpenPayment(tx);
-                            }}
-                            className="flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition"
+                            onClick={() => handleOpenPayment(tx)}
+                            className="flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition cursor-pointer"
                           >
                             <CheckCircleIcon />
                             <span>Bayar</span>
@@ -880,14 +943,14 @@ export function WarungPortal({
                         )}
                         <button
                           onClick={() => handleOpenEdit(tx)}
-                          className="flex items-center gap-1 text-[11px] text-slate-700 hover:text-orange-600 font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-orange-50 transition"
+                          className="flex items-center gap-1 text-[11px] text-slate-700 hover:text-orange-600 font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-orange-50 transition cursor-pointer"
                         >
                           <EditIcon />
                           <span>Edit</span>
                         </button>
                         <button
                           onClick={() => handleDelete(tx.id)}
-                          className="flex items-center gap-1 text-[11px] text-red-600 font-semibold px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 transition"
+                          className="flex items-center gap-1 text-[11px] text-red-600 font-semibold px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 transition cursor-pointer"
                         >
                           <TrashIcon />
                           <span>Hapus</span>
@@ -903,10 +966,9 @@ export function WarungPortal({
               <button
                 onClick={() => {
                   const wId = selectedWorkerForDetail.id;
-                  setSelectedWorkerForDetail(null);
                   handleOpenCreate(wId);
                 }}
-                className="w-full bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold py-2.5 rounded-xl transition text-xs shadow-md"
+                className="w-full bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold py-2.5 rounded-xl transition text-xs shadow-md cursor-pointer"
               >
                 + Catat Nota Baru untuk {selectedWorkerForDetail.name.split(" ")[0]}
               </button>
@@ -925,7 +987,7 @@ export function WarungPortal({
               </h2>
               <button
                 onClick={() => setIsFormOpen(false)}
-                className="p-1 rounded-full text-orange-100 hover:bg-orange-600 transition"
+                className="p-1 rounded-full text-orange-100 hover:bg-orange-600 transition cursor-pointer"
               >
                 <CloseIcon />
               </button>
@@ -974,7 +1036,7 @@ export function WarungPortal({
                   <button
                     type="button"
                     onClick={() => setIsCatalogModalOpen(true)}
-                    className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200 transition"
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200 transition cursor-pointer"
                   >
                     ⚙️ Atur Menu / Ganti Harga
                   </button>
@@ -986,7 +1048,7 @@ export function WarungPortal({
                       key={item.id}
                       type="button"
                       onClick={() => handleAddPreset(item)}
-                      className="flex items-center justify-between bg-orange-50 border border-orange-200 p-2 rounded-xl text-left hover:bg-orange-100 active:scale-95 transition"
+                      className="flex items-center justify-between bg-orange-50 border border-orange-200 p-2 rounded-xl text-left hover:bg-orange-100 active:scale-95 transition cursor-pointer"
                     >
                       <div className="truncate mr-1">
                         <span className="text-xs font-bold text-slate-800 block truncate">{item.name}</span>
@@ -1057,7 +1119,7 @@ export function WarungPortal({
                 <button
                   type="submit"
                   disabled={isSubmitting || Number(formAmount) <= 0}
-                  className="bg-[#ea580c] hover:bg-[#c2410c] disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition active:scale-95"
+                  className="bg-[#ea580c] hover:bg-[#c2410c] disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition active:scale-95 cursor-pointer"
                 >
                   {isSubmitting ? "Menyimpan..." : "Simpan Nota"}
                 </button>
@@ -1078,7 +1140,7 @@ export function WarungPortal({
               </div>
               <button
                 onClick={() => setIsCatalogModalOpen(false)}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-100"
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
               >
                 <CloseIcon />
               </button>
@@ -1104,7 +1166,7 @@ export function WarungPortal({
               </div>
               <button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-xs transition"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-xs transition cursor-pointer"
               >
                 Simpan Produk Baru
               </button>
@@ -1130,7 +1192,7 @@ export function WarungPortal({
                     <button
                       type="button"
                       onClick={() => handleDeleteProduct(item.id)}
-                      className="p-1 text-slate-400 hover:text-red-500 rounded"
+                      className="p-1 text-slate-400 hover:text-red-500 rounded cursor-pointer"
                     >
                       <TrashIcon />
                     </button>
@@ -1141,7 +1203,7 @@ export function WarungPortal({
 
             <button
               onClick={() => setIsCatalogModalOpen(false)}
-              className="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded-xl text-xs transition"
+              className="w-full bg-slate-900 hover:bg-black text-white font-bold py-2 rounded-xl text-xs transition cursor-pointer"
             >
               Selesai & Tutup
             </button>
