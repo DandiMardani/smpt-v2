@@ -26,33 +26,35 @@ export type MenuEntry = MenuLeaf | MenuGroup;
 export const MENU_PERMISSION_BY_ID: Readonly<Record<string, string>> = {
   dashboard: "dashboard.view",
 
+  // 1. Master Data
   masterProyek: "master_proyek.view",
+  masterProdukProyek: "master_produk_proyek.view",
   masterItem: "master_item.view",
   masterKebutuhan: "master_kebutuhan.view",
-  masterProdukProyek: "master_produk_proyek.view",
-  masterBahan: "master_bahan.view",
-  masterPekerja: "master_pekerja.view",
-  masterBarangJadi: "master_barang_jadi.view",
   masterLokasi: "master_lokasi.view",
   masterVendor: "master_vendor.view",
   masterEmbarkasi: "master_embarkasi.view",
 
+  // 2. Gudang & Material
+  procurement: "procurement.view",
   barangMasukGudang: "barang_masuk_gudang.view",
   barangKeluarGudang: "barang_keluar_gudang.view",
   stokGudang: "stok_gudang.view",
   bahan: "log_bahan.view",
-  procurement: "procurement.view",
+  masterBahan: "master_bahan.view",
 
+  // 3. Produksi
   cutting: "cutting.view",
   sablon: "sablon.view",
   permintaanProduksi: "permintaan_produksi.view",
   spk: "spk.view",
   produksi: "produksi.view",
+  produksiReguler: "hasil_produksi.view",
   borongan: "borongan.view",
-  setoran: "pekerjaan_saya.view",
   hasilProduksi: "hasil_produksi.view",
   manufaktur: "manufaktur.view",
 
+  // 4. QC & Logistik
   qc: "qc.view",
   stokBarangJadi: "stok_barang_jadi.view",
   transferBarangJadi: "transfer_barang_jadi.view",
@@ -63,19 +65,22 @@ export const MENU_PERMISSION_BY_ID: Readonly<Record<string, string>> = {
   targetEmbarkasi: "target_embarkasi.view",
   pengirimanEmbarkasi: "pengiriman_embarkasi.view",
   rejectEmbarkasi: "reject_embarkasi.view",
-
-  // Modul Khusus Proyek Reguler (Non-Haji)
-  produksiReguler: "hasil_produksi.view",
   pengirimanKlien: "stok_barang_jadi.view",
 
+  // 5. SDM & Payroll
+  masterPekerja: "master_pekerja.view",
   absensi: "absensi.view",
-  payroll: "payroll.view",
   kasbon: "kasbon.view",
   warung: "warung.view",
+  setoran: "pekerjaan_saya.view",
+  payroll: "payroll.view",
 
+  // 6. Keuangan & Kas
   kasKecil: "kas_kecil.view",
   keuangan: "keuangan.view",
   laporan: "laporan.view",
+
+  // 7. Pengaturan Sistem
   aksesUser: "access_control.view",
   setupTest: "setup_test.admin",
 };
@@ -93,22 +98,19 @@ function item(id: string, text: string, customHref?: string): MenuLeaf {
   };
 }
 
-// 1. POHON MENU GLOBAL (LURUS KE BAWAH TANPA SUBGROUP SAMPING)
+// 1. POHON MENU GLOBAL (LENGKAP & TANPA DUPLIKAT)
 export const SMPT_MENU_TREE: readonly MenuEntry[] = [
-  item("dashboard", "Dashboard"),
+  item("dashboard", "Dashboard Utama"),
   {
     type: "group",
     id: "masterData",
     text: "Master Data",
     children: [
       item("masterProyek", "Master Proyek"),
-      item("masterProdukProyek", "Produk / Tas Proyek"),
-      item("masterItem", "Master Item Pekerjaan"),
-      item("masterKebutuhan", "Master Kebutuhan Bahan"),
-      item("masterBahan", "Master Bahan Baku"),
-      item("masterPekerja", "Master Pekerja"),
-      item("masterBarangJadi", "Master Barang Jadi"),
-      item("masterLokasi", "Master Lokasi"),
+      item("masterProdukProyek", "Produk / Spesifikasi Proyek"),
+      item("masterItem", "Item & Tarif Pekerjaan"),
+      item("masterKebutuhan", "Kebutuhan Bahan (BOM)"),
+      item("masterLokasi", "Master Lokasi Gudang"),
       item("masterVendor", "Master Supplier / Vendor"),
       item("masterEmbarkasi", "Master Embarkasi"),
     ],
@@ -118,65 +120,59 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
     id: "gudangMaterial",
     text: "Gudang & Material",
     children: [
+      item("masterBahan", "Master Bahan Baku"),
+      item("procurement", "Procurement / PO"),
       item("barangMasukGudang", "Barang Masuk Gudang"),
       item("barangKeluarGudang", "Barang Keluar Gudang"),
       item("stokGudang", "Stok Gudang Material"),
-      item("bahan", "Log Bahan Baku"),
-      item("procurement", "Procurement / PO"),
+      item("bahan", "Log Arus Bahan Baku"),
     ],
   },
   {
     type: "group",
     id: "produksiGroup",
-    text: "Produksi",
+    text: "Pabrik & Produksi",
     children: [
-      item("cutting", "Cutting"),
+      item("cutting", "Cutting / Potong"),
       item("sablon", "Sablon"),
-      item("permintaanProduksi", "Permintaan Barang"),
-      item("spk", "Surat Perintah Kerja"),
+      item("permintaanProduksi", "Permintaan Bahan SPV"),
+      item("spk", "Surat Perintah Kerja (SPK)"),
       item("produksi", "Siap Produksi"),
-      item("borongan", "Setoran Borongan"),
-      item("hasilProduksi", "Hasil Produksi"),
-      item("manufaktur", "Barang Titipan & Maklon"),
       item("produksiReguler", "Setoran Jahit Cepat"),
+      item("borongan", "Setoran Borongan"),
+      item("hasilProduksi", "Hasil Produksi & Checker"),
+      item("manufaktur", "Maklon & Titipan Luar"),
     ],
   },
   {
     type: "group",
     id: "qcLogistik",
-    text: "QC & Barang Jadi",
+    text: "QC & Distribusi Logistik",
     children: [
-      item("qc", "Quality Control"),
+      item("qc", "Quality Control (QC)"),
       item("stokBarangJadi", "Stok Barang Jadi"),
-      item("transferBarangJadi", "Transfer Barang Jadi"),
+      item("transferBarangJadi", "Transfer Antar Gudang"),
       item("barangLuar", "Penerimaan Barang Luar"),
       item("masterSet", "Master Set"),
       item("packingSet", "Packing Set"),
       item("stokSet", "Stok Set"),
-    ],
-  },
-  {
-    type: "group",
-    id: "distribusiGroup",
-    text: "Distribusi Embarkasi & Klien",
-    children: [
       item("targetEmbarkasi", "Target Embarkasi"),
       item("pengirimanEmbarkasi", "Pengiriman & Tracking"),
-      item("rejectEmbarkasi", "Reject & Kekurangan"),
+      item("rejectEmbarkasi", "Reject & Retur"),
       item("pengirimanKlien", "Surat Jalan & Kirim Klien"),
     ],
   },
   {
     type: "group",
     id: "sdmPayroll",
-    text: "SDM & Payroll",
+    text: "SDM & Tenaga Kerja",
     children: [
-      item("masterPekerja", "Master Pekerja"),
-      item("setoran", "Gaji & Pekerjaan Saya"),
-      item("payroll", "Payroll & Slip Gaji"),
+      item("masterPekerja", "Master Data Pekerja"),
       item("absensi", "Presensi & Absensi"),
       item("kasbon", "Kasbon Pinjaman Kantor"),
       item("warung", "Kasbon Warung Luar"),
+      item("setoran", "Catatan Hasil & Pekerjaan"),
+      item("payroll", "Payroll & Slip Gaji"),
     ],
   },
   {
@@ -184,25 +180,25 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
     id: "keuanganGroup",
     text: "Keuangan & Kas",
     children: [
-      item("kasKecil", "Kas Kecil"),
-      item("keuangan", "Keuangan"),
+      item("kasKecil", "Kas Kecil Operasional"),
+      item("keuangan", "Buku Keuangan"),
       item("laporan", "Laporan Rekap"),
     ],
   },
   {
     type: "group",
     id: "sistemGroup",
-    text: "Sistem & Keamanan",
+    text: "Pengaturan & Cadangan",
     children: [
       item("aksesUser", "Manajemen User & Hak Akses"),
-      item("setupTest", "Setup & Data Test"),
+      item("setupTest", "Arsip & Backup Data"),
     ],
   },
 ];
 
 export type WorkspaceMode = "HAJI" | "REGULER" | "GUDANG" | "SDM";
 
-// 2. TAB HAJI (PRODUKSI EMBARKASI & KEUANGAN - TANPA PEKERJA)
+// 2. TAB HAJI (Fokus Embarkasi - Tanpa Kas Kecil / SDM Campuran)
 export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Haji"),
   {
@@ -214,14 +210,13 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
       item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=HAJI"),
       item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=HAJI"),
       item("masterProdukProyek", "Master Produk Proyek", "/dashboard/masterProdukProyek?category=HAJI"),
-      item("masterBarangJadi", "Master Barang Jadi"),
       item("masterEmbarkasi", "Master Embarkasi"),
     ],
   },
   {
     type: "group",
     id: "produksiGroup",
-    text: "Pabrik & Produksi Haji",
+    text: "Produksi Haji",
     children: [
       item("cutting", "Cutting"),
       item("sablon", "Sablon"),
@@ -249,18 +244,16 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
   },
   {
     type: "group",
-    id: "keuanganGroup",
-    text: "Keuangan & Kas",
+    id: "sistemGroup",
+    text: "Pengaturan & Cadangan",
     children: [
-      item("kasKecil", "Kas Kecil"),
-      item("keuangan", "Keuangan"),
-      item("laporan", "Laporan"),
-      item("setupTest", "Setup & Data Test"),
+      item("aksesUser", "Manajemen User & Hak Akses"),
+      item("setupTest", "Arsip & Backup Data"),
     ],
   },
 ];
 
-// 3. TAB REGULER (PRODUKSI REGULER & KEUANGAN - TANPA PEKERJA)
+// 3. TAB REGULER (Fokus Proyek Umum / Klien Luar)
 export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Reguler"),
   {
@@ -272,7 +265,6 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
       item("masterProdukProyek", "Produk & Spesifikasi", "/dashboard/masterProdukProyek?category=REGULER"),
       item("masterItem", "Item & Tarif Pekerjaan", "/dashboard/masterItem?category=REGULER"),
       item("masterKebutuhan", "Kebutuhan Bahan & BOM", "/dashboard/masterKebutuhan?category=REGULER"),
-      item("masterBarangJadi", "Master Barang Jadi"),
     ],
   },
   {
@@ -283,7 +275,6 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
       item("cutting", "Cutting / Potong"),
       item("sablon", "Sablon"),
       item("produksiReguler", "Setoran Jahit Cepat"),
-      item("qc", "Quality Control (QC)", "/dashboard/qc?category=REGULER"),
       item("hasilProduksi", "Rekap Hasil Produksi"),
       item("manufaktur", "Subkon & Maklon Luar"),
     ],
@@ -299,39 +290,31 @@ export const SMPT_REGULER_MENU_TREE: readonly MenuEntry[] = [
   },
   {
     type: "group",
-    id: "keuanganGroup",
-    text: "Keuangan & Kas",
+    id: "sistemGroup",
+    text: "Pengaturan & Cadangan",
     children: [
-      item("kasKecil", "Kas Kecil"),
-      item("keuangan", "Keuangan"),
-      item("laporan", "Laporan"),
+      item("aksesUser", "Manajemen User & Hak Akses"),
+      item("setupTest", "Arsip & Backup Data"),
     ],
   },
 ];
 
-// 4. TAB GUDANG (MATERIAL & GUDANG PUSAT)
+// 4. TAB GUDANG (Fokus Arus Material & Barang Jadi)
 export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard Gudang"),
   {
     type: "group",
-    id: "masterData",
-    text: "Master Data Gudang",
+    id: "gudangMaterial",
+    text: "Material & Gudang Bahan",
     children: [
       item("masterBahan", "Master Bahan Baku"),
       item("masterVendor", "Master Supplier / Vendor"),
       item("masterLokasi", "Master Lokasi Gudang & Rak"),
-    ],
-  },
-  {
-    type: "group",
-    id: "gudangMaterial",
-    text: "Material & Bahan Mentah",
-    children: [
       item("procurement", "Procurement / PO"),
       item("barangMasukGudang", "Barang Masuk Gudang"),
       item("barangKeluarGudang", "Barang Keluar Gudang"),
       item("stokGudang", "Stok Gudang Material"),
-      item("bahan", "Log Bahan Baku"),
+      item("bahan", "Log Arus Bahan Baku"),
     ],
   },
   {
@@ -344,9 +327,17 @@ export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
       item("transferBarangJadi", "Transfer Antar Gudang"),
     ],
   },
+  {
+    type: "group",
+    id: "sistemGroup",
+    text: "Pengaturan & Cadangan",
+    children: [
+      item("setupTest", "Arsip & Backup Data"),
+    ],
+  },
 ];
 
-// 5. TAB SDM (MURNI TENAGA KERJA, KASBON & PAYROLL - TANPA KAS KECIL)
+// 5. TAB SDM (Fokus Pekerja, Kasbon, Keuangan & Penggajian)
 export const SMPT_SDM_MENU_TREE: readonly MenuEntry[] = [
   item("dashboard", "Dashboard SDM"),
   {
@@ -361,7 +352,7 @@ export const SMPT_SDM_MENU_TREE: readonly MenuEntry[] = [
   {
     type: "group",
     id: "kasbonGroup",
-    text: "Kasbon & Fasilitas",
+    text: "Kasbon & Fasilitas Warung",
     children: [
       item("kasbon", "Kasbon Pinjaman Kantor"),
       item("warung", "Portal Warung"),
@@ -372,16 +363,27 @@ export const SMPT_SDM_MENU_TREE: readonly MenuEntry[] = [
     id: "payrollGroup",
     text: "Penggajian & Slip",
     children: [
-      item("setoran", "Gaji & Pekerjaan Saya"),
+      item("setoran", "Catatan Hasil & Pekerjaan"),
       item("payroll", "Payroll & Slip Gaji"),
     ],
   },
   {
     type: "group",
-    id: "keamananAkses",
-    text: "Manajemen Akun",
+    id: "keuanganGroup",
+    text: "Keuangan & Kas Operasional",
+    children: [
+      item("kasKecil", "Kas Kecil"),
+      item("keuangan", "Buku Keuangan"),
+      item("laporan", "Laporan Rekap"),
+    ],
+  },
+  {
+    type: "group",
+    id: "sistemGroup",
+    text: "Pengaturan & Cadangan",
     children: [
       item("aksesUser", "Manajemen User & Hak Akses"),
+      item("setupTest", "Arsip & Backup Data"),
     ],
   },
 ];
@@ -393,29 +395,9 @@ export function getAllowedMenuIds(permissionCodes: Iterable<string>): string[] {
     return Object.keys(MENU_PERMISSION_BY_ID);
   }
 
-  const allowed = Object.entries(MENU_PERMISSION_BY_ID)
+  return Object.entries(MENU_PERMISSION_BY_ID)
     .filter(([, permission]) => permissions.has(permission))
     .map(([menuId]) => menuId);
-
-  if (permissions.has("supplier.view") && !allowed.includes("masterVendor")) {
-    allowed.push("masterVendor");
-  }
-
-  if (
-    (permissions.has("payroll.operator.view") || permissions.has("pekerjaan_saya.view")) &&
-    !allowed.includes("payroll")
-  ) {
-    allowed.push("payroll");
-  }
-
-  if (
-    (permissions.has("keuangan.view") || permissions.has("access_control.view")) &&
-    !allowed.includes("kasKecil")
-  ) {
-    allowed.push("kasKecil");
-  }
-
-  return allowed;
 }
 
 function filterGroupChild(
