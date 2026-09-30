@@ -9,6 +9,8 @@ export type PayrollSettingsMap = {
   SHIFT_SATURDAY_OUT?: string;
   SHIFT_SUNDAY_IN?: string;
   SHIFT_SUNDAY_OUT?: string;
+  OT_MIN_THRESHOLD_MINUTES?: number | string;
+  TOLERANCE_LATE_MINUTES?: number | string;
   OT_DIVISOR_HARIAN?: number | string;
   OT_BONUS_HARIAN_4H?: number | string;
   HARIAN_HOLIDAY_BONUS_FULL?: number | string;
@@ -41,6 +43,9 @@ export default function PayrollSettingsModal({
   const [sundayIn, setSundayIn] = useState(initialSettings.SHIFT_SUNDAY_IN || "08:00");
   const [sundayOut, setSundayOut] = useState(initialSettings.SHIFT_SUNDAY_OUT || "17:00");
 
+  const [minOtMinutes, setMinOtMinutes] = useState(initialSettings.OT_MIN_THRESHOLD_MINUTES ?? 30);
+  const [toleranceLate, setToleranceLate] = useState(initialSettings.TOLERANCE_LATE_MINUTES ?? 10);
+
   const [otDivHarian, setOtDivHarian] = useState(initialSettings.OT_DIVISOR_HARIAN ?? 8);
   const [otBonus4hHarian, setOtBonus4hHarian] = useState(initialSettings.OT_BONUS_HARIAN_4H ?? 5000);
   const [harianSundayBonus, setHarianSundayBonus] = useState(initialSettings.HARIAN_HOLIDAY_BONUS_FULL ?? 20000);
@@ -56,29 +61,26 @@ export default function PayrollSettingsModal({
 
   return (
     <div>
-      {/* Trigger Button */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
         className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:border-slate-400 transition cursor-pointer"
       >
         <span>⚙️</span>
-        <span>Atur Jam Kerja & Tarif Lembur</span>
+        <span>Atur Jam Kerja & Kompensasi</span>
       </button>
 
-      {/* Modal Dialog */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-6">
-            {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                   <span>⚙️</span>
-                  <span>Pengaturan Jam Kerja, Shift & Tarif Lembur</span>
+                  <span>Pengaturan Jam Kerja, Batas Lembur & Tambahan</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Sesuaikan jadwal jam pulang normal, rumus pembagi lembur, bonus $\ge$ 4 jam, dan insentif hari Minggu.
+                  Dikelola mandiri oleh admin agar fleksibel dan tidak merusak rumus penggajian berjalan.
                 </p>
               </div>
               <button
@@ -93,11 +95,11 @@ export default function PayrollSettingsModal({
             <form action={savePayrollShiftSettingsAction} className="space-y-6">
               <input type="hidden" name="return_path" value={returnPath} />
 
-              {/* 1. JADWAL SHIFT KERJA PABRIK */}
+              {/* 1. JADWAL SHIFT KERJA & TOLERANSI */}
               <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-extrabold text-blue-950 uppercase tracking-wider">
                   <span>📅</span>
-                  <span>1. Jadwal Shift Normal & Batas Lembur</span>
+                  <span>1. Jadwal Shift Normal & Toleransi Menit</span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div>
@@ -115,7 +117,7 @@ export default function PayrollSettingsModal({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Senin – Jumat: Jam Pulang Normal
+                      Senin – Jumat: Pulang Normal
                     </label>
                     <input
                       name="SHIFT_WEEKDAY_OUT"
@@ -165,16 +167,51 @@ export default function PayrollSettingsModal({
                       onChange={(e) => setSundayOut(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Standar 8 jam kerja efektif</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Batas Minimal Lembur (Menit)
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        name="OT_MIN_THRESHOLD_MINUTES"
+                        type="number"
+                        min="0"
+                        value={minOtMinutes}
+                        onChange={(e) => setMinOtMinutes(Number(e.target.value))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
+                      />
+                      <span className="text-xs text-slate-500">menit</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">Jika &lt; 30 mnt tidak dihitung lembur</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Toleransi Keterlambatan
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        name="TOLERANCE_LATE_MINUTES"
+                        type="number"
+                        min="0"
+                        value={toleranceLate}
+                        onChange={(e) => setToleranceLate(Number(e.target.value))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
+                      />
+                      <span className="text-xs text-slate-500">menit</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">Contoh: toleransi 10 menit (sd 08:10)</span>
                   </div>
                 </div>
               </div>
 
-              {/* 2. ATURAN UPAH & LEMBUR PEKERJA HARIAN */}
+              {/* 2. ATURAN UPAH & TAMBAHAN PEKERJA HARIAN */}
               <div className="rounded-2xl border border-amber-100 bg-amber-50/30 p-4 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-extrabold text-amber-950 uppercase tracking-wider">
                   <span>👷</span>
-                  <span>2. Ketentuan Upah Lembur Pekerja Harian (HARIAN)</span>
+                  <span>2. Ketentuan Upah Lembur & Tambahan Pekerja Harian (HARIAN)</span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div>
@@ -198,22 +235,6 @@ export default function PayrollSettingsModal({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Bonus Lembur &ge; 4 Jam (Rp)
-                    </label>
-                    <input
-                      name="OT_BONUS_HARIAN_4H"
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={otBonus4hHarian}
-                      onChange={(e) => setOtBonus4hHarian(Number(e.target.value) || 0)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
-                    />
-                    <span className="text-[10px] text-slate-500">Tambahan per hari lembur &ge; 4 jam</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
                       Tambahan Hadir Hari Minggu (Rp)
                     </label>
                     <input
@@ -225,7 +246,23 @@ export default function PayrollSettingsModal({
                       onChange={(e) => setHarianSundayBonus(Number(e.target.value) || 0)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Uang kehadiran hari Minggu/libur</span>
+                    <span className="text-[10px] text-slate-500">Masuk shift normal 08:00 - 17:00</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Tambahan Lembur &ge; 4 Jam / Pulang 21:00 (Rp)
+                    </label>
+                    <input
+                      name="OT_BONUS_HARIAN_4H"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={otBonus4hHarian}
+                      onChange={(e) => setOtBonus4hHarian(Number(e.target.value) || 0)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
+                    />
+                    <span className="text-[10px] text-slate-500">Tambahan jika lembur minimal 4 jam</span>
                   </div>
                 </div>
 
@@ -240,17 +277,17 @@ export default function PayrollSettingsModal({
                       className="h-4 w-4 rounded accent-amber-600"
                     />
                     <span>
-                      <b>Cutoff Jumat:</b> Lembur Jumat malam (&gt;17:00) pekerja harian dialihkan ke slip gaji periode minggu berikutnya.
+                      <b>Cutoff Jumat:</b> Lembur Jumat malam (&gt;17:00) pekerja harian dialihkan ke slip gaji minggu berikutnya.
                     </span>
                   </label>
                 </div>
               </div>
 
-              {/* 3. ATURAN UPAH & LEMBUR KARYAWAN BULANAN */}
+              {/* 3. ATURAN UPAH & TAMBAHAN KARYAWAN BULANAN */}
               <div className="rounded-2xl border border-purple-100 bg-purple-50/30 p-4 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-extrabold text-purple-950 uppercase tracking-wider">
                   <span>👔</span>
-                  <span>3. Ketentuan Lembur & Uang Makan Karyawan Bulanan (BULANAN)</span>
+                  <span>3. Ketentuan Lembur & Tambahan Karyawan Bulanan (BULANAN)</span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div>
@@ -274,7 +311,7 @@ export default function PayrollSettingsModal({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Bonus Lembur &ge; 4 Jam (Rp)
+                      Tambahan Lembur &ge; 4 Jam / Pulang 21:00 (Rp)
                     </label>
                     <input
                       name="OT_BONUS_BULANAN_4H"
@@ -285,7 +322,7 @@ export default function PayrollSettingsModal({
                       onChange={(e) => setOtBonus4hBulanan(Number(e.target.value) || 0)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Tambahan per hari lembur &ge; 4 jam</span>
+                    <span className="text-[10px] text-slate-500">Tambahan jika lembur lewat 17:00 &ge; 4 jam</span>
                   </div>
 
                   <div>
@@ -301,7 +338,7 @@ export default function PayrollSettingsModal({
                       onChange={(e) => setSundayMealBulanan(Number(e.target.value) || 0)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Tambahan uang makan masuk Minggu</span>
+                    <span className="text-[10px] text-slate-500">Uang makan jika masuk di hari Minggu</span>
                   </div>
 
                   <div>
@@ -317,7 +354,6 @@ export default function PayrollSettingsModal({
                       onChange={(e) => setMealFull(Number(e.target.value) || 0)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Per hari kehadiran penuh</span>
                   </div>
 
                   <div>
@@ -333,7 +369,6 @@ export default function PayrollSettingsModal({
                       onChange={(e) => setMealHalf(Number(e.target.value) || 0)}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 font-bold outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Per hari kehadiran setengah hari</span>
                   </div>
                 </div>
               </div>
