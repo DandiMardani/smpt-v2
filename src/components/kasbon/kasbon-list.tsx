@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Badge, Empty, inputClass, secondaryClass } from "@/components/final/final-ui";
 import { money, n } from "@/lib/final/final-utils";
 import { payCashAdvanceAction } from "@/lib/final/actions";
+import { createClient } from "@/lib/supabase/client";
 
 export type CashAdvanceItem = {
   id: number;
@@ -41,6 +42,12 @@ export function KasbonList({
   const [filterStatus, setFilterStatus] = useState<"AKTIF" | "ALL">("AKTIF");
   const [search, setSearch] = useState<string>("");
 
+  // State untuk modal edit skema angsuran
+  const [editingAdvance, setEditingAdvance] = useState<CashAdvanceItem | null>(null);
+  const [editCount, setEditCount] = useState<number>(1);
+  const [editAmount, setEditAmount] = useState<number>(0);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+
   const filtered = advances.filter((x) => {
     const cat = x.category || "KASBON_PERUSAHAAN";
     if (filterCategory !== "ALL" && cat !== filterCategory) return false;
@@ -58,8 +65,116 @@ export function KasbonList({
     return true;
   });
 
+  const handleOpenEdit = (adv: CashAdvanceItem) => {
+    setEditingAdvance(adv);
+    const count = Number(adv.installment_count) || 1;
+    setEditCount(count);
+    const rem = n(adv.amount) - n(adv.paid_amount);
+    const amt = n(adv.installment_amount) || Math.round(rem / Math.max(1, count));
+    setEditAmount(amt);
+  };
+
+  const handleSaveInstallment = async () => {
+    if (!editingAdvance) return;
+    setIsUpdating(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("cash_advances")
+        .update({
+          installment_count: editCount,
+          installment_amount: editAmount,
+        })
+        .eq("id", editingAdvance.id);
+
+      if (error) {
+        alert("Gagal memperbarui skema angsuran: " + error.message);
+      } else {
+        window.location.reload();
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Modal Edit Skema Angsuran */}
+      {editingAdvance && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl border border-gray-200">
+            <h3 className="text-base font-extrabold text-gray-900">
+              Ubah Skema Angsuran Kasbon
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {editingAdvance.advance_code} · {workerMap[editingAdvance.worker_id]?.name}
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">
+                  Jumlah Bulan Angsuran
+                </label>
+                <select
+                  value={editCount}
+                  onChange={(e) => {
+                    const c = Number(e.target.value);
+                    setEditCount(c);
+                    const rem = n(editingAdvance.amount) - n(editingAdvance.paid_amount);
+                    setEditAmount(Math.round(rem / c));
+                  }}
+                  className={inputClass}
+                >
+                  <option value="1">1 Bulan (Sekali Lunas)</option>
+                  <option value="2">2 Bulan (2 Kali Potong)</option>
+                  <option value="3">3 Bulan (3 Kali Potong)</option>
+                  <option value="4">4 Bulan (4 Kali Potong)</option>
+                  <option value="5">5 Bulan (5 Kali Potong)</option>
+                  <option value="6">6 Bulan (6 Kali Potong)</option>
+                  <option value="10">10 Bulan (10 Kali Potong)</option>
+                  <option value="12">12 Bulan (1 Tahun)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">
+                  Nominal Potongan per Bulan (Rp)
+                </label>
+                <input
+                  type="number"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(Number(e.target.value))}
+                  className={inputClass}
+                />
+                <span className="text-[10px] text-gray-500 mt-1 block">
+                  Nilai ini yang akan otomatis dipotong saat Payroll Bulanan berjalan.
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingAdvance(null)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isUpdating}
+                onClick={handleSaveInstallment}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition"
+              >
+                {isUpdating ? "Menyimpan..." : "Simpan Skema"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50/70 p-3 rounded-2xl border border-gray-200/80">
         <div className="flex flex-wrap items-center gap-2">
@@ -156,9 +271,20 @@ export function KasbonList({
                           🍜 Warung: {x.warung_name || "Warung Luar"}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center rounded-lg bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-800">
-                          🏢 Perusahaan {instCount > 1 ? `· Angsuran ke-${Math.min(instPaid + 1, instCount)} dari ${instCount} kali` : "· Sekali Lunas"}
-                        </span>
+                        <div className="inline-flex items-center gap-1.5">
+                          <span className="inline-flex items-center rounded-lg bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-800">
+                            🏢 Perusahaan {instCount > 1 ? `· Angsuran ${instCount}x` : "· Sekali Lunas"}
+                          </span>
+                          {canWrite && x.status === "AKTIF" && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(x)}
+                              className="text-[11px] text-blue-600 underline hover:text-blue-800 font-semibold"
+                            >
+                              ⚙ Atur Angsuran
+                            </button>
+                          )}
+                        </div>
                       )}
                       <Badge>{x.status}</Badge>
                     </div>
@@ -197,7 +323,7 @@ export function KasbonList({
                   {!isWarung && instCount > 1 && (
                     <div className="text-right min-w-36 bg-gray-50 p-2.5 rounded-xl border border-gray-100 text-xs">
                       <div className="text-[11px] font-semibold text-gray-700 mb-1">
-                        Angsuran ke-{Math.min(instPaid + 1, instCount)} dari {instCount}
+                        Angsuran {instCount} Bulan
                       </div>
                       <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
                         <div
@@ -208,7 +334,7 @@ export function KasbonList({
                         />
                       </div>
                       <div className="text-[10px] text-gray-500 mt-1">
-                        {instPaid} dari {instCount} kali terbayar ({Math.round((n(x.paid_amount) / Math.max(1, n(x.amount))) * 100)}%)
+                        Terbayar {money(x.paid_amount)} dari {money(x.amount)}
                       </div>
                     </div>
                   )}
