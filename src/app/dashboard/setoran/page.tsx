@@ -71,6 +71,8 @@ export default async function Page() {
       pay_system: directWorker?.pay_system ?? rpcWorker?.pay_system ?? "HARIAN",
     };
 
+    const isBulananWorker = workerData.pay_system === "BULANAN";
+
     const allAdv = advRes.data ?? [];
     warungDebts = allAdv.filter((a) => a.category === "KASBON_WARUNG");
     companyLoans = allAdv.filter((a) => a.category !== "KASBON_WARUNG");
@@ -87,26 +89,37 @@ export default async function Page() {
         if (a.day_class === "FULL_DAY") fullDays += 1;
         else if (a.day_class === "HALF_DAY") halfDays += 1;
       }
-      const dayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-      otMins += dayOt;
-      if (dayOt >= 240) count4h += 1;
 
+      let isSunday = false;
       if (a.attendance_date) {
         const parts = String(a.attendance_date).slice(0, 10).split("-");
         const y = parseInt(parts[0], 10);
         const m = (parseInt(parts[1], 10) || 1) - 1;
         const d = parseInt(parts[2], 10);
-        const dow = new Date(y, m, d).getDay();
-        if (dow === 0 && (a.attendance_status === "HADIR" || dayOt > 0)) {
-          sundayCount += 1;
+        isSunday = new Date(y, m, d).getDay() === 0;
+      }
+
+      const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+      otMins += rawDayOt;
+
+      if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
+        sundayCount += 1;
+        // Shift normal Minggu adalah 8 jam (480 menit).
+        // Bonus lembur hanya terhitung jika ada lembur malam di atas jam 17:00 (kelebihan > 480 menit setara >= 240 menit)
+        if (isBulananWorker) {
+          if (rawDayOt >= 720) count4h += 1; // 8 jam shift normal + 4 jam lembur malam
+        } else {
+          if (rawDayOt >= 240) count4h += 1;
         }
+      } else {
+        // Hari kerja biasa: lembur di atas jam 17:00 terhitung bonus jika >= 4 jam (240 menit)
+        if (rawDayOt >= 240) count4h += 1;
       }
     }
 
     workedDays = fullDays + (halfDays * 0.5);
     overtimeHours = Math.round((otMins / 60) * 10) / 10;
 
-    // Hitung akumulasi borongan berjalan dari SPK pekerja ini
     const myOrders = orders.filter((o: any) => o.operator_worker_id === workerId);
     const myBoronganItems: any[] = [];
     let totalBoronganValue = 0;
@@ -270,7 +283,7 @@ export default async function Page() {
         };
       }
 
-      // SINKRONISASI CERDAS: MENGGABUNGKAN DATA ABSENSI & KOREKSI SLIP
+      // Sinkronisasi data utama
       if (officialSlip) {
         if (officialSlip.type === "BORONGAN") {
           estimatedGross = officialSlip.grossAmount;
@@ -293,43 +306,36 @@ export default async function Page() {
           const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
           const otHourlyRate = monthlySalary > 0 ? Math.round(monthlySalary / Math.max(1, otDiv)) : 0;
 
-          // Gabungkan menit lembur dari absensi live & slip resmi (ambil yang terbesar)
           const slipOtMins = (Number(officialSlip.overtimeMinutes) || 0) + ((Number(officialSlip.manualOvertimeHours) || 0) * 60);
           const totalOtMins = Math.max(otMins, slipOtMins);
 
           overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
           workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5) || workedDays;
 
-          // Upah lembur: jika di slip nilainya 0 padahal ada jam lembur, hitung otomatis dari tarif per jam
           const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
           const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
 
           const slipMeal = Number(officialSlip.mealAmount) || 0;
-          const otBonus = (Number(officialSlip.overtimeBonus) || 0) > 0 
-            ? Number(officialSlip.overtimeBonus) 
-            : (totalOtMins >= 240 ? Number(settingsMap.OT_BONUS_BULANAN_4H || 17500) : count4h * 17500);
+          const finalSundayMeal = slipMeal > 0 ? slipMeal : (sundayCount * Number(settingsMap.BULANAN_SUNDAY_MEAL || 50000));
 
-          const holidayBonus = (Number(officialSlip.holidayBonus) || 0) > 0
-            ? Number(officialSlip.holidayBonus)
-            : (sundayCount * Number(settingsMap.BULANAN_SUNDAY_MEAL || 50000));
+          // Bonus Rp 17.500 hanya jika terpicu dari absensi di atas jam 17:00
+          const finalBonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
 
-          // Estimasi bruto bulanan: Gaji Pokok Bulanan Tetap + Upah Lembur + Bonus + Uang Makan
-          estimatedGross = monthlySalary + totalOtWage + otBonus + holidayBonus + slipMeal;
+          estimatedGross = monthlySalary + totalOtWage + finalBonus4h + finalSundayMeal;
 
           breakdown = {
             baseAmount: monthlySalary,
             overtimeWage: totalOtWage,
-            bonus4h: otBonus,
-            sundayMealOrBonus: slipMeal || holidayBonus,
-            regularMeal: slipMeal,
+            bonus4h: finalBonus4h,
+            sundayMealOrBonus: finalSundayMeal,
+            regularMeal: 0,
             totalGross: estimatedGross,
             otHourlyRate: Math.round(otHourlyRate),
             otMinutes: totalOtMins,
-            sundayCount: (slipMeal > 0 || holidayBonus > 0) ? Math.round((slipMeal || holidayBonus) / 50000) : sundayCount,
-            count4h: otBonus > 0 ? Math.round(otBonus / 17500) : count4h,
+            sundayCount: finalSundayMeal > 0 ? Math.round(finalSundayMeal / 50000) : 0,
+            count4h,
           };
         } else {
-          // Harian
           estimatedGross = officialSlip.grossAmount;
           const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
           overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
@@ -368,7 +374,6 @@ export default async function Page() {
         Informasi gaji, cicilan pinjaman perusahaan, dan hutang warung makan diperbarui secara transparan dan otomatis sinkron dengan slip payroll resmi Anda.
       </Flow>
 
-      {/* Real-time Worker Salary, Official Slip & Debt Transparency */}
       {workerData ? (
         <WorkerFinancialSummary
           worker={workerData}
@@ -388,7 +393,6 @@ export default async function Page() {
         </Card>
       )}
 
-      {/* Rincian Status Khusus Karyawan Bulanan */}
       {isBulanan && workerData ? (
         <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 shadow-xs">
           <div className="flex items-center gap-2 mb-2">
@@ -403,7 +407,6 @@ export default async function Page() {
         </div>
       ) : null}
 
-      {/* Rincian Penugasan SPK Borongan / Harian */}
       {!isBulanan ? (
         <>
           <div className="grid gap-3 sm:grid-cols-3">
