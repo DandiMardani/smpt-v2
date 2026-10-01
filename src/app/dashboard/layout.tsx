@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { getCurrentAccessContext } from "@/lib/access/current-user";
 import {
   filterMenuTree,
+  SMPT_MENU_TREE,
   SMPT_HAJI_MENU_TREE,
   SMPT_REGULER_MENU_TREE,
   SMPT_GUDANG_MENU_TREE,
@@ -17,6 +18,10 @@ export default async function DashboardLayout({
 }>) {
   const access = await getCurrentAccessContext();
 
+  const allMenuEntries = filterMenuTree(
+    SMPT_MENU_TREE,
+    access.allowedMenuIds,
+  );
   const hajiMenuEntries = filterMenuTree(
     SMPT_HAJI_MENU_TREE,
     access.allowedMenuIds,
@@ -68,7 +73,8 @@ export default async function DashboardLayout({
 
   return (
     <DashboardShell
-      menuEntries={hajiMenuEntries}
+      menuEntries={allMenuEntries}
+      allEntries={allMenuEntries}
       hajiEntries={hajiMenuEntries}
       regulerEntries={regulerMenuEntries}
       gudangEntries={gudangMenuEntries}

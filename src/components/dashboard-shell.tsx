@@ -22,6 +22,7 @@ type UserProfile = {
 type Props = {
   children: ReactNode;
   menuEntries: MenuEntry[];
+  allEntries?: MenuEntry[];
   hajiEntries?: MenuEntry[];
   regulerEntries?: MenuEntry[];
   gudangEntries?: MenuEntry[];
@@ -91,6 +92,20 @@ function getCategoryIcon(id: string, className = "h-4 w-4") {
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       );
+    case "kasbonGroup":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect width="20" height="14" x="2" y="5" rx="2" />
+          <line x1="2" y1="10" x2="22" y2="10" />
+        </svg>
+      );
+    case "payrollGroup":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect width="18" height="12" x="3" y="6" rx="2" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      );
     case "keuanganGroup":
     case "keuanganLaporan":
       return (
@@ -122,6 +137,7 @@ function getCategoryIcon(id: string, className = "h-4 w-4") {
 export function DashboardShell({
   children,
   menuEntries,
+  allEntries,
   hajiEntries,
   regulerEntries,
   gudangEntries,
@@ -132,7 +148,7 @@ export function DashboardShell({
 }: Props) {
   const pathname = usePathname();
 
-  const [workspace, setWorkspace] = useState<"REGULER" | "HAJI" | "GUDANG" | "SDM">("REGULER");
+  const [workspace, setWorkspace] = useState<"ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM">("ALL");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [contentWide, setContentWide] = useState<boolean>(true);
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
@@ -140,6 +156,7 @@ export function DashboardShell({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState<boolean>(false);
   const [sidebarFilter, setSidebarFilter] = useState<string>("");
+  const [mobileFilter, setMobileFilter] = useState<string>("");
   const [activeFlyoutGroup, setActiveFlyoutGroup] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [mobileOpenGroups, setMobileOpenGroups] = useState<Record<string, boolean>>({});
@@ -152,6 +169,7 @@ export function DashboardShell({
     try {
       const savedWorkspace = localStorage.getItem("smpt_workspace");
       if (
+        savedWorkspace === "ALL" ||
         savedWorkspace === "HAJI" ||
         savedWorkspace === "REGULER" ||
         savedWorkspace === "GUDANG" ||
@@ -160,7 +178,7 @@ export function DashboardShell({
         setWorkspace(savedWorkspace);
         document.cookie = `smpt_workspace=${savedWorkspace}; path=/; max-age=31536000; SameSite=Lax`;
       } else {
-        document.cookie = `smpt_workspace=REGULER; path=/; max-age=31536000; SameSite=Lax`;
+        document.cookie = `smpt_workspace=ALL; path=/; max-age=31536000; SameSite=Lax`;
       }
       const savedCollapsed = localStorage.getItem("smpt_sidebar_collapsed");
       if (savedCollapsed !== null) {
@@ -173,7 +191,7 @@ export function DashboardShell({
     } catch {}
   }, []);
 
-  const handleWorkspaceChange = useCallback((mode: "REGULER" | "HAJI" | "GUDANG" | "SDM") => {
+  const handleWorkspaceChange = useCallback((mode: "ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM") => {
     setWorkspace(mode);
     try {
       localStorage.setItem("smpt_workspace", mode);
@@ -187,22 +205,46 @@ export function DashboardShell({
   }, [pathname]);
 
   const getNextWorkspace = useCallback(
-    (current: "REGULER" | "HAJI" | "GUDANG" | "SDM"): "REGULER" | "HAJI" | "GUDANG" | "SDM" => {
+    (current: "ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM"): "ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM" => {
+      if (current === "ALL") return "REGULER";
       if (current === "REGULER") return "HAJI";
       if (current === "HAJI") return "GUDANG";
       if (current === "GUDANG") return "SDM";
-      return "REGULER";
+      return "ALL";
     },
     []
   );
 
   const effectiveMenuEntries: MenuEntry[] = useMemo(() => {
+    if (workspace === "ALL" && allEntries && allEntries.length > 0) return allEntries;
     if (workspace === "REGULER" && regulerEntries && regulerEntries.length > 0) return regulerEntries;
     if (workspace === "HAJI" && hajiEntries && hajiEntries.length > 0) return hajiEntries;
     if (workspace === "GUDANG" && gudangEntries && gudangEntries.length > 0) return gudangEntries;
     if (workspace === "SDM" && sdmEntries && sdmEntries.length > 0) return sdmEntries;
-    return menuEntries;
-  }, [workspace, regulerEntries, hajiEntries, gudangEntries, sdmEntries, menuEntries]);
+    return allEntries && allEntries.length > 0 ? allEntries : menuEntries;
+  }, [workspace, allEntries, regulerEntries, hajiEntries, gudangEntries, sdmEntries, menuEntries]);
+
+  const mobileMenuEntries: MenuEntry[] = useMemo(() => {
+    const q = mobileFilter.trim().toLowerCase();
+    const sourceEntries = q
+      ? (allEntries && allEntries.length > 0 ? allEntries : effectiveMenuEntries)
+      : effectiveMenuEntries;
+    if (!q) return sourceEntries;
+
+    return sourceEntries
+      .map((entry) => {
+        if (entry.type === "item") return entry.text.toLowerCase().includes(q) ? entry : null;
+        const filteredChildren = entry.children.filter((child) => {
+          if (child.type === "item") return child.text.toLowerCase().includes(q);
+          return false;
+        });
+        if (filteredChildren.length > 0 || entry.text.toLowerCase().includes(q)) {
+          return { ...entry, children: filteredChildren.length > 0 ? filteredChildren : entry.children };
+        }
+        return null;
+      })
+      .filter(Boolean) as MenuEntry[];
+  }, [mobileFilter, effectiveMenuEntries, allEntries]);
 
   const handleToggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -440,7 +482,17 @@ export function DashboardShell({
         {/* Desktop Workspace Mode Switcher */}
         {!sidebarCollapsed ? (
           <div className="border-b border-slate-100 bg-slate-50/70 p-2">
-            <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/70 p-1 text-[10px] font-bold">
+            <div className="grid grid-cols-5 gap-1 rounded-xl bg-slate-200/70 p-1 text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => handleWorkspaceChange("ALL")}
+                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                  workspace === "ALL" ? "bg-blue-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>🌐</span>
+                <span className="text-[9px]">Semua</span>
+              </button>
               <button
                 type="button"
                 onClick={() => handleWorkspaceChange("REGULER")}
@@ -449,7 +501,7 @@ export function DashboardShell({
                 }`}
               >
                 <span>🎒</span>
-                <span>Reguler</span>
+                <span className="text-[9px]">Reguler</span>
               </button>
               <button
                 type="button"
@@ -459,7 +511,7 @@ export function DashboardShell({
                 }`}
               >
                 <span>🕋</span>
-                <span>Haji</span>
+                <span className="text-[9px]">Haji</span>
               </button>
               <button
                 type="button"
@@ -469,7 +521,7 @@ export function DashboardShell({
                 }`}
               >
                 <span>📦</span>
-                <span>Gudang</span>
+                <span className="text-[9px]">Gudang</span>
               </button>
               <button
                 type="button"
@@ -479,7 +531,7 @@ export function DashboardShell({
                 }`}
               >
                 <span>👥</span>
-                <span>SDM</span>
+                <span className="text-[9px]">SDM</span>
               </button>
             </div>
           </div>
@@ -491,7 +543,7 @@ export function DashboardShell({
               title={`Beralih mode (${workspace})`}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold shadow-xs transition"
             >
-              {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
+              {workspace === "ALL" ? "🌐" : workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
             </button>
           </div>
         )}
@@ -735,7 +787,17 @@ export function DashboardShell({
             {/* 4 Tombol Pilihan Ruang Kerja */}
             <div className="p-3 bg-slate-50/80 border-b border-slate-100">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 px-0.5">Ruang Kerja Aktif:</p>
-              <div className="grid grid-cols-4 gap-1.5 rounded-xl bg-slate-200/60 p-1 text-[11px] font-bold">
+              <div className="grid grid-cols-5 gap-1 rounded-xl bg-slate-200/60 p-1 text-[10px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleWorkspaceChange("ALL")}
+                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
+                    workspace === "ALL" ? "bg-blue-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>🌐</span>
+                  <span className="text-[9px]">Semua</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleWorkspaceChange("REGULER")}
@@ -744,7 +806,7 @@ export function DashboardShell({
                   }`}
                 >
                   <span>🎒</span>
-                  <span className="text-[10px]">Reguler</span>
+                  <span className="text-[9px]">Reguler</span>
                 </button>
                 <button
                   type="button"
@@ -754,7 +816,7 @@ export function DashboardShell({
                   }`}
                 >
                   <span>🕋</span>
-                  <span className="text-[10px]">Haji</span>
+                  <span className="text-[9px]">Haji</span>
                 </button>
                 <button
                   type="button"
@@ -764,7 +826,7 @@ export function DashboardShell({
                   }`}
                 >
                   <span>📦</span>
-                  <span className="text-[10px]">Gudang</span>
+                  <span className="text-[9px]">Gudang</span>
                 </button>
                 <button
                   type="button"
@@ -774,77 +836,119 @@ export function DashboardShell({
                   }`}
                 >
                   <span>👥</span>
-                  <span className="text-[10px]">SDM</span>
+                  <span className="text-[9px]">SDM</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Quick Search on Mobile Drawer */}
+            <div className="px-3.5 py-2 border-b border-slate-100 bg-white">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={mobileFilter}
+                  onChange={(e) => setMobileFilter(e.target.value)}
+                  placeholder="Cari semua menu & modul..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-7 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <svg className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                {mobileFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileFilter("")}
+                    className="absolute right-2.5 top-2.5 h-4 w-4 rounded-full bg-slate-200 text-slate-600 text-[10px] flex items-center justify-center hover:bg-slate-300"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Scrollable Navigation Area (Lega & Jelas) */}
             <div className="flex-1 overflow-y-auto px-3.5 py-3">
-              <nav className="space-y-1.5">
-                {effectiveMenuEntries.map((entry) => {
-                  if (entry.type === "item") {
-                    const active = isLinkActive(entry.href);
-                    return (
-                      <Link
-                        key={entry.id}
-                        href={entry.href}
-                        onClick={() => setMobileOpen(false)}
-                        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold transition ${
-                          active ? "bg-blue-600 text-white shadow-sm shadow-blue-500/30" : "text-slate-700 hover:bg-slate-100"
-                        }`}
-                      >
-                        <div className={active ? "text-white" : "text-slate-400"}>
-                          {getCategoryIcon(entry.id, "h-4 w-4")}
-                        </div>
-                        <span>{entry.text}</span>
-                      </Link>
-                    );
-                  }
-
-                  return (
-                    <details
-                      key={entry.id}
-                      open={mobileOpenGroups[entry.id] ?? true}
-                      onToggle={(e) => {
-                        const isOpen = e.currentTarget.open;
-                        setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
-                      }}
-                      className="group rounded-xl"
-                    >
-                      <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-50 transition [&::-webkit-details-marker]:hidden">
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400">{getCategoryIcon(entry.id, "h-3.5 w-3.5")}</span>
+              {mobileMenuEntries.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-xs text-slate-400 font-medium">Tidak ada menu yang cocok</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileFilter("");
+                      handleWorkspaceChange("ALL");
+                    }}
+                    className="mt-2 text-xs text-blue-600 font-bold hover:underline"
+                  >
+                    Tampilkan Semua Menu
+                  </button>
+                </div>
+              ) : (
+                <nav className="space-y-1.5">
+                  {mobileMenuEntries.map((entry) => {
+                    if (entry.type === "item") {
+                      const active = isLinkActive(entry.href);
+                      return (
+                        <Link
+                          key={entry.id}
+                          href={entry.href}
+                          onClick={() => setMobileOpen(false)}
+                          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold transition ${
+                            active ? "bg-blue-600 text-white shadow-sm shadow-blue-500/30" : "text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <div className={active ? "text-white" : "text-slate-400"}>
+                            {getCategoryIcon(entry.id, "h-4 w-4")}
+                          </div>
                           <span>{entry.text}</span>
+                        </Link>
+                      );
+                    }
+
+                    return (
+                      <details
+                        key={entry.id}
+                        open={Boolean(mobileFilter) || (mobileOpenGroups[entry.id] ?? true)}
+                        onToggle={(e) => {
+                          const isOpen = e.currentTarget.open;
+                          setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
+                        }}
+                        className="group rounded-xl"
+                      >
+                        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-50 transition [&::-webkit-details-marker]:hidden">
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400">{getCategoryIcon(entry.id, "h-3.5 w-3.5")}</span>
+                            <span>{entry.text}</span>
+                          </div>
+                          <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition-transform" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                          </svg>
+                        </summary>
+                        <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2.5 ml-4">
+                          {entry.children.map((child) => {
+                            if (child.type === "item") {
+                              const active = isLinkActive(child.href);
+                              return (
+                                <Link
+                                  key={child.id}
+                                  href={child.href}
+                                  onClick={() => setMobileOpen(false)}
+                                  className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
+                                    active ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                  }`}
+                                >
+                                  <span>{child.text}</span>
+                                </Link>
+                              );
+                            }
+                            return null;
+                          })}
                         </div>
-                        <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition-transform" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                        </svg>
-                      </summary>
-                      <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2.5 ml-4">
-                        {entry.children.map((child) => {
-                          if (child.type === "item") {
-                            const active = isLinkActive(child.href);
-                            return (
-                              <Link
-                                key={child.id}
-                                href={child.href}
-                                onClick={() => setMobileOpen(false)}
-                                className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
-                                  active ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                                }`}
-                              >
-                                <span>{child.text}</span>
-                              </Link>
-                            );
-                          }
-                          return null;
-                        })}
-                      </div>
-                    </details>
-                  );
-                })}
-              </nav>
+                      </details>
+                    );
+                  })}
+                </nav>
+              )}
             </div>
 
             {/* Mobile Drawer Footer Ringkas */}
@@ -970,10 +1074,10 @@ export function DashboardShell({
           className="flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-extrabold text-slate-700 active:scale-95 transition"
         >
           <span className="text-sm leading-none">
-            {workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
+            {workspace === "ALL" ? "🌐" : workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
           </span>
           <span className="text-[9px] font-black uppercase tracking-tight text-blue-600">
-            {workspace === "REGULER" ? "Reg" : workspace === "HAJI" ? "Haji" : workspace === "GUDANG" ? "Gdg" : "SDM"} ⇄
+            {workspace === "ALL" ? "Semua" : workspace === "REGULER" ? "Reg" : workspace === "HAJI" ? "Haji" : workspace === "GUDANG" ? "Gdg" : "SDM"} ⇄
           </span>
         </button>
 
