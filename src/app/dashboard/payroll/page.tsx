@@ -112,7 +112,7 @@ export default async function Page({ searchParams }: Props) {
     const client = await createClient();
 
     try {
-      // 1. Lunaskan kasbon warung dan set paid_amount penuh agar sisa Rp 0 (tidak terjumlah lagi)
+      // 1. Lunaskan kasbon warung dan set paid_amount penuh agar sisa Rp 0
       if (cutW > 0) {
         const { data: activeWarung } = await client
           .from("cash_advances")
@@ -135,29 +135,48 @@ export default async function Page({ searchParams }: Props) {
         }
       }
 
-      // 2. Angsuran pinjaman kantor
+      // 2. Pemotongan kasbon kantor (prioritaskan SEKALI LUNAS, baru ANGSURAN)
       if (cutP > 0) {
         const { data: advancesP } = await client
           .from("cash_advances")
-          .select("id, amount, paid_amount")
+          .select("id, amount, paid_amount, installment_amount")
           .eq("worker_id", workerId)
           .in("category", ["KASBON_PERUSAHAAN", "KASBON_KANTOR"])
-          .eq("status", "AKTIF");
+          .eq("status", "AKTIF")
+          .order("installment_amount", { ascending: true });
 
         if (advancesP && advancesP.length > 0) {
-          let remain = cutP;
+          let remainBudget = cutP;
+
           for (const adv of advancesP) {
-            if (remain <= 0) break;
+            if (remainBudget <= 0) break;
+
             const tot = Number(adv.amount || 0);
             const cur = Number(adv.paid_amount || 0);
             const sisa = Math.max(0, tot - cur);
-            const pay = Math.min(sisa, remain);
-            const nPaid = cur + pay;
+
+            if (sisa <= 0) continue;
+
+            const instAmt = Number(adv.installment_amount || 0);
+            // Jika ada nilai cicilan dan lebih kecil dari sisa, targetnya nilai cicilan. Jika tidak, target sisa penuh.
+            const targetPotong = instAmt > 0 && instAmt < sisa ? instAmt : sisa;
+
+            const bayar = Math.min(targetPotong, remainBudget);
+            const newPaid = cur + bayar;
+            const isLunas = newPaid >= tot;
+
             await client
               .from("cash_advances")
-              .update({ paid_amount: nPaid, status: nPaid >= tot ? "LUNAS" : "AKTIF" })
+              .update({
+                paid_amount: newPaid,
+                status: isLunas ? "LUNAS" : "AKTIF",
+                notes: isLunas
+                  ? `Lunas via Payroll Bulanan #${runId}`
+                  : `Angsuran terbayar via Payroll Bulanan #${runId}`,
+              })
               .eq("id", adv.id);
-            remain -= pay;
+
+            remainBudget -= bayar;
           }
         }
       }
@@ -235,7 +254,7 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Ambil batch BULANAN terbaru MURNI dari data snapshot batch (tanpa auto-sync liar)
+  // Ambil batch BULANAN terbaru murni dari data snapshot batch
   const latestBulananRun = payrollRuns.find((r) => r.payroll_type === "BULANAN") || payrollRuns[0];
   const bulananItems = latestBulananRun
     ? payrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
@@ -516,8 +535,7 @@ export default async function Page({ searchParams }: Props) {
                 </form>
               </Card>
             </div>
-          ) : null
-        }
+          ) : null}
         historyNode={
           <div className="space-y-4">
             <Card title="Riwayat Finalisasi Payroll Umum">
