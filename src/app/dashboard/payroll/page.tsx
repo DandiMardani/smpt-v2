@@ -212,90 +212,7 @@ export default async function Page({ searchParams }: Props) {
   const currentWorkerId = (workerIdResult.data as number | null) ?? null;
   const activeAdvances = (advancesResult.data ?? []) as any[];
   const operatorRunMap = new Map(operatorRuns.map((run) => [run.id, run]));
-  const payrollRunMap = new Map(payrollRuns.map((run) => [run.id, run]));
   const workerMap = new Map(workers.map((w) => [w.id, w]));
-
-  const activeAdvMap = new Map<number, { kasbonP: number; kasbonW: number }>();
-  for (const a of activeAdvances) {
-    if (a.status !== "AKTIF") continue;
-    const cur = activeAdvMap.get(a.worker_id) || { kasbonP: 0, kasbonW: 0 };
-    const rem = Math.max(0, Number(a.amount || 0) - Number(a.paid_amount || 0));
-    if (a.category === "KASBON_PERUSAHAAN" || a.category === "KASBON_KANTOR") {
-      const inst = Number(a.installment_amount || 0);
-      cur.kasbonP += inst > 0 ? Math.min(inst, rem) : rem;
-    } else if (a.category === "KASBON_WARUNG") {
-      cur.kasbonW += rem;
-    }
-    activeAdvMap.set(a.worker_id, cur);
-  }
-
-  const unpaidRuns = payrollRuns.filter((r) => r.status !== "PAID" && r.status !== "DIBATALKAN");
-  const unpaidRunIds = new Set(unpaidRuns.map((r) => r.id));
-
-  const itemsToSyncDb: PayrollItemRow[] = [];
-  const synchronizedPayrollItems = payrollItems.map((it) => {
-    if (!unpaidRunIds.has(it.payroll_run_id)) return it;
-    const live = activeAdvMap.get(it.worker_id);
-    const runInfo = payrollRunMap.get(it.payroll_run_id);
-    const workerInfo = workerMap.get(it.worker_id);
-
-    const isBulananWorker = workerInfo?.pay_system === "BULANAN" || it.pay_system_snapshot === "BULANAN";
-    const isWeeklyOrMealRun =
-      runInfo?.payroll_type === "MINGGUAN" ||
-      runInfo?.payroll_type === "UANG_MAKAN" ||
-      /makan|mingguan/i.test(runInfo?.notes || "") ||
-      /makan|mingguan/i.test(runInfo?.payroll_code || "");
-
-    const effP = (isBulananWorker && isWeeklyOrMealRun) ? 0 : (live?.kasbonP ?? Number(it.kasbon_perusahaan_amount || 0));
-    const effW = (isBulananWorker && isWeeklyOrMealRun) ? 0 : (live?.kasbonW ?? Number(it.kasbon_warung_amount || 0));
-
-    const curP = Number(it.kasbon_perusahaan_amount || 0);
-    const curW = Number(it.kasbon_warung_amount || 0);
-
-    // Rumus murni: Gaji Pokok + Lembur
-    const base = Number(it.base_amount || 0);
-    const overtime =
-      Number(it.overtime_amount || 0) +
-      Number(it.manual_overtime_amount || 0) +
-      Number(it.overtime_bonus || 0);
-    const gross = base + overtime;
-    const deduction = Math.round((effP + effW) * 100) / 100;
-    const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
-
-    if (Math.abs(curP - effP) < 0.01 && Math.abs(curW - effW) < 0.01 && Math.abs(Number(it.net_amount || 0) - net) < 0.01) {
-      return it;
-    }
-
-    const updated = {
-      ...it,
-      kasbon_perusahaan_amount: effP,
-      kasbon_warung_amount: effW,
-      deduction_amount: deduction,
-      net_amount: net,
-    };
-    itemsToSyncDb.push(updated);
-    return updated;
-  });
-
-  if (itemsToSyncDb.length > 0 && canWrite) {
-    (async () => {
-      try {
-        for (const item of itemsToSyncDb) {
-          await supabase
-            .from("payroll_run_items")
-            .update({
-              kasbon_perusahaan_amount: item.kasbon_perusahaan_amount,
-              kasbon_warung_amount: item.kasbon_warung_amount,
-              deduction_amount: item.deduction_amount,
-              net_amount: item.net_amount,
-            })
-            .eq("id", item.id);
-        }
-      } catch (err) {
-        console.error("Auto sync DB error:", err);
-      }
-    })();
-  }
 
   const settingsRows = (settingsResult.data ?? []) as Array<{ key: string; value_numeric: number | null; value_text: string | null }>;
   const settingsMap: PayrollSettingsMap = {};
@@ -305,13 +222,13 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Ambil batch BULANAN terbaru
+  // Ambil batch BULANAN terbaru MURNI dari data snapshot batch (TIDAK DITIMPA SYNC LIVE)
   const latestBulananRun = payrollRuns.find((r) => r.payroll_type === "BULANAN") || payrollRuns[0];
   const bulananItems = latestBulananRun
-    ? synchronizedPayrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
+    ? payrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
     : [];
 
-  // Hitung Total Footer
+  // Hitung Total Keseluruhan Footer dari Snapshot Asli
   const totBase = bulananItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
   const totOvertime = bulananItems.reduce(
     (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0),
@@ -373,7 +290,7 @@ export default async function Page({ searchParams }: Props) {
       <PayrollViewTabs
         canWrite={canWrite}
         activeRunCode={payrollRuns[0]?.payroll_code}
-        workerCount={payrollRuns[0] ? synchronizedPayrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
+        workerCount={payrollRuns[0] ? payrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
         slipsNode={
           <div className="space-y-6 min-w-0 max-w-full">
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center sm:text-left min-w-0">
@@ -391,7 +308,7 @@ export default async function Page({ searchParams }: Props) {
               </div>
             </div>
 
-            {/* TABEL GAJI BULANAN LENGKAP DENGAN BRUTO MURNI & TOTAL SETIAP KOLOM */}
+            {/* TABEL GAJI BULANAN LENGKAP: BRUTO MURNI + SNAPSHOT KASBON ASLI */}
             {latestBulananRun ? (
               <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
@@ -439,6 +356,7 @@ export default async function Page({ searchParams }: Props) {
                           Number(item.manual_overtime_amount || 0) +
                           Number(item.overtime_bonus || 0);
                         const gross = base + overtime;
+                        // Snapshot asli batch
                         const kp = Number(item.kasbon_perusahaan_amount || 0);
                         const kw = Number(item.kasbon_warung_amount || 0);
                         const ded = kp + kw;
@@ -561,7 +479,7 @@ export default async function Page({ searchParams }: Props) {
             {/* Slip Gaji & WhatsApp Manager (Form Uang Makan & Operator) */}
             <PayrollSlipManager
               runs={payrollRuns}
-              items={synchronizedPayrollItems}
+              items={payrollItems}
               operatorRuns={operatorRuns}
               operatorItems={operatorItems}
               workers={workers}
