@@ -126,10 +126,8 @@ export function WorkerFinancialSummary({
   breakdown?: SalaryBreakdown;
   officialSlip?: OfficialSlipData | null;
 }) {
-  const [showDetail, setShowDetail] = useState(false);
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [showRulesInfo, setShowRulesInfo] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const isBorongan = worker.pay_system === "BORONGAN";
   const isBulanan = worker.pay_system === "BULANAN";
@@ -144,9 +142,7 @@ export function WorkerFinancialSummary({
     )
   );
 
-  // LOGIKA RESET:
-  // Jika slip resmi sudah lunas, atau jika karyawan bulanan (karena tanggal 1 adalah cut-off siklus baru),
-  // maka lembur periode lalu tidak lagi dihitung di upah berjalan!
+  // LOGIKA RESET OTOMATIS:
   const hasOfficialSlip = Boolean(officialSlip);
   const resetOldOvertime = isSlipPaid || hasOfficialSlip;
 
@@ -294,16 +290,31 @@ export function WorkerFinancialSummary({
             >
               {showRulesInfo ? "✕ Tutup SOP" : "ℹ️ SOP Periode"}
             </button>
-
-            <button
-              type="button"
-              onClick={() => setShowDetail(!showDetail)}
-              className="rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 shadow-2xs transition cursor-pointer"
-            >
-              {showDetail ? "▲ Tutup Rincian" : "▼ Rincian Komponen"}
-            </button>
           </div>
         </div>
+
+        {/* SOP Info Box */}
+        {showRulesInfo && (
+          <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 to-purple-50/60 p-4 text-xs space-y-3">
+            <h4 className="font-extrabold text-indigo-950 text-sm">
+              📌 SOP Penggajian Lapangan & Absensi
+            </h4>
+            <div className="grid gap-3 sm:grid-cols-2 text-indigo-950">
+              <div className="rounded-lg bg-white/80 border border-indigo-200/70 p-3 space-y-1">
+                <span className="font-bold text-indigo-900 block">💼 Karyawan Bulanan:</span>
+                <p className="text-[11px] leading-relaxed text-indigo-800">
+                  Gaji pokok bulanan utuh. Lembur dihitung terpisah (Pokok ÷ 190 / jam). Uang makan dibayar mingguan dan bebas potongan hutang.
+                </p>
+              </div>
+              <div className="rounded-lg bg-white/80 border border-indigo-200/70 p-3 space-y-1">
+                <span className="font-bold text-indigo-900 block">👥 Karyawan Harian:</span>
+                <p className="text-[11px] leading-relaxed text-indigo-800">
+                  Upah dibayar mingguan per hari masuk aktual. Potongan kasbon kantor & warung otomatis disinkronkan saat pembayaran payroll.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 4 Kartu Metrik Keuangan Utama */}
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -338,7 +349,6 @@ export function WorkerFinancialSummary({
                   </span>
                 </div>
 
-                {/* Lembur HANYA tampil jika ada lembur baru di periode berjalan */}
                 {effectiveOtWage > 0 ? (
                   <div className="rounded-lg bg-blue-50/60 border border-blue-200/70 p-2 flex justify-between items-center">
                     <div>
