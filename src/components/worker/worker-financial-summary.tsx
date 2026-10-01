@@ -591,4 +591,4 @@ export function WorkerFinancialSummary({
       )}
     </div>
   );
-}
+        }
