@@ -1,10 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 
 // 1. Aksi Simpan Koreksi Edit Manual
 export async function updateBulananItemAction(formData: FormData) {
+  await requirePermission("payroll.write");
+
   const itemId = Number(formData.get("item_id"));
   const runId = Number(formData.get("run_id"));
   const baseAmount = Number(formData.get("base_amount") || 0);
@@ -13,6 +16,9 @@ export async function updateBulananItemAction(formData: FormData) {
   const kasbonWarung = Number(formData.get("kasbon_warung_amount") || 0);
 
   if (!itemId || !runId) throw new Error("ID Item tidak valid.");
+  if (baseAmount < 0 || overtimeAmount < 0 || kasbonKantor < 0 || kasbonWarung < 0) {
+    throw new Error("Nominal gaji atau potongan tidak boleh negatif.");
+  }
 
   const supabase = await createClient();
 
@@ -43,6 +49,7 @@ export async function updateBulananItemAction(formData: FormData) {
 
 // 2. Aksi Verifikasi Lunas (Bisa 1 orang atau banyak sekaligus)
 export async function verifyBulananPaymentAction(itemIds: number[], runId: number) {
+  await requirePermission("payroll.write");
   if (!itemIds || itemIds.length === 0) throw new Error("Pilih pekerja yang ingin diverifikasi.");
 
   const supabase = await createClient();
@@ -124,6 +131,7 @@ export async function verifyBulananPaymentAction(itemIds: number[], runId: numbe
 
 // 3. Aksi Batal Lunas (Rollback jika salah pencet)
 export async function revertBulananPaymentAction(itemId: number, runId: number) {
+  await requirePermission("payroll.write");
   const supabase = await createClient();
 
   await supabase

@@ -1,27 +1,17 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAccessContext } from "@/lib/access/current-user";
 import { revalidatePath } from "next/cache";
 
 async function getAuth() {
+  const access = await getCurrentAccessContext();
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Silakan login kembali.");
 
-  const userEmail = (user.email || "").toLowerCase();
-  const isAdmin =
-    userEmail.includes("dandi") ||
-    userEmail.includes("admin") ||
-    userEmail.includes("smpt");
+  const isAdmin = access.role === "ADMIN" || access.permissionCodes.includes("warung.admin");
+  const warungName = access.displayName || "Warung Mitra";
 
-  const warungName =
-    user.user_metadata?.warung_name ||
-    user.email?.split("@")[0] ||
-    "Warung Mitra";
-
-  return { supabase, user, warungId: user.id, warungName, isAdmin };
+  return { supabase, user: { id: access.userId, email: access.email }, warungId: access.userId, warungName, isAdmin };
 }
 
 export async function createWarungTransactionAction(payload: {

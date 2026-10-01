@@ -21,6 +21,41 @@ import {
 const PATH = "/dashboard/masterPekerja";
 const upper = (value: string) => value.trim().toUpperCase();
 
+function validateImageBuffer(buffer: Buffer): { valid: boolean; ext: string; mime: string } {
+  if (buffer.length < 12) return { valid: false, ext: "", mime: "" };
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { valid: true, ext: "jpg", mime: "image/jpeg" };
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return { valid: true, ext: "png", mime: "image/png" };
+  }
+  // WEBP: RIFF....WEBP
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return { valid: true, ext: "webp", mime: "image/webp" };
+  }
+  return { valid: false, ext: "", mime: "" };
+}
+
 async function uploadKtpIfProvided(f: FormData): Promise<string | null> {
   const existingUrl = getText(f, "existing_ktp_photo_url") || null;
   let fileCandidate = f.get("ktp_photo");
@@ -32,20 +67,29 @@ async function uploadKtpIfProvided(f: FormData): Promise<string | null> {
     return existingUrl;
   }
 
-  const file = fileCandidate;
+  const ktpFile = fileCandidate as File;
 
-  const ktpFile = file as File;
+  // Batasi ukuran file maksimum 5MB
+  if (ktpFile.size > 5 * 1024 * 1024) {
+    throw new Error("Ukuran file KTP maksimal 5MB.");
+  }
+
   const bytes = await ktpFile.arrayBuffer();
   const buffer = Buffer.from(bytes);
-  const rawExt = ktpFile.name.split(".").pop() || "jpg";
-  const ext = rawExt.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "jpg";
-  const path = `ktp/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  // Verifikasi signature magic bytes (anti MIME-spoofing)
+  const imageInfo = validateImageBuffer(buffer);
+  if (!imageInfo.valid) {
+    throw new Error("Format file KTP tidak valid. Hanya file JPG, PNG, atau WEBP asli yang diperbolehkan.");
+  }
+
+  const path = `ktp/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${imageInfo.ext}`;
 
   const admin = createAdminAuthClient();
   const { error: uploadError } = await admin.storage
     .from("worker-documents")
     .upload(path, buffer, {
-      contentType: ktpFile.type || "image/jpeg",
+      contentType: imageInfo.mime,
       upsert: true,
     });
 

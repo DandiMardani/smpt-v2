@@ -377,40 +377,64 @@ export function DashboardShell({
           sidebarCollapsed ? "w-20" : "w-72"
         }`}
       >
-        <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 px-4">
-          <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-blue-700 text-sm font-black text-white shadow-md shadow-blue-500/25">
-              KD
+        <div className={`relative flex h-16 shrink-0 items-center border-b border-slate-100 transition-all duration-300 ${
+          sidebarCollapsed ? "justify-center px-2" : "justify-between px-4"
+        }`}>
+          {sidebarCollapsed ? (
+            <div className="flex items-center justify-center w-full relative">
+              <Link
+                href="/dashboard"
+                title="Dashboard Kreasi Dinamika"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-blue-700 text-sm font-black text-white shadow-md shadow-blue-500/25 transition hover:scale-105 active:scale-95"
+              >
+                KD
+              </Link>
+              <button
+                type="button"
+                onClick={handleToggleSidebar}
+                title="Perlebar Sidebar (Ctrl+B)"
+                className="absolute -right-5 top-1/2 -translate-y-1/2 z-50 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition active:scale-95"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
             </div>
-            {!sidebarCollapsed ? (
-              <div className="min-w-0 transition-opacity duration-200">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-sm font-black tracking-tight text-slate-900">Kreasi Dinamika</span>
-                  <span className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-white shadow-xs">
-                    V2 PRO
-                  </span>
+          ) : (
+            <>
+              <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-blue-700 text-sm font-black text-white shadow-md shadow-blue-500/25">
+                  KD
                 </div>
-                <p className="truncate text-[11px] font-semibold text-slate-400">Sistem Manufaktur Terpadu</p>
-              </div>
-            ) : null}
-          </Link>
+                <div className="min-w-0 transition-opacity duration-200">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-black tracking-tight text-slate-900">Kreasi Dinamika</span>
+                    <span className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-white shadow-xs">
+                      V2 PRO
+                    </span>
+                  </div>
+                  <p className="truncate text-[11px] font-semibold text-slate-400">Sistem Manufaktur Terpadu</p>
+                </div>
+              </Link>
 
-          <button
-            type="button"
-            onClick={handleToggleSidebar}
-            title={sidebarCollapsed ? "Perlebar Sidebar (Ctrl+B)" : "Ciutkan Sidebar (Ctrl+B)"}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 transition active:scale-95"
-          >
-            <svg
-              className={`h-4 w-4 transition-transform duration-300 ${sidebarCollapsed ? "rotate-180" : ""}`}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
+              <button
+                type="button"
+                onClick={handleToggleSidebar}
+                title="Ciutkan Sidebar (Ctrl+B)"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 transition active:scale-95"
+              >
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Desktop Workspace Mode Switcher */}
@@ -540,6 +564,62 @@ export function DashboardShell({
             </nav>
           ) : null}
         </div>
+
+        {/* Desktop Sidebar Footer */}
+        <div className={`border-t border-slate-100 bg-slate-50/70 p-2.5 shrink-0 ${sidebarCollapsed ? "flex flex-col items-center gap-2" : "flex items-center justify-between gap-2"}`}>
+          {!sidebarCollapsed ? (
+            <>
+              <Link
+                href="/dashboard/akun"
+                className="flex items-center gap-2.5 min-w-0 flex-1 rounded-xl p-1 hover:bg-slate-200/60 transition"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-xs">
+                  {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold text-slate-800">{userProfile.displayName || "User"}</p>
+                  <p className="truncate text-[10px] font-medium text-slate-400">{userProfile.role}</p>
+                </div>
+              </Link>
+              <form action={logout}>
+                <button
+                  type="submit"
+                  title="Keluar dari akun"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition shadow-xs active:scale-95"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/dashboard/akun"
+                title={`Akun: ${userProfile.displayName || "User"} (${userProfile.role})`}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-xs font-bold text-white shadow-xs hover:opacity-90 transition"
+              >
+                {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
+              </Link>
+              <form action={logout}>
+                <button
+                  type="submit"
+                  title="Keluar dari akun"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition shadow-xs active:scale-95"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                </button>
+              </form>
+            </>
+          )}
+        </div>
       </aside>
 
       {/* 2. DYNAMIC MAIN LAYOUT */}
@@ -588,9 +668,29 @@ export function DashboardShell({
               </button>
 
               {/* User Avatar */}
-              <Link href="/dashboard/akun" className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-xs">
+              <Link
+                href="/dashboard/akun"
+                title={`Akun: ${userProfile.displayName || "User"} (${userProfile.role})`}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-xs hover:opacity-90 transition"
+              >
                 {userProfile.displayName ? userProfile.displayName.charAt(0).toUpperCase() : "U"}
               </Link>
+
+              {/* Desktop Header Logout Button */}
+              <form action={logout} className="hidden sm:inline-block">
+                <button
+                  type="submit"
+                  title="Keluar dari akun"
+                  className="flex items-center gap-1.5 rounded-lg border border-rose-200/80 bg-rose-50/80 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition shadow-xs active:scale-95"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                  <span>Keluar</span>
+                </button>
+              </form>
             </div>
           </div>
         </header>
