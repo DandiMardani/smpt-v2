@@ -15,6 +15,7 @@ import {
   inputClass,
 } from "@/components/final/final-ui";
 import { PayrollSlipManager, type WorkerInfo, type PayrollRunRow, type PayrollItemRow } from "@/components/payroll/payroll-slip-manager";
+import BulananTableEditor from "@/components/payroll/bulanan-table-editor";
 import PayrollSettingsModal, { type PayrollSettingsMap } from "@/components/payroll/payroll-settings-modal";
 import PayrollFinalizeForm from "@/components/payroll/payroll-finalize-form";
 import PayrollViewTabs from "@/components/payroll/payroll-view-tabs";
@@ -91,7 +92,6 @@ export default async function Page({ searchParams }: Props) {
   const payrollRunMap = new Map(payrollRuns.map((run) => [run.id, run]));
   const workerMap = new Map(workers.map((w) => [w.id, w]));
 
-  // Petakan live kasbon aktif per pekerja
   const activeAdvMap = new Map<number, { kasbonP: number; kasbonW: number }>();
   for (const a of activeAdvances) {
     if (a.status !== "AKTIF") continue;
@@ -106,7 +106,6 @@ export default async function Page({ searchParams }: Props) {
     activeAdvMap.set(a.worker_id, cur);
   }
 
-  // Sinkronisasi khusus run yang BELUM DIBAYAR (status !== 'PAID' dan !== 'DIBATALKAN')
   const unpaidRuns = payrollRuns.filter((r) => r.status !== "PAID" && r.status !== "DIBATALKAN");
   const unpaidRunIds = new Set(unpaidRuns.map((r) => r.id));
 
@@ -130,14 +129,13 @@ export default async function Page({ searchParams }: Props) {
     const curP = Number(it.kasbon_perusahaan_amount || 0);
     const curW = Number(it.kasbon_warung_amount || 0);
 
-    const gross =
-      Number(it.base_amount || 0) +
-      Number(it.meal_amount || 0) +
+    // RUMUS MURNI: Gaji Pokok + Lembur
+    const base = Number(it.base_amount || 0);
+    const overtime =
       Number(it.overtime_amount || 0) +
       Number(it.manual_overtime_amount || 0) +
-      Number(it.overtime_bonus || 0) +
-      Number(it.holiday_bonus || 0) +
-      Number(it.holiday_manual_amount || 0);
+      Number(it.overtime_bonus || 0);
+    const gross = base + overtime;
     const deduction = Math.round((effP + effW) * 100) / 100;
     const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
 
@@ -156,7 +154,6 @@ export default async function Page({ searchParams }: Props) {
     return updated;
   });
 
-  // Pembaruan data sinkronisasi ke database
   if (itemsToSyncDb.length > 0 && canWrite) {
     (async () => {
       try {
@@ -173,7 +170,7 @@ export default async function Page({ searchParams }: Props) {
         }
         for (const run of unpaidRuns) {
           const runItems = synchronizedPayrollItems.filter((i) => i.payroll_run_id === run.id);
-          const tGross = runItems.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.meal_amount || 0) + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0) + Number(i.holiday_bonus || 0) + Number(i.holiday_manual_amount || 0), 0);
+          const tGross = runItems.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0), 0);
           const tDed = runItems.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0);
           const tNet = runItems.reduce((acc, i) => acc + Number(i.net_amount || 0), 0);
           await supabase
@@ -195,22 +192,51 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Cari batch BULANAN terbaru untuk ditampilkan rincian detailnya
+  // Ambil data batch bulanan
   const latestBulananRun = payrollRuns.find((r) => r.payroll_type === "BULANAN") || payrollRuns[0];
-  const bulananItems = latestBulananRun
+  const rawBulananItems = latestBulananRun
     ? synchronizedPayrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
     : [];
+
+  const formattedBulananItems = rawBulananItems.map((item) => {
+    const w = workerMap.get(item.worker_id);
+    const base = Number(item.base_amount || 0);
+    const lembur =
+      Number(item.overtime_amount || 0) +
+      Number(item.manual_overtime_amount || 0) +
+      Number(item.overtime_bonus || 0);
+    const gross = base + lembur; // Murni Gaji Pokok + Lembur
+    const kp = Number(item.kasbon_perusahaan_amount || 0);
+    const kw = Number(item.kasbon_warung_amount || 0);
+    const ded = kp + kw;
+    const net = Math.max(0, gross - ded);
+
+    return {
+      id: item.id,
+      payroll_run_id: item.payroll_run_id,
+      worker_id: item.worker_id,
+      worker_name: item.worker_name_snapshot || w?.name || `Worker #${item.worker_id}`,
+      worker_code: w?.worker_code || w?.position || "Staf Bulanan",
+      base_amount: base,
+      overtime_amount: lembur,
+      gross_amount: gross,
+      kasbon_perusahaan_amount: kp,
+      kasbon_warung_amount: kw,
+      deduction_amount: ded,
+      net_amount: net,
+      payment_status: (item as any).payment_status || "PENDING",
+    };
+  });
 
   return (
     <PageShell
       eyebrow="SDM & Payroll"
       title="Payroll & Slip Gaji"
-      description="Kelola finalisasi upah HARIAN & BULANAN, pencairan uang makan mingguan tanpa potongan kasbon, cetak slip gaji resmi, dan ekspor dokumen laporan format CV. SMPT."
+      description="Kelola finalisasi upah HARIAN & BULANAN, verifikasi pembayaran lunas, cetak slip gaji resmi, dan ekspor laporan format CV. SMPT."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnly /> : null}
 
-      {/* Tombol Ekspor Laporan Sesuai Format CV. SMPT */}
       <div className="flex flex-wrap items-center gap-2">
         <a
           href={`/api/export/xlsx?report=pembayaran_uang_makan&run_id=${latestRunId}`}
@@ -270,91 +296,16 @@ export default async function Page({ searchParams }: Props) {
               </div>
             </div>
 
-            {/* TABEL RINCIAN GAJI KARYAWAN BULANAN RESMI */}
+            {/* TABEL BULANAN LENGKAP: BRUTO MURNI + CHECKBOX LUNAS + EDIT + TOTAL DI FOOTER */}
             {latestBulananRun ? (
-              <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-lg bg-blue-600 px-2 py-0.5 text-xs font-black text-white">
-                        {latestBulananRun.payroll_code}
-                      </span>
-                      <h2 className="text-base font-extrabold text-slate-900">
-                        Rekapitulasi Gaji Karyawan Bulanan
-                      </h2>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Periode: <b>{latestBulananRun.period_start} s/d {latestBulananRun.period_end}</b> — Memuat rincian Gaji Pokok, Lembur, Kasbon Kantor & Kasbon Warung.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 self-end sm:self-center">
-                    <div className="text-right">
-                      <div className="text-[10px] uppercase font-bold text-slate-400">Total Cair Bersih</div>
-                      <div className="text-lg font-black text-emerald-600">{money(latestBulananRun.total_net)}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-left text-xs text-slate-700">
-                    <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-600 border-b border-slate-200">
-                      <tr>
-                        <th className="px-3 py-2.5">Pekerja</th>
-                        <th className="px-3 py-2.5 text-right">Gaji Pokok</th>
-                        <th className="px-3 py-2.5 text-right">Lembur</th>
-                        <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
-                        <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
-                        <th className="px-3 py-2.5 text-right text-amber-600">Kasbon Warung</th>
-                        <th className="px-3 py-2.5 text-right text-rose-700 bg-rose-50/50">Tot. Potongan</th>
-                        <th className="px-3 py-2.5 text-right bg-emerald-50 text-emerald-700 font-black">Gaji Bersih (THP)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {bulananItems.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="py-4 text-center text-slate-400 italic">
-                            Belum ada rincian item pekerja untuk run bulanan ini.
-                          </td>
-                        </tr>
-                      ) : (
-                        bulananItems.map((item) => {
-                          const w = workerMap.get(item.worker_id);
-                          const gross =
-                            Number(item.base_amount || 0) +
-                            Number(item.meal_amount || 0) +
-                            Number(item.overtime_amount || 0) +
-                            Number(item.manual_overtime_amount || 0) +
-                            Number(item.overtime_bonus || 0) +
-                            Number(item.holiday_bonus || 0) +
-                            Number(item.holiday_manual_amount || 0);
-                          const lemburTotal =
-                            Number(item.overtime_amount || 0) +
-                            Number(item.manual_overtime_amount || 0) +
-                            Number(item.overtime_bonus || 0);
-
-                          return (
-                            <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                              <td className="px-3 py-2.5 font-bold text-slate-900">
-                                <div>{item.worker_name_snapshot || w?.name || `Worker #${item.worker_id}`}</div>
-                                <div className="text-[10px] font-normal text-slate-400">{w?.worker_code || w?.position || "Staf Bulanan"}</div>
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-medium">{money(item.base_amount)}</td>
-                              <td className="px-3 py-2.5 text-right text-slate-600 font-medium">{money(lemburTotal)}</td>
-                              <td className="px-3 py-2.5 text-right font-bold text-slate-900 bg-blue-50/30">{money(gross)}</td>
-                              <td className="px-3 py-2.5 text-right text-rose-600 font-medium">{money(item.kasbon_perusahaan_amount)}</td>
-                              <td className="px-3 py-2.5 text-right text-amber-600 font-medium">{money(item.kasbon_warung_amount)}</td>
-                              <td className="px-3 py-2.5 text-right text-rose-700 font-bold bg-rose-50/30">{money(item.deduction_amount)}</td>
-                              <td className="px-3 py-2.5 text-right font-black text-emerald-700 bg-emerald-50/60 text-sm">
-                                {money(item.net_amount)}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <BulananTableEditor
+                runCode={latestBulananRun.payroll_code}
+                runId={latestBulananRun.id}
+                periodStart={latestBulananRun.period_start}
+                periodEnd={latestBulananRun.period_end}
+                items={formattedBulananItems}
+                canWrite={canWrite}
+              />
             ) : null}
 
             {/* Slip Gaji & WhatsApp Manager (Form Uang Makan & Operator) */}
