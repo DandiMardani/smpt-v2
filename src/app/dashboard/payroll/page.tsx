@@ -112,14 +112,27 @@ export default async function Page({ searchParams }: Props) {
     const client = await createClient();
 
     try {
-      // 1. Lunaskan kasbon warung
+      // 1. Lunaskan kasbon warung dan set paid_amount penuh agar sisa Rp 0 (tidak terjumlah lagi)
       if (cutW > 0) {
-        await client
+        const { data: activeWarung } = await client
           .from("cash_advances")
-          .update({ status: "LUNAS", notes: `Lunas via Payroll Bulanan #${runId}` })
+          .select("id, amount")
           .eq("worker_id", workerId)
           .eq("category", "KASBON_WARUNG")
           .eq("status", "AKTIF");
+
+        if (activeWarung && activeWarung.length > 0) {
+          for (const w of activeWarung) {
+            await client
+              .from("cash_advances")
+              .update({
+                paid_amount: w.amount,
+                status: "LUNAS",
+                notes: `Lunas via Payroll Bulanan #${runId}`,
+              })
+              .eq("id", w.id);
+          }
+        }
       }
 
       // 2. Angsuran pinjaman kantor
@@ -222,13 +235,13 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Ambil batch BULANAN terbaru MURNI dari data snapshot batch (TIDAK DITIMPA SYNC LIVE)
+  // Ambil batch BULANAN terbaru MURNI dari data snapshot batch (tanpa auto-sync liar)
   const latestBulananRun = payrollRuns.find((r) => r.payroll_type === "BULANAN") || payrollRuns[0];
   const bulananItems = latestBulananRun
     ? payrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
     : [];
 
-  // Hitung Total Keseluruhan Footer dari Snapshot Asli
+  // Hitung Total Keseluruhan Footer
   const totBase = bulananItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
   const totOvertime = bulananItems.reduce(
     (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0),
@@ -308,7 +321,7 @@ export default async function Page({ searchParams }: Props) {
               </div>
             </div>
 
-            {/* TABEL GAJI BULANAN LENGKAP: BRUTO MURNI + SNAPSHOT KASBON ASLI */}
+            {/* TABEL GAJI BULANAN LENGKAP */}
             {latestBulananRun ? (
               <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
@@ -356,7 +369,6 @@ export default async function Page({ searchParams }: Props) {
                           Number(item.manual_overtime_amount || 0) +
                           Number(item.overtime_bonus || 0);
                         const gross = base + overtime;
-                        // Snapshot asli batch
                         const kp = Number(item.kasbon_perusahaan_amount || 0);
                         const kw = Number(item.kasbon_warung_amount || 0);
                         const ded = kp + kw;
@@ -394,7 +406,7 @@ export default async function Page({ searchParams }: Props) {
                                 <div className="inline-flex items-center gap-1.5">
                                   {!isPaid ? (
                                     <>
-                                      {/* Popover Edit Ringkas */}
+                                      {/* Popover Edit */}
                                       <details className="relative">
                                         <summary className="cursor-pointer list-none rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100">
                                           ✏️ Edit
@@ -419,7 +431,7 @@ export default async function Page({ searchParams }: Props) {
                                               <label className="text-[10px] font-bold text-amber-600">Kasbon Warung</label>
                                               <input name="kasbon_warung_amount" type="number" defaultValue={kw} className="w-full rounded border border-amber-200 px-2 py-1 text-xs" required />
                                             </div>
-                                            <button className="w-full rounded bg-blue-600 py-1 text-xs font-bold text-white hover:bg-blue-700">Simpan</button>
+                                            <button className="w-full rounded bg-blue-600 py-1 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer">Simpan</button>
                                           </form>
                                         </div>
                                       </details>
@@ -476,7 +488,7 @@ export default async function Page({ searchParams }: Props) {
               </div>
             ) : null}
 
-            {/* Slip Gaji & WhatsApp Manager (Form Uang Makan & Operator) */}
+            {/* Slip Gaji & WhatsApp Manager */}
             <PayrollSlipManager
               runs={payrollRuns}
               items={payrollItems}
