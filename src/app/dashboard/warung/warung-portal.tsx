@@ -97,7 +97,6 @@ export function WarungPortal({
 }: WarungPortalProps) {
   const router = useRouter();
 
-  // Local state agar update data langsung terjadi tanpa reload halaman
   const [transactions, setTransactions] = useState<WarungTransaction[]>(initialTransactions);
 
   useEffect(() => {
@@ -131,7 +130,7 @@ export function WarungPortal({
         map.set(wName, entry);
       }
       const rem = Math.max(0, Number(tx.amount || 0) - Number(tx.paid_amount || 0));
-      if (rem > 0) {
+      if (rem > 0 && tx.status !== "LUNAS") {
         entry.totalDebt += rem;
         entry.workerCount.add(String(tx.worker_id));
       }
@@ -170,10 +169,12 @@ export function WarungPortal({
       const paid = Number(tx.paid_amount || 0);
       const rem = Math.max(0, amt - paid);
 
-      totalRemaining += rem;
+      if (tx.status !== "LUNAS") {
+        totalRemaining += rem;
+      }
       totalPaid += paid;
 
-      if (rem > 0) {
+      if (rem > 0 && tx.status !== "LUNAS") {
         workerSet.add(String(tx.worker_id));
       }
     });
@@ -244,8 +245,8 @@ export function WarungPortal({
         };
         map.set(key, entry);
       }
-      entry.totalDebt += rem;
-      if (rem > 0) {
+      if (tx.status !== "LUNAS" && rem > 0) {
+        entry.totalDebt += rem;
         entry.transactionCount += 1;
       }
     });
@@ -277,6 +278,10 @@ export function WarungPortal({
   };
 
   const handleOpenEdit = (tx: WarungTransaction) => {
+    if (tx.status === "LUNAS") {
+      alert("Nota ini sudah LUNAS dan terkunci sebagai arsip pembukuan.");
+      return;
+    }
     setEditingTx(tx);
     setFormWorkerId(String(tx.worker_id));
     setFormAmount(tx.amount);
@@ -349,7 +354,6 @@ export function WarungPortal({
         } as any);
         if (!res.success) throw new Error(res.error);
 
-        // Update state lokal langsung tanpa reload
         setTransactions((prev) =>
           prev.map((t) =>
             t.id === editingTx.id
@@ -378,7 +382,6 @@ export function WarungPortal({
         } as any);
         if (!res.success) throw new Error(res.error);
 
-        // Tambah ke state lokal
         const newTx: WarungTransaction = {
           id: (res as any)?.data?.id ? String((res as any).data.id) : Date.now().toString(),
           worker_id: formWorkerId,
@@ -439,7 +442,7 @@ export function WarungPortal({
             ? {
                 ...t,
                 paid_amount: targetTotalPaid,
-                remaining_amount: Math.max(0, amount - targetTotalPaid),
+                remaining_amount: isLunas ? 0 : Math.max(0, amount - targetTotalPaid),
                 status: isLunas ? "LUNAS" : t.status,
               }
             : t
@@ -456,6 +459,11 @@ export function WarungPortal({
   };
 
   const handleDelete = async (txId: string) => {
+    const tx = transactions.find((t) => t.id === txId);
+    if (tx?.status === "LUNAS") {
+      alert("Nota yang sudah LUNAS tidak dapat dihapus.");
+      return;
+    }
     if (!confirm("Apakah Anda yakin ingin membatalkan/menghapus nota ini?")) return;
     try {
       const res = await deleteWarungTransactionAction(txId);
@@ -464,7 +472,6 @@ export function WarungPortal({
         return;
       }
 
-      // Hapus langsung dari state lokal
       setTransactions((prev) => prev.filter((t) => t.id !== txId));
       router.refresh();
     } catch (err: any) {
@@ -562,10 +569,10 @@ export function WarungPortal({
             </div>
           </div>
         ) : (
-          /* TAMPILAN RINCIAN WARUNG (DRILL-DOWN: REKAP & TRANSAKSI) */
+          /* TAMPILAN RINCIAN WARUNG */
           <div className="space-y-3">
             
-            {/* CARD RINGKASAN TOTAL TAGIHAN & JUMLAH ORANG */}
+            {/* CARD RINGKASAN */}
             <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs">
               <div className="grid grid-cols-2 gap-3 divide-x divide-slate-100">
                 <div>
@@ -632,7 +639,7 @@ export function WarungPortal({
               />
             </div>
 
-            {/* TAB 1: KARTU REKAP SALDO PER ORANG (BISA DIKLIK) */}
+            {/* TAB 1: KARTU REKAP SALDO PER ORANG */}
             {activeTab === "rekap" && (
               <div className="space-y-3">
                 {workerBalances.map(({ worker, totalDebt, transactionCount }) => (
@@ -673,7 +680,7 @@ export function WarungPortal({
               </div>
             )}
 
-            {/* TAB 2: TABEL RIWAYAT TRANSAKSI DENGAN STATUS & PEMBAYARAN */}
+            {/* TAB 2: TABEL RIWAYAT TRANSAKSI */}
             {activeTab === "transaksi" && (
               <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
@@ -692,7 +699,7 @@ export function WarungPortal({
                         const paid = Number(tx.paid_amount || 0);
                         const remaining = Math.max(0, amount - paid);
                         const isLunas = remaining === 0 || tx.status === "LUNAS";
-                        const isPartial = paid > 0 && remaining > 0;
+                        const isPartial = paid > 0 && remaining > 0 && !isLunas;
 
                         return (
                           <tr key={tx.id} className="hover:bg-orange-50/30 transition">
@@ -727,28 +734,32 @@ export function WarungPortal({
                               )}
                             </td>
                             <td className="py-3 px-3 text-right whitespace-nowrap">
-                              <div className="inline-flex items-center gap-1">
-                                {!isLunas && (
+                              {!isLunas ? (
+                                <div className="inline-flex items-center gap-1">
                                   <button
                                     onClick={() => handleOpenPayment(tx)}
                                     className="text-emerald-700 font-bold text-xs bg-emerald-50 px-2 py-1 rounded-lg hover:bg-emerald-100 transition cursor-pointer"
                                   >
                                     Bayar
                                   </button>
-                                )}
-                                <button
-                                  onClick={() => handleOpenEdit(tx)}
-                                  className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100 transition cursor-pointer"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(tx.id)}
-                                  className="text-red-600 font-bold text-xs bg-red-50 px-2 py-1 rounded-lg hover:bg-red-100 transition cursor-pointer"
-                                >
-                                  Hapus
-                                </button>
-                              </div>
+                                  <button
+                                    onClick={() => handleOpenEdit(tx)}
+                                    className="text-[#ea580c] font-bold text-xs bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100 transition cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(tx.id)}
+                                    className="text-red-600 font-bold text-xs bg-red-50 px-2 py-1 rounded-lg hover:bg-red-100 transition cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] font-semibold text-slate-400 italic">
+                                  🔒 Lunas
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -850,7 +861,7 @@ export function WarungPortal({
         </div>
       )}
 
-      {/* DRAWER / MODAL: RINCIAN RIWAYAT NOTA PEKERJA */}
+      {/* DRAWER / MODAL: RINCIAN RIWAYAT NOTA PEKERJA (SESUAI GAMBAR) */}
       {selectedWorkerForDetail && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
@@ -900,7 +911,7 @@ export function WarungPortal({
                   const isLunas = remaining === 0 || tx.status === "LUNAS";
 
                   return (
-                    <div key={tx.id} className="border border-slate-200 rounded-xl p-3 bg-white shadow-xs space-y-2">
+                    <div key={tx.id} className={`border rounded-xl p-3 shadow-xs space-y-2 ${isLunas ? "bg-slate-50/80 border-slate-200" : "bg-white border-slate-200"}`}>
                       <div className="flex justify-between items-start">
                         <div>
                           <span className="text-xs font-semibold text-slate-700 block">
@@ -923,38 +934,53 @@ export function WarungPortal({
                             )}
                           </div>
                         </div>
+
+                        {/* TOTAL & SISA */}
                         <div className="text-right">
                           <span className="text-xs text-slate-400 block">Total: Rp {amount.toLocaleString("id-ID")}</span>
-                          <span className="text-sm font-bold text-[#e11d48]">
-                            Sisa: Rp {remaining.toLocaleString("id-ID")}
-                          </span>
+                          {isLunas ? (
+                            <span className="text-xs font-bold text-emerald-600 block mt-0.5">
+                              Sisa: Rp 0 (Lunas)
+                            </span>
+                          ) : (
+                            <span className="text-sm font-bold text-[#e11d48] block mt-0.5">
+                              Sisa: Rp {remaining.toLocaleString("id-ID")}
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      <div className="flex justify-end items-center gap-2 pt-1 border-t border-slate-100">
-                        {!isLunas && (
-                          <button
-                            onClick={() => handleOpenPayment(tx)}
-                            className="flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition cursor-pointer"
-                          >
-                            <CheckCircleIcon />
-                            <span>Bayar</span>
-                          </button>
+                      {/* TOMBOL AKSI: HANYA MUNCUL JIKA NOTA BELUM LUNAS */}
+                      <div className="flex justify-end items-center gap-2 pt-1.5 border-t border-slate-100">
+                        {!isLunas ? (
+                          <>
+                            <button
+                              onClick={() => handleOpenPayment(tx)}
+                              className="flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition cursor-pointer"
+                            >
+                              <CheckCircleIcon />
+                              <span>Bayar</span>
+                            </button>
+                            <button
+                              onClick={() => handleOpenEdit(tx)}
+                              className="flex items-center gap-1 text-[11px] text-slate-700 hover:text-orange-600 font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-orange-50 transition cursor-pointer"
+                            >
+                              <EditIcon />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              onClick={() => handleDelete(tx.id)}
+                              className="flex items-center gap-1 text-[11px] text-red-600 font-semibold px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 transition cursor-pointer"
+                            >
+                              <TrashIcon />
+                              <span>Hapus</span>
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-slate-400 italic">
+                            🔒 Terkunci (Arsip Pembukuan)
+                          </span>
                         )}
-                        <button
-                          onClick={() => handleOpenEdit(tx)}
-                          className="flex items-center gap-1 text-[11px] text-slate-700 hover:text-orange-600 font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-orange-50 transition cursor-pointer"
-                        >
-                          <EditIcon />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(tx.id)}
-                          className="flex items-center gap-1 text-[11px] text-red-600 font-semibold px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 transition cursor-pointer"
-                        >
-                          <TrashIcon />
-                          <span>Hapus</span>
-                        </button>
                       </div>
                     </div>
                   );
