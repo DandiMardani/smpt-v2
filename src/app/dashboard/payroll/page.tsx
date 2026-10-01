@@ -69,26 +69,33 @@ export default async function Page({ searchParams }: Props) {
     const net = Math.max(0, gross - ded);
 
     const client = await createClient();
-    await client
-      .from("payroll_run_items")
-      .update({
-        base_amount: base,
-        overtime_amount: overtime,
-        meal_amount: 0,
-        kasbon_perusahaan_amount: kasbonP,
-        kasbon_warung_amount: kasbonW,
-        deduction_amount: ded,
-        net_amount: net,
-      })
-      .eq("id", itemId);
+    try {
+      await client
+        .from("payroll_run_items")
+        .update({
+          base_amount: base,
+          overtime_amount: overtime,
+          meal_amount: 0,
+          kasbon_perusahaan_amount: kasbonP,
+          kasbon_warung_amount: kasbonW,
+          deduction_amount: ded,
+          net_amount: net,
+        })
+        .eq("id", itemId);
 
-    // Sync total run
-    const { data: all } = await client.from("payroll_run_items").select("base_amount, overtime_amount, deduction_amount, net_amount").eq("payroll_run_id", runId);
-    if (all) {
-      const tG = all.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.overtime_amount || 0), 0);
-      const tD = all.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0);
-      const tN = all.reduce((acc, i) => acc + Number(i.net_amount || 0), 0);
-      await client.from("payroll_runs").update({ total_gross: tG, total_deduction: tD, total_net: tN }).eq("id", runId);
+      const { data: all } = await client
+        .from("payroll_run_items")
+        .select("base_amount, overtime_amount, deduction_amount, net_amount")
+        .eq("payroll_run_id", runId);
+
+      if (all) {
+        const tG = all.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.overtime_amount || 0), 0);
+        const tD = all.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0);
+        const tN = all.reduce((acc, i) => acc + Number(i.net_amount || 0), 0);
+        await client.from("payroll_runs").update({ total_gross: tG, total_deduction: tD, total_net: tN }).eq("id", runId);
+      }
+    } catch (err) {
+      console.error("Gagal simpan edit:", err);
     }
     revalidatePath("/dashboard/payroll");
   }
@@ -104,45 +111,56 @@ export default async function Page({ searchParams }: Props) {
 
     const client = await createClient();
 
-    // 1. Lunaskan kasbon warung
-    if (cutW > 0) {
-      await client
-        .from("cash_advances")
-        .update({ status: "LUNAS", notes: `Lunas via Payroll Bulanan #${runId}` })
-        .eq("worker_id", workerId)
-        .eq("category", "KASBON_WARUNG")
-        .eq("status", "AKTIF");
-    }
+    try {
+      // 1. Lunaskan kasbon warung
+      if (cutW > 0) {
+        await client
+          .from("cash_advances")
+          .update({ status: "LUNAS", notes: `Lunas via Payroll Bulanan #${runId}` })
+          .eq("worker_id", workerId)
+          .eq("category", "KASBON_WARUNG")
+          .eq("status", "AKTIF");
+      }
 
-    // 2. Angsuran pinjaman kantor
-    if (cutP > 0) {
-      const { data: advancesP } = await client
-        .from("cash_advances")
-        .select("id, amount, paid_amount")
-        .eq("worker_id", workerId)
-        .in("category", ["KASBON_PERUSAHAAN", "KASBON_KANTOR"])
-        .eq("status", "AKTIF");
+      // 2. Angsuran pinjaman kantor
+      if (cutP > 0) {
+        const { data: advancesP } = await client
+          .from("cash_advances")
+          .select("id, amount, paid_amount")
+          .eq("worker_id", workerId)
+          .in("category", ["KASBON_PERUSAHAAN", "KASBON_KANTOR"])
+          .eq("status", "AKTIF");
 
-      if (advancesP) {
-        let remain = cutP;
-        for (const adv of advancesP) {
-          if (remain <= 0) break;
-          const tot = Number(adv.amount || 0);
-          const cur = Number(adv.paid_amount || 0);
-          const sisa = Math.max(0, tot - cur);
-          const pay = Math.min(sisa, remain);
-          const nPaid = cur + pay;
-          await client
-            .from("cash_advances")
-            .update({ paid_amount: nPaid, status: nPaid >= tot ? "LUNAS" : "AKTIF" })
-            .eq("id", adv.id);
-          remain -= pay;
+        if (advancesP && advancesP.length > 0) {
+          let remain = cutP;
+          for (const adv of advancesP) {
+            if (remain <= 0) break;
+            const tot = Number(adv.amount || 0);
+            const cur = Number(adv.paid_amount || 0);
+            const sisa = Math.max(0, tot - cur);
+            const pay = Math.min(sisa, remain);
+            const nPaid = cur + pay;
+            await client
+              .from("cash_advances")
+              .update({ paid_amount: nPaid, status: nPaid >= tot ? "LUNAS" : "AKTIF" })
+              .eq("id", adv.id);
+            remain -= pay;
+          }
         }
       }
-    }
 
-    // 3. Update status item jadi PAID
-    await client.from("payroll_run_items").update({ payment_status: "PAID" }).eq("id", itemId);
+      // 3. Update status item jadi PAID
+      const { error: updateErr } = await client
+        .from("payroll_run_items")
+        .update({ payment_status: "PAID" })
+        .eq("id", itemId);
+
+      if (updateErr) {
+        console.error("Gagal update status item:", updateErr.message);
+      }
+    } catch (err) {
+      console.error("Fatal action error:", err);
+    }
 
     revalidatePath("/dashboard/payroll");
   }
@@ -152,7 +170,11 @@ export default async function Page({ searchParams }: Props) {
     "use server";
     const itemId = Number(formData.get("item_id"));
     const client = await createClient();
-    await client.from("payroll_run_items").update({ payment_status: "PENDING" }).eq("id", itemId);
+    try {
+      await client.from("payroll_run_items").update({ payment_status: "PENDING" }).eq("id", itemId);
+    } catch (err) {
+      console.error("Gagal revert payment_status:", err);
+    }
     revalidatePath("/dashboard/payroll");
   }
 
@@ -230,7 +252,7 @@ export default async function Page({ searchParams }: Props) {
     const curP = Number(it.kasbon_perusahaan_amount || 0);
     const curW = Number(it.kasbon_warung_amount || 0);
 
-    // RUMUS MURNI: Gaji Pokok + Lembur
+    // Rumus murni: Gaji Pokok + Lembur
     const base = Number(it.base_amount || 0);
     const overtime =
       Number(it.overtime_amount || 0) +
@@ -283,7 +305,7 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Ambil batch BULANAN
+  // Ambil batch BULANAN terbaru
   const latestBulananRun = payrollRuns.find((r) => r.payroll_type === "BULANAN") || payrollRuns[0];
   const bulananItems = latestBulananRun
     ? synchronizedPayrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
@@ -454,7 +476,7 @@ export default async function Page({ searchParams }: Props) {
                                 <div className="inline-flex items-center gap-1.5">
                                   {!isPaid ? (
                                     <>
-                                      {/* Form Edit Popover Ringkas */}
+                                      {/* Popover Edit Ringkas */}
                                       <details className="relative">
                                         <summary className="cursor-pointer list-none rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100">
                                           ✏️ Edit
@@ -491,7 +513,7 @@ export default async function Page({ searchParams }: Props) {
                                         <input type="hidden" name="worker_id" value={item.worker_id} />
                                         <input type="hidden" name="kasbon_perusahaan_amount" value={kp} />
                                         <input type="hidden" name="kasbon_warung_amount" value={kw} />
-                                        <button className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95">
+                                        <button type="submit" className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95 cursor-pointer">
                                           Bayar
                                         </button>
                                       </form>
@@ -499,7 +521,7 @@ export default async function Page({ searchParams }: Props) {
                                   ) : (
                                     <form action={revertBulananPaid}>
                                       <input type="hidden" name="item_id" value={item.id} />
-                                      <button className="rounded-lg border border-rose-300 bg-white px-2 py-1 text-[10px] font-bold text-rose-700 hover:bg-rose-50">
+                                      <button type="submit" className="rounded-lg border border-rose-300 bg-white px-2 py-1 text-[10px] font-bold text-rose-700 hover:bg-rose-50 cursor-pointer">
                                         Batal Lunas
                                       </button>
                                     </form>
