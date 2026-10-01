@@ -117,9 +117,6 @@ export default async function Page({ searchParams }: Props) {
     const runInfo = payrollRunMap.get(it.payroll_run_id);
     const workerInfo = workerMap.get(it.worker_id);
 
-    // KETENTUAN UTAMA:
-    // Jika sistem pekerja BULANAN dan periode payroll ini adalah MINGGUAN / UANG MAKAN,
-    // maka potongan kasbon perusahaan & warung WAJIB Rp 0 (tidak boleh dipotong di uang makan)
     const isBulananWorker = workerInfo?.pay_system === "BULANAN" || it.pay_system_snapshot === "BULANAN";
     const isWeeklyOrMealRun =
       runInfo?.payroll_type === "MINGGUAN" ||
@@ -198,6 +195,12 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
+  // Cari batch BULANAN terbaru untuk ditampilkan rincian detailnya
+  const latestBulananRun = payrollRuns.find((r) => r.payroll_type === "BULANAN") || payrollRuns[0];
+  const bulananItems = latestBulananRun
+    ? synchronizedPayrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
+    : [];
+
   return (
     <PageShell
       eyebrow="SDM & Payroll"
@@ -222,7 +225,7 @@ export default async function Page({ searchParams }: Props) {
           📑 Export Form Pembayaran Upah Harian (Excel)
         </a>
         <a
-          href={`/api/export/xlsx?report=payroll_slips&run_id=${latestRunId}`}
+          href={`/api/export/xlsx?report=payroll_slips&run_id=${latestBulananRun?.id ?? latestRunId}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
         >
           📥 Export Slip Bulanan
@@ -251,7 +254,7 @@ export default async function Page({ searchParams }: Props) {
         activeRunCode={payrollRuns[0]?.payroll_code}
         workerCount={payrollRuns[0] ? synchronizedPayrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
         slipsNode={
-          <div className="space-y-4 min-w-0 max-w-full">
+          <div className="space-y-6 min-w-0 max-w-full">
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center sm:text-left min-w-0">
               <div className="rounded-2xl border border-slate-200/90 bg-white p-2.5 sm:p-3 shadow-2xs min-w-0">
                 <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Total Run</span>
@@ -267,7 +270,94 @@ export default async function Page({ searchParams }: Props) {
               </div>
             </div>
 
-            {/* Slip Gaji & WhatsApp Manager (Utama) */}
+            {/* TABEL RINCIAN GAJI KARYAWAN BULANAN RESMI */}
+            {latestBulananRun ? (
+              <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-lg bg-blue-600 px-2 py-0.5 text-xs font-black text-white">
+                        {latestBulananRun.payroll_code}
+                      </span>
+                      <h2 className="text-base font-extrabold text-slate-900">
+                        Rekapitulasi Gaji Karyawan Bulanan
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Periode: <b>{latestBulananRun.period_start} s/d {latestBulananRun.period_end}</b> — Memuat rincian Gaji Pokok, Lembur, Kasbon Kantor & Kasbon Warung.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 self-end sm:self-center">
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Total Cair Bersih</div>
+                      <div className="text-lg font-black text-emerald-600">{money(latestBulananRun.total_net)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-600 border-b border-slate-200">
+                      <tr>
+                        <th className="px-3 py-2.5">Pekerja</th>
+                        <th className="px-3 py-2.5 text-right">Gaji Pokok</th>
+                        <th className="px-3 py-2.5 text-right">Lembur</th>
+                        <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
+                        <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
+                        <th className="px-3 py-2.5 text-right text-amber-600">Kasbon Warung</th>
+                        <th className="px-3 py-2.5 text-right text-rose-700 bg-rose-50/50">Tot. Potongan</th>
+                        <th className="px-3 py-2.5 text-right bg-emerald-50 text-emerald-700 font-black">Gaji Bersih (THP)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {bulananItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-4 text-center text-slate-400 italic">
+                            Belum ada rincian item pekerja untuk run bulanan ini.
+                          </td>
+                        </tr>
+                      ) : (
+                        bulananItems.map((item) => {
+                          const w = workerMap.get(item.worker_id);
+                          const gross =
+                            Number(item.base_amount || 0) +
+                            Number(item.meal_amount || 0) +
+                            Number(item.overtime_amount || 0) +
+                            Number(item.manual_overtime_amount || 0) +
+                            Number(item.overtime_bonus || 0) +
+                            Number(item.holiday_bonus || 0) +
+                            Number(item.holiday_manual_amount || 0);
+                          const lemburTotal =
+                            Number(item.overtime_amount || 0) +
+                            Number(item.manual_overtime_amount || 0) +
+                            Number(item.overtime_bonus || 0);
+
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                              <td className="px-3 py-2.5 font-bold text-slate-900">
+                                <div>{item.worker_name_snapshot || w?.name || `Worker #${item.worker_id}`}</div>
+                                <div className="text-[10px] font-normal text-slate-400">{w?.worker_code || w?.position || "Staf Bulanan"}</div>
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-medium">{money(item.base_amount)}</td>
+                              <td className="px-3 py-2.5 text-right text-slate-600 font-medium">{money(lemburTotal)}</td>
+                              <td className="px-3 py-2.5 text-right font-bold text-slate-900 bg-blue-50/30">{money(gross)}</td>
+                              <td className="px-3 py-2.5 text-right text-rose-600 font-medium">{money(item.kasbon_perusahaan_amount)}</td>
+                              <td className="px-3 py-2.5 text-right text-amber-600 font-medium">{money(item.kasbon_warung_amount)}</td>
+                              <td className="px-3 py-2.5 text-right text-rose-700 font-bold bg-rose-50/30">{money(item.deduction_amount)}</td>
+                              <td className="px-3 py-2.5 text-right font-black text-emerald-700 bg-emerald-50/60 text-sm">
+                                {money(item.net_amount)}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Slip Gaji & WhatsApp Manager (Form Uang Makan & Operator) */}
             <PayrollSlipManager
               runs={payrollRuns}
               items={synchronizedPayrollItems}
