@@ -38,9 +38,7 @@ export function KasbonList({
   workerMap: Record<number, WorkerMapItem>;
   canWrite: boolean;
 }) {
-  const [filterType, setFilterType] = useState<
-    "ALL" | "KASBON_PERUSAHAAN_ALL" | "SEKALI_LUNAS" | "ANGSURAN" | "KASBON_WARUNG"
-  >("ALL");
+  const [filterType, setFilterType] = useState<"ALL" | "SEKALI_LUNAS" | "ANGSURAN">("ALL");
   const [filterStatus, setFilterStatus] = useState<"AKTIF" | "ALL">("AKTIF");
   const [search, setSearch] = useState<string>("");
 
@@ -51,15 +49,12 @@ export function KasbonList({
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
   const filtered = advances.filter((x) => {
-    const isWarung = x.category === "KASBON_WARUNG";
     const instCount = Number(x.installment_count) || 1;
-    const isAngsuran = !isWarung && instCount > 1;
-    const isSekaliLunas = !isWarung && instCount <= 1;
+    const isAngsuran = instCount > 1;
+    const isSekaliLunas = instCount <= 1;
 
-    if (filterType === "KASBON_PERUSAHAAN_ALL" && isWarung) return false;
     if (filterType === "SEKALI_LUNAS" && !isSekaliLunas) return false;
     if (filterType === "ANGSURAN" && !isAngsuran) return false;
-    if (filterType === "KASBON_WARUNG" && !isWarung) return false;
 
     if (filterStatus === "AKTIF" && x.status !== "AKTIF") return false;
 
@@ -67,9 +62,8 @@ export function KasbonList({
       const q = search.toLowerCase();
       const wName = (workerMap[x.worker_id]?.name || "").toLowerCase();
       const code = (x.advance_code || "").toLowerCase();
-      const warung = (x.warung_name || "").toLowerCase();
       const notes = (x.notes || "").toLowerCase();
-      if (!wName.includes(q) && !code.includes(q) && !warung.includes(q) && !notes.includes(q)) {
+      if (!wName.includes(q) && !code.includes(q) && !notes.includes(q)) {
         return false;
       }
     }
@@ -110,16 +104,10 @@ export function KasbonList({
     }
   };
 
-  // Hitung jumlah item per kategori untuk badge count
+  // Hitung jumlah item per jenis kasbon perusahaan
   const countAll = advances.length;
-  const countPerusahaanAll = advances.filter((x) => x.category !== "KASBON_WARUNG").length;
-  const countSekaliLunas = advances.filter(
-    (x) => x.category !== "KASBON_WARUNG" && (Number(x.installment_count) || 1) <= 1
-  ).length;
-  const countAngsuran = advances.filter(
-    (x) => x.category !== "KASBON_WARUNG" && (Number(x.installment_count) || 1) > 1
-  ).length;
-  const countWarung = advances.filter((x) => x.category === "KASBON_WARUNG").length;
+  const countSekaliLunas = advances.filter((x) => (Number(x.installment_count) || 1) <= 1).length;
+  const countAngsuran = advances.filter((x) => (Number(x.installment_count) || 1) > 1).length;
 
   return (
     <div className="space-y-4">
@@ -214,18 +202,6 @@ export function KasbonList({
 
           <button
             type="button"
-            onClick={() => setFilterType("KASBON_PERUSAHAAN_ALL")}
-            className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterType === "KASBON_PERUSAHAAN_ALL"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
-            }`}
-          >
-            🏢 Perusahaan ({countPerusahaanAll})
-          </button>
-
-          <button
-            type="button"
             onClick={() => setFilterType("SEKALI_LUNAS")}
             className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
               filterType === "SEKALI_LUNAS"
@@ -247,24 +223,12 @@ export function KasbonList({
           >
             🔄 Angsuran ({countAngsuran})
           </button>
-
-          <button
-            type="button"
-            onClick={() => setFilterType("KASBON_WARUNG")}
-            className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterType === "KASBON_WARUNG"
-                ? "bg-amber-600 text-white shadow-xs"
-                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
-            }`}
-          >
-            🍜 Warung ({countWarung})
-          </button>
         </div>
 
         <div className="flex items-center justify-between gap-2 w-full pt-1">
           <input
             type="text"
-            placeholder="Cari pekerja, kode, warung, catatan..."
+            placeholder="Cari pekerja, kode, catatan..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={`${inputClass} !py-1.5 !text-xs !w-full sm:!w-72`}
@@ -285,14 +249,12 @@ export function KasbonList({
 
       {/* List Content */}
       {filtered.length === 0 ? (
-        <Empty>Tidak ada data kasbon yang sesuai filter.</Empty>
+        <Empty>Tidak ada data kasbon pinjaman kantor yang sesuai filter.</Empty>
       ) : (
         <div className="space-y-3">
           {filtered.map((x) => {
             const rem = n(x.amount) - n(x.paid_amount);
-            const isWarung = x.category === "KASBON_WARUNG";
             const instCount = Number(x.installment_count) || 1;
-            const instPaid = Number(x.installments_paid) || 0;
             const instAmt =
               n(x.installment_amount) ||
               (instCount > 1 ? Math.round(n(x.amount) / instCount) : n(x.amount));
@@ -302,9 +264,7 @@ export function KasbonList({
               <div
                 key={x.id}
                 className={`rounded-2xl border p-4 shadow-2xs transition hover:shadow-xs ${
-                  isWarung
-                    ? "border-amber-200/90 bg-amber-50/20"
-                    : instCount > 1
+                  instCount > 1
                     ? "border-indigo-200/90 bg-indigo-50/15"
                     : "border-gray-200/90 bg-white"
                 }`}
@@ -316,34 +276,28 @@ export function KasbonList({
                         {worker?.name || `Pekerja #${x.worker_id}`}
                       </b>
                       <span className="text-xs text-gray-500">
-                        ({worker?.pay_system || "HARIAN"}) · {x.advance_code}
+                        ({worker?.pay_system || "BULANAN"}) · {x.advance_code}
                       </span>
-                      {isWarung ? (
-                        <span className="inline-flex items-center rounded-lg bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
-                          🍜 Warung: {x.warung_name || "Warung Luar"}
+                      <div className="inline-flex items-center gap-1.5">
+                        <span
+                          className={`inline-flex items-center rounded-lg px-2.5 py-0.5 text-xs font-bold ${
+                            instCount > 1
+                              ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                              : "bg-sky-100 text-sky-800 border border-sky-200"
+                          }`}
+                        >
+                          🏢 Perusahaan · {instCount > 1 ? `Angsuran ${instCount}x` : "Sekali Lunas"}
                         </span>
-                      ) : (
-                        <div className="inline-flex items-center gap-1.5">
-                          <span
-                            className={`inline-flex items-center rounded-lg px-2.5 py-0.5 text-xs font-bold ${
-                              instCount > 1
-                                ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
-                                : "bg-sky-100 text-sky-800 border border-sky-200"
-                            }`}
+                        {canWrite && x.status === "AKTIF" && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(x)}
+                            className="text-[11px] text-blue-600 underline hover:text-blue-800 font-semibold cursor-pointer"
                           >
-                            🏢 Perusahaan · {instCount > 1 ? `Angsuran ${instCount}x` : "Sekali Lunas"}
-                          </span>
-                          {canWrite && x.status === "AKTIF" && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(x)}
-                              className="text-[11px] text-blue-600 underline hover:text-blue-800 font-semibold"
-                            >
-                              ⚙ Atur Angsuran
-                            </button>
-                          )}
-                        </div>
-                      )}
+                            ⚙ Atur Angsuran
+                          </button>
+                        )}
+                      </div>
                       <Badge>{x.status}</Badge>
                     </div>
 
@@ -363,7 +317,7 @@ export function KasbonList({
                           {money(rem)}
                         </b>
                       </span>
-                      {!isWarung && instCount > 1 && rem > 0 && (
+                      {instCount > 1 && rem > 0 && (
                         <span className="bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded font-bold">
                           Potongan Gaji: <b>{money(instAmt)} / bln</b>
                         </span>
@@ -378,7 +332,7 @@ export function KasbonList({
                   </div>
 
                   {/* Progress Indicator for Installments */}
-                  {!isWarung && instCount > 1 && (
+                  {instCount > 1 && (
                     <div className="text-right min-w-36 bg-white p-2.5 rounded-xl border border-indigo-100 text-xs shadow-2xs">
                       <div className="text-[11px] font-bold text-indigo-900 mb-1">
                         Angsuran {instCount} Bulan
@@ -424,7 +378,7 @@ export function KasbonList({
                         min="1"
                         max={rem}
                         required
-                        defaultValue={!isWarung && instCount > 1 ? Math.min(rem, instAmt) : rem}
+                        defaultValue={instCount > 1 ? Math.min(rem, instAmt) : rem}
                         className={inputClass}
                         placeholder="Nominal Bayar"
                       />
@@ -444,7 +398,7 @@ export function KasbonList({
                       />
                     </div>
                     <div>
-                      <button className={`${secondaryClass} w-full !h-10`}>
+                      <button className={`${secondaryClass} w-full !h-10 cursor-pointer`}>
                         Bayar / Potong
                       </button>
                     </div>
