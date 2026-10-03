@@ -385,29 +385,59 @@ export default async function MasterItemPage({ searchParams }: Props) {
                             </p>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-4 text-xs lg:text-right border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
-                            <div>
-                              <p className="text-[11px] text-slate-400">Qty / Produk</p>
-                              <p className="font-semibold text-slate-800">{formatNumber(row.qty_per_product)} {row.unit}</p>
+                          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0 shrink-0">
+                            <div className="rounded-lg bg-slate-50 border border-slate-200/80 px-2.5 py-1 text-center">
+                              <p className="text-[10px] uppercase font-bold text-slate-400">Rasio</p>
+                              <p className="font-extrabold text-slate-800 text-xs">{formatNumber(row.qty_per_product)} {row.unit}</p>
                             </div>
-                            <div>
-                              <p className="text-[11px] text-slate-400">Harga Operator</p>
-                              <p className="font-bold text-emerald-800">{formatRupiah(row.operator_price)}</p>
+                            <div className="rounded-lg bg-emerald-50/70 border border-emerald-200/80 px-2.5 py-1 text-right">
+                              <p className="text-[10px] uppercase font-bold text-emerald-600">Tarif Tukang</p>
+                              <p className="font-extrabold text-emerald-700 text-xs">{formatRupiah(row.operator_price)}</p>
                               {row.qty_per_product > 1 ? (
-                                <p className="text-[10px] text-slate-400">Subtotal: {formatRupiah(subOp)}</p>
+                                <p className="text-[9px] text-emerald-600 font-medium">Sub: {formatRupiah(subOp)}</p>
                               ) : null}
                             </div>
-                            <div>
-                              <p className="text-[11px] text-slate-400">Harga Pengajuan</p>
-                              <p className="font-bold text-blue-800">{formatRupiah(row.proposed_price)}</p>
+                            <div className="rounded-lg bg-blue-50/70 border border-blue-200/80 px-2.5 py-1 text-right">
+                              <p className="text-[10px] uppercase font-bold text-blue-600">Pengajuan</p>
+                              <p className="font-extrabold text-blue-700 text-xs">{formatRupiah(row.proposed_price)}</p>
                               {row.qty_per_product > 1 ? (
-                                <p className="text-[10px] text-slate-400">Subtotal: {formatRupiah(subProp)}</p>
+                                <p className="text-[9px] text-blue-600 font-medium">Sub: {formatRupiah(subProp)}</p>
                               ) : null}
                             </div>
-                            <div>
-                              <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-700 group-open:bg-blue-50 group-open:text-blue-700 group-open:border-blue-200 transition">
+                            <div className="flex items-center gap-1.5 ml-auto lg:ml-1" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  const details = e.currentTarget.closest("details");
+                                  if (details) details.open = !details.open;
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs cursor-pointer"
+                              >
                                 ✏️ Edit ▾
-                              </span>
+                              </button>
+                              {canWrite ? (
+                                <form
+                                  action={deleteWorkItem}
+                                  onSubmit={(e) => {
+                                    if (!confirm(`Yakin ingin menghapus item pekerjaan "${row.name}"?`)) {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                >
+                                  <input type="hidden" name="id" value={row.id} />
+                                  <input type="hidden" name="work_item_id" value={row.id} />
+                                  <input type="hidden" name="return_project" value={selectedProject} />
+                                  <input type="hidden" name="return_product" value={selectedProduct} />
+                                  <input type="hidden" name="return_q" value={q} />
+                                  <button
+                                    type="submit"
+                                    title="Hapus item pekerjaan ini"
+                                    className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/80 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs cursor-pointer"
+                                  >
+                                    🗑️ Hapus
+                                  </button>
+                                </form>
+                              ) : null}
                             </div>
                           </div>
                         </div>
