@@ -134,6 +134,49 @@ function getCategoryIcon(id: string, className = "h-4 w-4") {
   }
 }
 
+function getMenuItemBadge(id: string): { label: string; color: string } | null {
+  switch (id) {
+    // Bahan & Material: Master katalog vs Arus mutasi
+    case "masterBahan":
+      return { label: "Katalog", color: "bg-blue-50 text-blue-700 border-blue-200" };
+    case "bahan":
+      return { label: "Arus Stok", color: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+    case "masterBarangJadi":
+      return { label: "Katalog", color: "bg-blue-50 text-blue-700 border-blue-200" };
+    case "stokBarangJadi":
+      return { label: "Gudang Fisik", color: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+
+    // Produksi & Setoran
+    case "produksiReguler":
+      return { label: "Harian", color: "bg-indigo-50 text-indigo-700 border-indigo-200" };
+    case "borongan":
+      return { label: "Borongan", color: "bg-purple-50 text-purple-700 border-purple-200" };
+    case "hasilProduksi":
+      return { label: "Checker", color: "bg-amber-50 text-amber-700 border-amber-200" };
+    case "manufaktur":
+      return { label: "Maklon", color: "bg-slate-100 text-slate-700 border-slate-200" };
+
+    // Pengiriman: Haji vs Reguler
+    case "pengirimanEmbarkasi":
+      return { label: "Kirim Haji", color: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+    case "pengirimanKlien":
+      return { label: "Kirim Reguler", color: "bg-indigo-50 text-indigo-700 border-indigo-200" };
+
+    // Kasbon & SDM
+    case "kasbon":
+      return { label: "Kasbon Kantor", color: "bg-rose-50 text-rose-700 border-rose-200" };
+    case "warung":
+      return { label: "Warung Makan", color: "bg-amber-50 text-amber-700 border-amber-200" };
+    case "setoran":
+      return { label: "Gaji Saya", color: "bg-cyan-50 text-cyan-700 border-cyan-200" };
+    case "payroll":
+      return { label: "Slip & Rekap", color: "bg-blue-50 text-blue-700 border-blue-200" };
+
+    default:
+      return null;
+  }
+}
+
 export function DashboardShell({
   children,
   menuEntries,
@@ -158,6 +201,7 @@ export function DashboardShell({
   const [sidebarFilter, setSidebarFilter] = useState<string>("");
   const [mobileFilter, setMobileFilter] = useState<string>("");
   const [activeFlyoutGroup, setActiveFlyoutGroup] = useState<string | null>(null);
+  const [activeMobileCategory, setActiveMobileCategory] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [mobileOpenGroups, setMobileOpenGroups] = useState<Record<string, boolean>>({});
 
@@ -317,6 +361,19 @@ export function DashboardShell({
     setUserDropdownOpen(false);
     setActiveFlyoutGroup(null);
   }, [pathname]);
+
+  useEffect(() => {
+    if (mobileOpen) {
+      const currentGroup = effectiveMenuEntries.find(
+        (entry) =>
+          entry.type === "group" &&
+          entry.children.some((child) => child.type === "item" && isLinkActive(child.href))
+      );
+      if (currentGroup) {
+        setActiveMobileCategory(currentGroup.id);
+      }
+    }
+  }, [mobileOpen, effectiveMenuEntries, isLinkActive]);
 
   useEffect(() => {
     if (mobileOpen || searchOpen) {
@@ -604,6 +661,19 @@ export function DashboardShell({
                               }`}
                             >
                               <span className="truncate">{child.text}</span>
+                              {(() => {
+                                const badge = getMenuItemBadge(child.id);
+                                if (!badge) return null;
+                                return (
+                                  <span
+                                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tight border ${
+                                      active ? "bg-white/20 text-white border-white/30" : badge.color
+                                    }`}
+                                  >
+                                    {badge.label}
+                                  </span>
+                                );
+                              })()}
                             </Link>
                           );
                         }
@@ -905,46 +975,85 @@ export function DashboardShell({
                       );
                     }
 
+                    const isCategoryOpen = Boolean(mobileFilter) || activeMobileCategory === entry.id;
+
                     return (
-                      <details
+                      <div
                         key={entry.id}
-                        open={Boolean(mobileFilter) || (mobileOpenGroups[entry.id] ?? true)}
-                        onToggle={(e) => {
-                          const isOpen = e.currentTarget.open;
-                          setMobileOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
-                        }}
-                        className="group rounded-xl"
+                        className={`rounded-xl border transition-all ${
+                          isCategoryOpen ? "border-blue-200/90 bg-slate-50/60 shadow-xs" : "border-slate-200/70 bg-white"
+                        }`}
                       >
-                        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:bg-slate-50 transition [&::-webkit-details-marker]:hidden">
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-400">{getCategoryIcon(entry.id, "h-3.5 w-3.5")}</span>
-                            <span>{entry.text}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMobileCategory((prev) => (prev === entry.id ? null : entry.id));
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 text-left text-xs font-bold transition rounded-xl ${
+                            isCategoryOpen ? "text-blue-900 bg-blue-50/70" : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className={isCategoryOpen ? "text-blue-600" : "text-slate-400"}>
+                              {getCategoryIcon(entry.id, "h-4 w-4")}
+                            </span>
+                            <span className="truncate">{entry.text}</span>
                           </div>
-                          <svg className="h-3.5 w-3.5 text-slate-400 group-open:rotate-90 transition-transform" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                          </svg>
-                        </summary>
-                        <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2.5 ml-4">
-                          {entry.children.map((child) => {
-                            if (child.type === "item") {
-                              const active = isLinkActive(child.href);
-                              return (
-                                <Link
-                                  key={child.id}
-                                  href={child.href}
-                                  onClick={() => setMobileOpen(false)}
-                                  className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
-                                    active ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                                  }`}
-                                >
-                                  <span>{child.text}</span>
-                                </Link>
-                              );
-                            }
-                            return null;
-                          })}
-                        </div>
-                      </details>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                              {entry.children.length}
+                            </span>
+                            <svg
+                              className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${
+                                isCategoryOpen ? "rotate-90 text-blue-600" : ""
+                              }`}
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </div>
+                        </button>
+
+                        {isCategoryOpen && (
+                          <div className="space-y-0.5 p-1.5 border-t border-slate-100 bg-white rounded-b-xl">
+                            {entry.children.map((child) => {
+                              if (child.type === "item") {
+                                const active = isLinkActive(child.href);
+                                const badge = getMenuItemBadge(child.id);
+                                return (
+                                  <Link
+                                    key={child.id}
+                                    href={child.href}
+                                    onClick={() => setMobileOpen(false)}
+                                    className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
+                                      active
+                                        ? "bg-blue-600 text-white font-bold shadow-xs shadow-blue-500/20"
+                                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                                    }`}
+                                  >
+                                    <span className="truncate">{child.text}</span>
+                                    {badge && (
+                                      <span
+                                        className={`ml-2 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide border ${
+                                          active ? "bg-white/20 text-white border-white/30" : badge.color
+                                        }`}
+                                      >
+                                        {badge.label}
+                                      </span>
+                                    )}
+                                  </Link>
+                                );
+                              }
+                              return null;
+                            })}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </nav>
