@@ -330,6 +330,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
           {/* Form Tambah Item Pekerjaan: Pre-locked to product */}
           {canWrite ? (
             <MasterItemCreateForm
+              key={`create-form-${selectedProject}-${selectedProduct}`}
               projects={projects}
               products={products}
               defaultProjectId={selectedProject}
@@ -340,8 +341,8 @@ export default async function MasterItemPage({ searchParams }: Props) {
 
           {/* Daftar Item Pekerjaan Produk Ini */}
           <SectionCard
-            title={`Rincian Item Pekerjaan (${productItems.length} item)`}
-            description={`Daftar tarif pekerjaan untuk produk ${currentProduct.name}. Modal operator: ${formatRupiah(totalOperatorPrice)}/pcs · Nilai pengajuan: ${formatRupiah(totalProposedPrice)}/pcs.`}
+            title={`Rincian Tarif Pekerjaan: ${currentProduct.name} (${productItems.length} Tahapan Borongan)`}
+            description={`Daftar ${productItems.length} tahapan pekerjaan untuk ${currentProduct.name}. Total modal tukang: ${formatRupiah(totalOperatorPrice)}/pcs · Nilai pengajuan borongan: ${formatRupiah(totalProposedPrice)}/pcs.`}
           >
             {productItems.length === 0 ? (
               <EmptyState text="Belum ada item pekerjaan untuk produk ini. Silakan tambahkan menggunakan form di atas." />

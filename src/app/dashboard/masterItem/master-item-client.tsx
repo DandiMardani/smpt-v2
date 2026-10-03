@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -47,6 +47,12 @@ export function MasterItemFilter({
   const [selectedProjectId, setSelectedProjectId] = useState<number>(initialProjectId || 0);
   const [selectedProductId, setSelectedProductId] = useState<number>(initialProductId || 0);
   const [searchQuery, setSearchQuery] = useState<string>(initialQ || "");
+
+  useEffect(() => {
+    setSelectedProjectId(initialProjectId || 0);
+    setSelectedProductId(initialProductId || 0);
+    setSearchQuery(initialQ || "");
+  }, [initialProjectId, initialProductId, initialQ]);
 
   const filteredProducts = useMemo(() => {
     if (!selectedProjectId) return products;
@@ -262,6 +268,12 @@ export function MasterItemCreateForm({
   const [operatorPrice, setOperatorPrice] = useState<number>(0);
   const [proposedPrice, setProposedPrice] = useState<number>(0);
 
+  useEffect(() => {
+    setProjectId(defaultProjectId || 0);
+    setProductId(defaultProductId || 0);
+    setShowProductPicker(!defaultProductId);
+  }, [defaultProjectId, defaultProductId]);
+
   const availableProducts = useMemo(() => {
     if (!projectId) return products;
     return products.filter((p) => p.project_id === projectId);
@@ -280,8 +292,12 @@ export function MasterItemCreateForm({
 
   return (
     <SectionCard
-      title="Tambah Item Pekerjaan Baru"
-      description="Masukkan rincian pekerjaan dan tarif upah untuk produk ini. Item baru default bertipe alur MANDIRI."
+      title={activeProduct ? `Tambah Item Pekerjaan - ${activeProduct.name}` : "Tambah Item Pekerjaan Baru"}
+      description={
+        activeProduct
+          ? `Masukkan rincian pekerjaan dan tarif upah khusus untuk produk ${activeProduct.name}.`
+          : "Masukkan rincian pekerjaan dan tarif upah untuk produk ini. Item baru default bertipe alur MANDIRI."
+      }
     >
       <form action={saveWorkItem} className="space-y-4">
         <input type="hidden" name="return_project" value={projectId || activeProduct?.project_id || ""} />
