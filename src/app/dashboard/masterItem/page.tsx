@@ -284,12 +284,12 @@ export default async function MasterItemPage({ searchParams }: Props) {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Modal Upah Operator / Pcs</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Harga Operator / Pcs</p>
                 <span className="text-lg">🪡</span>
               </div>
               <div className="mt-2 text-2xl font-black text-emerald-900">{formatRupiah(totalOperatorPrice)}</div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Total modal upah operator jahit per 1 pcs produk ({activeItems.length} item aktif).
+                Total harga operator jahit per 1 pcs {currentProduct.name} ({activeItems.length} tahapan).
               </p>
             </div>
 
@@ -300,24 +300,24 @@ export default async function MasterItemPage({ searchParams }: Props) {
               </div>
               <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(totalProposedPrice)}</div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Total tarif borongan yang diajukan ke pabrik/pemilik proyek per pcs.
+                Total tarif borongan yang diajukan ke pemilik proyek per pcs.
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Modal Operator Produk</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Harga Operator</p>
                 <span className="text-lg">💵</span>
               </div>
               <div className="mt-2 text-2xl font-black text-slate-900">{formatRupiah(totalOperatorProduct)}</div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Untuk seluruh target {formatNumber(targetProduction)} pcs (Margin: {formatRupiah(totalProposedPrice - totalOperatorPrice)}/pcs).
+                Untuk seluruh target {formatNumber(targetProduction)} pcs (Selisih: {formatRupiah(totalProposedPrice - totalOperatorPrice)}/pcs).
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Nilai Borongan Produk</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Harga Pengajuan</p>
                 <span className="text-lg">💰</span>
               </div>
               <div className="mt-2 text-2xl font-black text-slate-900">{formatRupiah(totalBoronganProduct)}</div>
@@ -393,14 +393,14 @@ export default async function MasterItemPage({ searchParams }: Props) {
                               <p className="font-extrabold text-slate-800 text-xs">{formatNumber(row.qty_per_product)} {row.unit}</p>
                             </div>
                             <div className="rounded-lg bg-emerald-50/70 border border-emerald-200/80 px-2.5 py-1 text-right">
-                              <p className="text-[10px] uppercase font-bold text-emerald-600">Tarif Tukang</p>
+                              <p className="text-[10px] uppercase font-bold text-emerald-600">Harga Operator</p>
                               <p className="font-extrabold text-emerald-700 text-xs">{formatRupiah(row.operator_price)}</p>
                               {row.qty_per_product > 1 ? (
                                 <p className="text-[9px] text-emerald-600 font-medium">Sub: {formatRupiah(subOp)}</p>
                               ) : null}
                             </div>
                             <div className="rounded-lg bg-blue-50/70 border border-blue-200/80 px-2.5 py-1 text-right">
-                              <p className="text-[10px] uppercase font-bold text-blue-600">Pengajuan</p>
+                              <p className="text-[10px] uppercase font-bold text-blue-600">Harga Pengajuan</p>
                               <p className="font-extrabold text-blue-700 text-xs">{formatRupiah(row.proposed_price)}</p>
                               {row.qty_per_product > 1 ? (
                                 <p className="text-[9px] text-blue-600 font-medium">Sub: {formatRupiah(subProp)}</p>
