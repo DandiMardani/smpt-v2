@@ -32,6 +32,7 @@ import {
   setWorkItemStatus,
 } from "./actions";
 import {
+  MasterItemCardActions,
   MasterItemCreateForm,
   MasterItemFilter,
   MasterItemProductGrid,
@@ -404,41 +405,14 @@ export default async function MasterItemPage({ searchParams }: Props) {
                                 <p className="text-[9px] text-blue-600 font-medium">Sub: {formatRupiah(subProp)}</p>
                               ) : null}
                             </div>
-                            <div className="flex items-center gap-1.5 ml-auto lg:ml-1" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  const details = e.currentTarget.closest("details");
-                                  if (details) details.open = !details.open;
-                                }}
-                                className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs cursor-pointer"
-                              >
-                                ✏️ Edit ▾
-                              </button>
-                              {canWrite ? (
-                                <form
-                                  action={deleteWorkItem}
-                                  onSubmit={(e) => {
-                                    if (!confirm(`Yakin ingin menghapus item pekerjaan "${row.name}"?`)) {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                >
-                                  <input type="hidden" name="id" value={row.id} />
-                                  <input type="hidden" name="work_item_id" value={row.id} />
-                                  <input type="hidden" name="return_project" value={selectedProject} />
-                                  <input type="hidden" name="return_product" value={selectedProduct} />
-                                  <input type="hidden" name="return_q" value={q} />
-                                  <button
-                                    type="submit"
-                                    title="Hapus item pekerjaan ini"
-                                    className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/80 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs cursor-pointer"
-                                  >
-                                    🗑️ Hapus
-                                  </button>
-                                </form>
-                              ) : null}
-                            </div>
+                            <MasterItemCardActions
+                              itemId={row.id}
+                              itemName={row.name}
+                              canWrite={canWrite}
+                              selectedProject={selectedProject}
+                              selectedProduct={selectedProduct}
+                              q={q}
+                            />
                           </div>
                         </div>
                       </summary>

@@ -13,7 +13,7 @@ import {
 } from "@/components/master/master-ui";
 import { formatNumber, formatRupiah } from "@/lib/master/page-utils";
 import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
-import { saveWorkItem } from "./actions";
+import { deleteWorkItem, saveWorkItem } from "./actions";
 
 type ProjectRef = { id: number; project_code: string; name: string; status: string };
 type ProductRef = {
@@ -479,5 +479,64 @@ export function MasterItemCreateForm({
         </div>
       </form>
     </SectionCard>
+  );
+}
+
+export function MasterItemCardActions({
+  itemId,
+  itemName,
+  canWrite,
+  selectedProject,
+  selectedProduct,
+  q,
+}: {
+  itemId: number;
+  itemName: string;
+  canWrite: boolean;
+  selectedProject: number;
+  selectedProduct: number;
+  q: string;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1.5 ml-auto lg:ml-1"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          const details = (e.currentTarget as HTMLElement).closest("details");
+          if (details) details.open = !details.open;
+        }}
+        className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs cursor-pointer select-none"
+      >
+        ✏️ Edit ▾
+      </span>
+      {canWrite ? (
+        <form
+          action={deleteWorkItem}
+          onSubmit={(e) => {
+            if (!confirm(`Yakin ingin menghapus item pekerjaan "${itemName}"?`)) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <input type="hidden" name="id" value={itemId} />
+          <input type="hidden" name="work_item_id" value={itemId} />
+          <input type="hidden" name="return_project" value={selectedProject} />
+          <input type="hidden" name="return_product" value={selectedProduct} />
+          <input type="hidden" name="return_q" value={q} />
+          <button
+            type="submit"
+            title="Hapus item pekerjaan ini"
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/80 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs cursor-pointer"
+          >
+            🗑️ Hapus
+          </button>
+        </form>
+      ) : null}
+    </div>
   );
 }
