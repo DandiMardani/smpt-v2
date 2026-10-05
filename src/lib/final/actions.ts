@@ -893,6 +893,71 @@ export async function deleteAttendanceAction(f: FormData) {
   );
 }
 
+export async function deleteBulkAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(
+    path,
+    "absensi.write",
+    async () => {
+      const s = await createClient();
+      const rawIds = t(f, "attendance_ids");
+      const ids = rawIds
+        .split(",")
+        .map((x) => Number(x.trim()))
+        .filter((x) => x > 0);
+
+      if (!ids.length) {
+        throw new Error("Pilih minimal satu data untuk dihapus.");
+      }
+
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const { error } = await s.from("attendance_records").delete().in("id", chunk);
+        if (error) throw error;
+      }
+    },
+    "Data absensi terpilih berhasil dihapus."
+  );
+}
+
+export async function deleteAlphaAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(
+    path,
+    "absensi.write",
+    async () => {
+      const s = await createClient();
+      const targetDate = date(f, "target_date", true);
+
+      let q = s.from("attendance_records").select("id, attendance_status, actual_in, actual_out");
+      if (targetDate) {
+        q = q.eq("attendance_date", targetDate);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+
+      const alphaIds = (data || [])
+        .filter((r) => {
+          const noIn = !r.actual_in || r.actual_in === "--:--" || r.actual_in.trim() === "";
+          const noOut = !r.actual_out || r.actual_out === "--:--" || r.actual_out.trim() === "";
+          return r.attendance_status === "ALPHA" || (noIn && noOut);
+        })
+        .map((r) => r.id);
+
+      if (!alphaIds.length) {
+        throw new Error("Tidak ada data Alpha/kosong yang perlu dibersihkan.");
+      }
+
+      for (let i = 0; i < alphaIds.length; i += 100) {
+        const chunk = alphaIds.slice(i, i + 100);
+        const { error: delErr } = await s.from("attendance_records").delete().in("id", chunk);
+        if (delErr) throw delErr;
+      }
+    },
+    "Seluruh data Alpha/kosong berhasil dibersihkan."
+  );
+}
+
 export async function finalizePayrollAction(f: FormData) {
   await mutate(
     "/dashboard/payroll",
