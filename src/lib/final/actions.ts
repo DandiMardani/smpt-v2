@@ -653,6 +653,7 @@ export async function addAttendanceAction(f: FormData) {
         schedule_out: t(f, "schedule_out") || null,
         actual_in: t(f, "actual_in") || null,
         actual_out: t(f, "actual_out") || null,
+        day_class: t(f, "day_class") || null,
         attendance_status: t(f, "attendance_status") || "HADIR",
         overtime_minutes: otMin,
         source: "MANUAL",
@@ -662,6 +663,35 @@ export async function addAttendanceAction(f: FormData) {
       if (error) throw error;
     },
     "Absensi disimpan."
+  );
+}
+
+export async function addBulkAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(
+    path,
+    "absensi.write",
+    async () => {
+      const s = await createClient();
+      const raw = t(f, "items");
+      if (!raw) return;
+      let items: any[] = [];
+      try {
+        items = JSON.parse(raw);
+      } catch {
+        throw new Error("Format data batch tidak valid.");
+      }
+      if (!items.length) return;
+
+      for (let i = 0; i < items.length; i += 100) {
+        const chunk = items.slice(i, i + 100);
+        const { error } = await s
+          .from("attendance_records")
+          .upsert(chunk, { onConflict: "worker_id,attendance_date" });
+        if (error) throw error;
+      }
+    },
+    "Absensi berhasil disimpan sekaligus."
   );
 }
 
