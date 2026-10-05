@@ -17,7 +17,7 @@ import {
   ReadOnly,
 } from "@/components/final/final-ui";
 import { calculateShiftOvertime } from "@/lib/attendance/overtime-calculator";
-import { addAttendanceAction } from "@/lib/final/actions";
+import { addBulkAttendanceAction } from "@/lib/final/actions";
 
 const BULANAN_NAMES = ["SURATNO", "DANDI MARDANI", "USMAN ALAMSYAH", "JAJANG ROSADI", "SUHERMANTO", "SUHERMAN", "NEDIH"];
 
@@ -146,46 +146,86 @@ function QuickManualAttendanceSheet({
     }));
   };
 
+  // Simpan BATCH super cepat & HANYA untuk pekerja yang diceklis (checked)
   const handleSaveAll = async () => {
     setSaveSuccess(false);
     startTransition(async () => {
+      const itemsToSave: any[] = [];
+
       for (const w of activeWorkerList) {
         const row = rowStates[w.id];
-        if (!row) continue;
+        // HANYA SIMPAN YANG DICEKLIS! Yang tidak diceklis diabaikan (tidak dibuatkan data)
+        if (!row || !row.isPresent) continue;
 
-        const effectiveOut = row.overtimeOut ? row.overtimeOut : row.actualOut;
+        let normalizedIn = (row.actualIn || "").trim().replace(".", ":");
+        if (normalizedIn) {
+          const parts = normalizedIn.split(":");
+          let h = parseInt(parts[0], 10);
+          const m = parts[1] || "00";
+          // Jika input 01:00 s/d 06:00 (maksudnya jam 1 s/d 6 siang), otomatis jadikan 13:00 s/d 18:00
+          if (h >= 1 && h <= 6) {
+            h += 12;
+          }
+          normalizedIn = `${String(h).padStart(2, "0")}:${m}:00`;
+        }
+
+        let effectiveOut = (row.overtimeOut ? row.overtimeOut : row.actualOut).trim().replace(".", ":");
+        if (effectiveOut && effectiveOut.length === 5) {
+          effectiveOut = `${effectiveOut}:00`;
+        }
+
         const paySystem = isBulananWorker(w) ? "BULANAN" : "HARIAN";
         const calc = calculateShiftOvertime(
           date,
-          row.isPresent ? row.actualIn : null,
-          row.isPresent ? effectiveOut : null,
+          normalizedIn,
+          effectiveOut,
           paySystem,
           null,
           shiftSettings
         );
 
-        const fd = new FormData();
-        fd.append("worker_id", String(w.id));
-        fd.append("attendance_date", date);
-        fd.append("schedule_in", dayInfo.defaultIn);
-        fd.append("schedule_out", dayInfo.defaultOut);
-        fd.append("actual_in", row.isPresent ? row.actualIn : "");
-        fd.append("actual_out", row.isPresent ? effectiveOut : "");
-        fd.append("attendance_status", row.isPresent ? "HADIR" : row.status);
-        fd.append("overtime_minutes", String(row.isPresent ? calc.overtimeMinutes : 0));
-        fd.append(
-          "notes",
-          row.notes || (row.overtimeOut ? `Lembur pulang ${row.overtimeOut}` : "")
-        );
-
-        try {
-          await addAttendanceAction(fd);
-        } catch {
-          // ignore
+        // Otomatis tentukan HALF DAY jika masuk jam 12 siang ke atas atau durasi kerja <= 5 jam
+        let dayClass: "FULL_DAY" | "HALF_DAY" = "FULL_DAY";
+        if (normalizedIn && effectiveOut) {
+          const inH = parseInt(normalizedIn.slice(0, 2), 10);
+          const outH = parseInt(effectiveOut.slice(0, 2), 10);
+          const inM = inH * 60 + parseInt(normalizedIn.slice(3, 5), 10);
+          const outM = outH * 60 + parseInt(effectiveOut.slice(3, 5), 10);
+          if (inH >= 12 || outH <= 13 || (outM - inM > 0 && outM - inM <= 300)) {
+            dayClass = "HALF_DAY";
+          }
         }
+
+        itemsToSave.push({
+          worker_id: w.id,
+          attendance_date: date,
+          schedule_in: dayInfo.defaultIn,
+          schedule_out: dayInfo.defaultOut,
+          actual_in: normalizedIn,
+          actual_out: effectiveOut,
+          day_class: dayClass,
+          attendance_status: "HADIR",
+          overtime_minutes: calc.overtimeMinutes,
+          source: "MANUAL",
+          notes: row.notes || (row.overtimeOut ? `Lembur pulang ${row.overtimeOut}` : null),
+        });
       }
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 5000);
+
+      if (itemsToSave.length === 0) {
+        alert("Pilih minimal satu pekerja yang hadir untuk disimpan.");
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("items", JSON.stringify(itemsToSave));
+
+      try {
+        await addBulkAttendanceAction(fd);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 4000);
+      } catch (err: any) {
+        alert(err?.message || "Gagal menyimpan absensi.");
+      }
     });
   };
 
@@ -220,7 +260,7 @@ function QuickManualAttendanceSheet({
             <button
               type="button"
               onClick={handleApplyDayTemplate}
-              className="rounded-xl border border-slate-300 bg-white hover:bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs transition"
+              className="rounded-xl border border-slate-300 bg-white hover:bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs transition cursor-pointer"
             >
               ⚡ Setel Jam ({dayInfo.defaultIn} – {dayInfo.defaultOut}) ke Semua
             </button>
@@ -231,14 +271,14 @@ function QuickManualAttendanceSheet({
           <button
             type="button"
             onClick={() => handleToggleCheckAll(true)}
-            className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition"
+            className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition cursor-pointer"
           >
             ✓ Ceklis Semua Hadir
           </button>
           <button
             type="button"
             onClick={() => handleToggleCheckAll(false)}
-            className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-800 hover:bg-rose-100 transition"
+            className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-800 hover:bg-rose-100 transition cursor-pointer"
           >
             ✕ Kosongkan Semua (Alfa)
           </button>
@@ -250,7 +290,7 @@ function QuickManualAttendanceSheet({
         <button
           type="button"
           onClick={() => setTab("BULANAN")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
             tab === "BULANAN"
               ? "bg-purple-600 text-white shadow-md ring-2 ring-purple-300"
               : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -262,7 +302,7 @@ function QuickManualAttendanceSheet({
         <button
           type="button"
           onClick={() => setTab("HARIAN")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition cursor-pointer ${
             tab === "HARIAN"
               ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-300"
               : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -373,16 +413,9 @@ function QuickManualAttendanceSheet({
 
                   <td className="px-3.5 py-2.5">
                     {!row.isPresent ? (
-                      <select
-                        value={row.status}
-                        onChange={(e) => updateRow(worker.id, { status: e.target.value })}
-                        className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-900"
-                      >
-                        <option value="ALPHA">ALPHA (TIDAK HADIR)</option>
-                        <option value="SAKIT">SAKIT</option>
-                        <option value="IZIN">IZIN</option>
-                        <option value="CUTI">CUTI</option>
-                      </select>
+                      <span className="text-[11px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">
+                        Diabaikan (Tidak disimpan)
+                      </span>
                     ) : (
                       <input
                         type="text"
@@ -400,7 +433,7 @@ function QuickManualAttendanceSheet({
         </table>
       </div>
 
-      {/* Tombol Simpan */}
+      {/* Tombol Simpan Cepat */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div>
           {saveSuccess && (
