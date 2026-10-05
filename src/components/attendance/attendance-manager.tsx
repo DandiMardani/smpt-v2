@@ -11,6 +11,7 @@ import {
   verifyBulkAttendanceAction,
   unverifyAttendanceAction,
   autoFixMissingOutAttendanceAction,
+  deleteAttendanceAction,
 } from "@/lib/final/actions";
 
 export type AttendanceRecordItem = {
@@ -50,7 +51,7 @@ type Props = {
 
 export default function AttendanceManager({ records, workers, canWrite, shiftSettings }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "ANOMALI" | "TERVERIFIKASI">("DRAFT");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "ANOMALI" | "ALPHA" | "TERVERIFIKASI">("DRAFT");
   const [dateFilter, setDateFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [defaultDayClass, setDefaultDayClass] = useState<"FULL_DAY" | "HALF_DAY">("FULL_DAY");
@@ -81,7 +82,12 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
 
       const isMissingIn = !rec.actual_in || rec.actual_in === "--:--" || rec.actual_in.trim() === "";
       const isMissingOut = !rec.actual_out || rec.actual_out === "--:--" || rec.actual_out.trim() === "";
-      const isAnomaly = (isMissingIn || isMissingOut) && rec.attendance_status === "HADIR";
+      
+      // Seseorang dianggap ALPHA jika statusnya ALPHA atau kedua scan masuk & pulangnya kosong
+      const isAlpha = rec.attendance_status === "ALPHA" || (isMissingIn && isMissingOut);
+      
+      // Jam bolong (anomali) hanya berlaku jika bukan ALPHA dan ada status HADIR (misal lupa scan pulang tapi ada scan masuk)
+      const isAnomaly = !isAlpha && (isMissingIn || isMissingOut) && rec.attendance_status === "HADIR";
 
       return {
         ...rec,
@@ -89,6 +95,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
         calc,
         isMissingIn,
         isMissingOut,
+        isAlpha,
         isAnomaly,
       };
     });
@@ -96,15 +103,24 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
 
   // Hitungan metrik
   const totalCount = records.length;
-  const draftCount = records.filter((r) => r.verification_status !== "TERVERIFIKASI").length;
+  // DRAFT murni yang hadir/ada scan dan belum diverif (Alpha tidak dihitung draft)
+  const draftCount = enrichedRecords.filter((r) => r.verification_status !== "TERVERIFIKASI" && !r.isAlpha).length;
+  const alphaCount = enrichedRecords.filter((r) => r.isAlpha).length;
   const verifiedCount = records.filter((r) => r.verification_status === "TERVERIFIKASI").length;
   const anomalyCount = enrichedRecords.filter((r) => r.isAnomaly && r.verification_status !== "TERVERIFIKASI").length;
 
   // Filter records berdasarkan status & filter anomali
   const filteredRecords = useMemo(() => {
     return enrichedRecords.filter((rec) => {
-      if (statusFilter === "DRAFT" && rec.verification_status === "TERVERIFIKASI") {
-        return false;
+      if (statusFilter === "DRAFT") {
+        if (rec.verification_status === "TERVERIFIKASI" || rec.isAlpha) {
+          return false;
+        }
+      }
+      if (statusFilter === "ALPHA") {
+        if (!rec.isAlpha) {
+          return false;
+        }
       }
       if (statusFilter === "TERVERIFIKASI" && rec.verification_status !== "TERVERIFIKASI") {
         return false;
@@ -131,7 +147,8 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     });
   }, [enrichedRecords, statusFilter, dateFilter, searchQuery]);
 
-  const selectableRecords = filteredRecords.filter((r) => r.verification_status !== "TERVERIFIKASI");
+  // Hanya data valid (bukan Alpha dan belum terverifikasi) yang bisa dicentang/disahkan
+  const selectableRecords = filteredRecords.filter((r) => r.verification_status !== "TERVERIFIKASI" && !r.isAlpha);
   const isAllSelected =
     selectableRecords.length > 0 &&
     selectableRecords.every((r) => selectedIds.has(r.id));
@@ -354,6 +371,15 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           </button>
           <button
             type="button"
+            onClick={() => setStatusFilter("ALPHA")}
+            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
+              statusFilter === "ALPHA" ? "bg-rose-600 text-white shadow-2xs font-bold" : "text-rose-700 hover:text-rose-900"
+            }`}
+          >
+            ❌ Alpha ({alphaCount})
+          </button>
+          <button
+            type="button"
             onClick={() => setStatusFilter("TERVERIFIKASI")}
             className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
               statusFilter === "TERVERIFIKASI" ? "bg-emerald-600 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
@@ -437,6 +463,8 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 shadow-2xs">
             {statusFilter === "ANOMALI"
               ? "🎉 Tidak ada data jam bolong! Semua jam masuk & pulang tercatat lengkap."
+              : statusFilter === "ALPHA"
+              ? "Tidak ada data Alpha pada filter ini."
               : "Tidak ada data absensi yang sesuai filter."}
           </div>
         ) : (
@@ -456,13 +484,16 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                     ? "border-rose-300 bg-rose-50/40 ring-1 ring-rose-200"
                     : isVerified
                     ? "border-slate-200/90 bg-white hover:border-slate-300"
+                    : rec.isAlpha
+                    ? "border-slate-200 bg-slate-50/60 hover:border-slate-300"
                     : "border-amber-200/90 bg-gradient-to-r from-amber-50/40 to-white hover:border-amber-300"
                 }`}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   {/* Left: Checkbox + Worker Info + Date */}
                   <div className="flex items-start sm:items-center gap-3">
-                    {canWrite && !isVerified ? (
+                    {/* Checkbox hanya muncul jika belum verif dan BUKAN Alpha */}
+                    {canWrite && !isVerified && !rec.isAlpha ? (
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -494,15 +525,15 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                           </span>
                         ) : null}
 
-                        {/* Tag Khusus jika Jam Pulang Bolong */}
-                        {rec.isMissingOut && !isVerified && (
+                        {/* Tag Anomali (Hanya jika bukan Alpha) */}
+                        {!rec.isAlpha && rec.isMissingOut && !isVerified && (
                           <span className="rounded-full bg-rose-100 border border-rose-300 px-2 py-0.5 text-[10px] font-black text-rose-800 animate-pulse">
                             ⚠️ Lupa Scan Pulang
                           </span>
                         )}
-                        {rec.isMissingIn && !isVerified && (
+                        {!rec.isAlpha && rec.isMissingIn && !isVerified && (
                           <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-black text-amber-800">
-                            ⚠️ Scan Masuk Kosong
+                            ⚠️️ Scan Masuk Kosong
                           </span>
                         )}
                       </div>
@@ -513,14 +544,14 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                         </span>
                         <span>•</span>
                         <span className="font-bold text-slate-700">
-                          Jam: <span className={rec.isMissingIn ? "text-rose-600 font-black" : ""}>{rec.actual_in || "--:--"}</span> s/d{" "}
-                          <span className={rec.isMissingOut ? "text-rose-600 font-black" : ""}>{rec.actual_out || "--:--"}</span>
+                          Jam: <span className={rec.isMissingIn && !rec.isAlpha ? "text-rose-600 font-black" : ""}>{rec.actual_in || "--:--"}</span> s/d{" "}
+                          <span className={rec.isMissingOut && !rec.isAlpha ? "text-rose-600 font-black" : ""}>{rec.actual_out || "--:--"}</span>
                         </span>
                         <span>•</span>
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
-                          {rec.attendance_status}
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${rec.isAlpha ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-700"}`}>
+                          {rec.isAlpha ? "ALPHA" : rec.attendance_status}
                         </span>
-                        {rec.day_class ? (
+                        {rec.day_class && !rec.isAlpha ? (
                           <span className="rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[11px] font-bold border border-blue-200">
                             {rec.day_class}
                           </span>
@@ -532,27 +563,31 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                   {/* Right: Badges & Actions */}
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end border-t border-slate-100 pt-2 sm:border-t-0 sm:pt-0">
                     {/* Sunday Indicator */}
-                    {calc.isSunday ? (
+                    {calc.isSunday && !rec.isAlpha ? (
                       <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
                         🌞 Minggu Masuk
                       </span>
                     ) : null}
 
                     {/* Calculated Overtime Badge */}
-                    {calc.overtimeMinutes > 0 ? (
+                    {!rec.isAlpha && calc.overtimeMinutes > 0 ? (
                       <span className="rounded-full bg-blue-100 border border-blue-300 px-2.5 py-0.5 text-[11px] font-bold text-blue-900">
                         ⚡ Lembur {formatMinutesToHours(calc.overtimeMinutes)}
                       </span>
-                    ) : (
+                    ) : !rec.isAlpha ? (
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
                         Tanpa Lembur
                       </span>
-                    )}
+                    ) : null}
 
                     {/* Status Badge */}
                     {isVerified ? (
                       <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-900">
                         ✅ TERVERIFIKASI
+                      </span>
+                    ) : rec.isAlpha ? (
+                      <span className="rounded-full bg-rose-100 border border-rose-300 px-2.5 py-0.5 text-[11px] font-extrabold text-rose-800">
+                        ❌ ALPHA
                       </span>
                     ) : (
                       <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-900">
@@ -560,15 +595,35 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                       </span>
                     )}
 
-                    {/* Toggle Edit Button */}
+                    {/* Buttons: Koreksi + Hapus */}
                     {canWrite ? (
-                      <button
-                        type="button"
-                        onClick={() => setExpandedId(expandedId === rec.id ? null : rec.id)}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                      >
-                        {expandedId === rec.id ? "Tutup ✕" : "Koreksi ▾"}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(expandedId === rec.id ? null : rec.id)}
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                        >
+                          {expandedId === rec.id ? "Tutup ✕" : "Koreksi ▾"}
+                        </button>
+
+                        <form
+                          action={deleteAttendanceAction}
+                          onSubmit={(e) => {
+                            if (!confirm(`Hapus data absensi ${worker?.name || rec.attendance_code}?`)) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          <input type="hidden" name="attendance_id" value={rec.id} />
+                          <button
+                            type="submit"
+                            className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                            title="Hapus baris absensi ini"
+                          >
+                            Hapus
+                          </button>
+                        </form>
+                      </div>
                     ) : null}
                   </div>
                 </div>
