@@ -12,6 +12,8 @@ import {
   unverifyAttendanceAction,
   autoFixMissingOutAttendanceAction,
   deleteAttendanceAction,
+  deleteBulkAttendanceAction,
+  deleteAlphaAttendanceAction,
 } from "@/lib/final/actions";
 
 export type AttendanceRecordItem = {
@@ -51,13 +53,12 @@ type Props = {
 
 export default function AttendanceManager({ records, workers, canWrite, shiftSettings }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "DRAFT" | "ANOMALI" | "ALPHA" | "TERVERIFIKASI">("DRAFT");
+  const [statusFilter, setStatusFilter] = useState<"DRAFT" | "TERVERIFIKASI" | "ALPHA" | "ANOMALI">("DRAFT");
   const [dateFilter, setDateFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [defaultDayClass, setDefaultDayClass] = useState<"FULL_DAY" | "HALF_DAY">("FULL_DAY");
   const [useAutoOvertime, setUseAutoOvertime] = useState<boolean>(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [showGuide, setShowGuide] = useState<boolean>(false);
   const [isPending, startTransition] = useTransition();
 
   const workerMap = useMemo(() => {
@@ -101,15 +102,13 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     });
   }, [records, workerMap, shiftSettings]);
 
-  // Hitungan metrik
-  const totalCount = records.length;
-  // DRAFT murni yang hadir/ada scan dan belum diverif (Alpha tidak dihitung draft)
+  // Hitungan metrik terpisah jelas (tidak ada yang dobel)
   const draftCount = enrichedRecords.filter((r) => r.verification_status !== "TERVERIFIKASI" && !r.isAlpha).length;
+  const verifiedCount = enrichedRecords.filter((r) => r.verification_status === "TERVERIFIKASI" && !r.isAlpha).length;
   const alphaCount = enrichedRecords.filter((r) => r.isAlpha).length;
-  const verifiedCount = records.filter((r) => r.verification_status === "TERVERIFIKASI").length;
   const anomalyCount = enrichedRecords.filter((r) => r.isAnomaly && r.verification_status !== "TERVERIFIKASI").length;
 
-  // Filter records berdasarkan status & filter anomali
+  // Filter records berdasarkan status
   const filteredRecords = useMemo(() => {
     return enrichedRecords.filter((rec) => {
       if (statusFilter === "DRAFT") {
@@ -117,13 +116,15 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           return false;
         }
       }
+      if (statusFilter === "TERVERIFIKASI") {
+        if (rec.verification_status !== "TERVERIFIKASI" || rec.isAlpha) {
+          return false;
+        }
+      }
       if (statusFilter === "ALPHA") {
         if (!rec.isAlpha) {
           return false;
         }
-      }
-      if (statusFilter === "TERVERIFIKASI" && rec.verification_status !== "TERVERIFIKASI") {
-        return false;
       }
       if (statusFilter === "ANOMALI") {
         if (!rec.isAnomaly || rec.verification_status === "TERVERIFIKASI") {
@@ -147,8 +148,8 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     });
   }, [enrichedRecords, statusFilter, dateFilter, searchQuery]);
 
-  // Hanya data valid (bukan Alpha dan belum terverifikasi) yang bisa dicentang/disahkan
-  const selectableRecords = filteredRecords.filter((r) => r.verification_status !== "TERVERIFIKASI" && !r.isAlpha);
+  // Record yang bisa dicentang untuk aksi massal di tab aktif
+  const selectableRecords = filteredRecords.filter((r) => r.verification_status !== "TERVERIFIKASI" || r.isAlpha);
   const isAllSelected =
     selectableRecords.length > 0 &&
     selectableRecords.every((r) => selectedIds.has(r.id));
@@ -173,16 +174,20 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     setSelectedIds(next);
   }
 
+  // Sahkan hanya data DRAFT yang valid (Alpha tidak ikut disahkan)
+  const validDraftsToVerify = useMemo(() => {
+    return enrichedRecords.filter((r) => selectedIds.has(r.id) && !r.isAlpha && r.verification_status !== "TERVERIFIKASI");
+  }, [selectedIds, enrichedRecords]);
+
   function handleBulkVerifySelected() {
-    if (selectedIds.size === 0) return;
-    const items = Array.from(selectedIds).map((attId) => {
-      const row = enrichedRecords.find((r) => r.id === attId);
-      const ot = useAutoOvertime && row ? row.calc.overtimeMinutes : row?.overtime_minutes || 0;
+    if (validDraftsToVerify.length === 0) return;
+    const items = validDraftsToVerify.map((row) => {
+      const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
       return {
-        id: attId,
+        id: row.id,
         day_class: defaultDayClass,
         overtime_minutes: ot,
-        notes: row?.notes || undefined,
+        notes: row.notes || undefined,
       };
     });
 
@@ -195,9 +200,11 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
     });
   }
 
+  const allDraftCandidates = enrichedRecords.filter((r) => r.verification_status !== "TERVERIFIKASI" && !r.isAlpha);
+
   function handleBulkVerifyAllDrafts() {
-    if (selectableRecords.length === 0) return;
-    const items = selectableRecords.map((row) => {
+    if (allDraftCandidates.length === 0) return;
+    const items = allDraftCandidates.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
       return {
         id: row.id,
@@ -218,46 +225,8 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
 
   return (
     <div className="space-y-4">
-      {/* 1. KPI & Quick Filter Header */}
+      {/* 1. Header Ringkasan Status (Tanpa Tab 'Semua Presensi' yang Membingungkan) */}
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-        {/* Total */}
-        <div
-          onClick={() => setStatusFilter("ALL")}
-          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
-            statusFilter === "ALL"
-              ? "border-blue-500 bg-blue-50/50 text-blue-900 ring-2 ring-blue-300"
-              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-          }`}
-        >
-          <p className="text-[11px] font-medium text-slate-500">Semua Presensi</p>
-          <p className="mt-1 text-xl sm:text-2xl font-black text-slate-900">{totalCount}</p>
-        </div>
-
-        {/* Tab Filter Anomali / Jam Bolong */}
-        <div
-          onClick={() => setStatusFilter("ANOMALI")}
-          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
-            statusFilter === "ANOMALI"
-              ? "border-rose-500 bg-rose-50 text-rose-950 ring-2 ring-rose-400"
-              : anomalyCount > 0
-              ? "border-rose-300 bg-rose-50/50 text-rose-900 hover:border-rose-400"
-              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
-              <span>⚠️ Jam Bolong</span>
-            </p>
-            {anomalyCount > 0 ? (
-              <span className="inline-flex h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-            ) : null}
-          </div>
-          <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-xl sm:text-2xl font-black text-rose-900">{anomalyCount}</span>
-            <span className="text-[10px] text-rose-700 font-medium">perlu dicek</span>
-          </div>
-        </div>
-
         {/* Draft */}
         <div
           onClick={() => setStatusFilter("DRAFT")}
@@ -282,6 +251,32 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
         >
           <p className="text-[11px] font-semibold text-emerald-800">✅ Terverifikasi</p>
           <p className="mt-1 text-xl sm:text-2xl font-black text-emerald-900">{verifiedCount}</p>
+        </div>
+
+        {/* Alpha / Kosong */}
+        <div
+          onClick={() => setStatusFilter("ALPHA")}
+          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
+            statusFilter === "ALPHA"
+              ? "border-rose-500 bg-rose-50 text-rose-950 ring-2 ring-rose-400"
+              : "border-slate-200 bg-white text-slate-700 hover:border-rose-300"
+          }`}
+        >
+          <p className="text-[11px] font-bold text-rose-700">❌ Alpha / Kosong</p>
+          <p className="mt-1 text-xl sm:text-2xl font-black text-rose-900">{alphaCount}</p>
+        </div>
+
+        {/* Jam Bolong */}
+        <div
+          onClick={() => setStatusFilter("ANOMALI")}
+          className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
+            statusFilter === "ANOMALI"
+              ? "border-orange-500 bg-orange-50 text-orange-950 ring-2 ring-orange-400"
+              : "border-slate-200 bg-white text-slate-700 hover:border-orange-300"
+          }`}
+        >
+          <p className="text-[11px] font-bold text-orange-700">⚠️ Jam Bolong</p>
+          <p className="mt-1 text-xl sm:text-2xl font-black text-orange-900">{anomalyCount}</p>
         </div>
       </div>
 
@@ -334,7 +329,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
             <button
               type="button"
               onClick={() => setDateFilter("")}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+              className="text-xs font-semibold text-slate-500 hover:text-slate-700 cursor-pointer"
             >
               Reset Tgl
             </button>
@@ -344,26 +339,8 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
         <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl text-xs font-semibold overflow-x-auto no-scrollbar">
           <button
             type="button"
-            onClick={() => setStatusFilter("ALL")}
-            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
-              statusFilter === "ALL" ? "bg-white text-slate-900 shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Semua ({totalCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter("ANOMALI")}
-            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
-              statusFilter === "ANOMALI" ? "bg-rose-600 text-white shadow-2xs font-bold" : "text-rose-700 hover:text-rose-900"
-            }`}
-          >
-            ⚠️ Jam Bolong ({anomalyCount})
-          </button>
-          <button
-            type="button"
             onClick={() => setStatusFilter("DRAFT")}
-            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
               statusFilter === "DRAFT" ? "bg-amber-500 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
             }`}
           >
@@ -371,8 +348,17 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           </button>
           <button
             type="button"
+            onClick={() => setStatusFilter("TERVERIFIKASI")}
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
+              statusFilter === "TERVERIFIKASI" ? "bg-emerald-600 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            ✅ Terverifikasi ({verifiedCount})
+          </button>
+          <button
+            type="button"
             onClick={() => setStatusFilter("ALPHA")}
-            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
               statusFilter === "ALPHA" ? "bg-rose-600 text-white shadow-2xs font-bold" : "text-rose-700 hover:text-rose-900"
             }`}
           >
@@ -380,17 +366,17 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
           </button>
           <button
             type="button"
-            onClick={() => setStatusFilter("TERVERIFIKASI")}
-            className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap ${
-              statusFilter === "TERVERIFIKASI" ? "bg-emerald-600 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
+            onClick={() => setStatusFilter("ANOMALI")}
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
+              statusFilter === "ANOMALI" ? "bg-orange-600 text-white shadow-2xs font-bold" : "text-orange-700 hover:text-orange-900"
             }`}
           >
-            ✅ Terverifikasi ({verifiedCount})
+            ⚠️ Jam Bolong ({anomalyCount})
           </button>
         </div>
       </div>
 
-      {/* 4. Bulk Action Toolbar */}
+      {/* 4. Action Toolbar: Sahkan & Hapus Cepat */}
       {canWrite && (
         <div className="sticky top-2 z-20 rounded-2xl border-2 border-blue-400 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 p-3.5 sm:p-4 text-white shadow-lg transition-all">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -403,7 +389,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                   disabled={selectableRecords.length === 0}
                   className="h-4 w-4 rounded accent-blue-400"
                 />
-                <span>Pilih Semua Draft ({selectableRecords.length})</span>
+                <span>Pilih Semua di Tab Ini ({selectableRecords.length})</span>
               </label>
 
               {selectedIds.size > 0 && (
@@ -414,44 +400,94 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <label className="flex items-center gap-1.5 bg-black/20 px-2.5 py-1.5 rounded-xl border border-white/10 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useAutoOvertime}
-                  onChange={(e) => setUseAutoOvertime(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded accent-emerald-400"
-                />
-                <span className="font-semibold text-[11px]">Hitung Lembur Otomatis</span>
-              </label>
-
-              <select
-                value={defaultDayClass}
-                onChange={(e) => setDefaultDayClass(e.target.value as "FULL_DAY" | "HALF_DAY")}
-                className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white outline-none cursor-pointer text-xs"
-              >
-                <option value="FULL_DAY" className="text-slate-900">FULL DAY</option>
-                <option value="HALF_DAY" className="text-slate-900">HALF DAY</option>
-              </select>
-
+              {/* Jika ada item terpilih: Tombol Hapus Terpilih */}
               {selectedIds.size > 0 ? (
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={handleBulkVerifySelected}
-                  className="rounded-xl bg-white px-4 py-2 font-black text-blue-900 shadow-md hover:bg-blue-50 transition active:scale-95 disabled:opacity-50"
-                >
-                  {isPending ? "Memproses..." : `⚡ Sahkan ${selectedIds.size} Item`}
-                </button>
-              ) : selectableRecords.length > 0 ? (
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={handleBulkVerifyAllDrafts}
-                  className="rounded-xl bg-amber-400 px-3.5 py-2 font-black text-amber-950 shadow-md hover:bg-amber-300 transition active:scale-95 disabled:opacity-50"
-                >
-                  {isPending ? "Memproses..." : `⚡ Sahkan Semua Draft (${selectableRecords.length})`}
-                </button>
-              ) : null}
+                <>
+                  <form
+                    action={deleteBulkAttendanceAction}
+                    onSubmit={(e) => {
+                      if (!confirm(`Hapus ${selectedIds.size} data terpilih secara permanen?`)) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="attendance_ids" value={Array.from(selectedIds).join(",")} />
+                    <button
+                      type="submit"
+                      className="rounded-xl bg-rose-600 px-3.5 py-2 font-black text-white shadow-md hover:bg-rose-700 transition active:scale-95 cursor-pointer"
+                    >
+                      🗑️ Hapus ({selectedIds.size}) Terpilih
+                    </button>
+                  </form>
+
+                  {validDraftsToVerify.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={handleBulkVerifySelected}
+                      className="rounded-xl bg-white px-3.5 py-2 font-black text-blue-900 shadow-md hover:bg-blue-50 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isPending ? "Memproses..." : `⚡ Sahkan ${validDraftsToVerify.length} Draft`}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Tombol HAPUS CEPAT: Bersihkan Semua Alpha */}
+                  {alphaCount > 0 && (
+                    <form
+                      action={deleteAlphaAttendanceAction}
+                      onSubmit={(e) => {
+                        if (!confirm(`Bersihkan SEMUA (${alphaCount}) data Alpha/kosong sekaligus? Data yang terhapus tidak bisa dikembalikan.`)) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      <input type="hidden" name="target_date" value={dateFilter} />
+                      <button
+                        type="submit"
+                        className="rounded-xl bg-rose-600 hover:bg-rose-700 px-3.5 py-2 font-black text-white shadow-md transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>🗑️</span>
+                        <span>Bersihkan Semua Alpha ({alphaCount})</span>
+                      </button>
+                    </form>
+                  )}
+
+                  {/* Tombol Sahkan Semua Draft */}
+                  {allDraftCandidates.length > 0 && statusFilter === "DRAFT" && (
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-1.5 bg-black/20 px-2.5 py-1.5 rounded-xl border border-white/10 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useAutoOvertime}
+                          onChange={(e) => setUseAutoOvertime(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded accent-emerald-400"
+                        />
+                        <span className="font-semibold text-[11px]">Hitung Lembur Otomatis</span>
+                      </label>
+
+                      <select
+                        value={defaultDayClass}
+                        onChange={(e) => setDefaultDayClass(e.target.value as "FULL_DAY" | "HALF_DAY")}
+                        className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white outline-none cursor-pointer text-xs"
+                      >
+                        <option value="FULL_DAY" className="text-slate-900">FULL DAY</option>
+                        <option value="HALF_DAY" className="text-slate-900">HALF DAY</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={handleBulkVerifyAllDrafts}
+                        className="rounded-xl bg-amber-400 px-3.5 py-2 font-black text-amber-950 shadow-md hover:bg-amber-300 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isPending ? "Memproses..." : `⚡ Sahkan Semua Draft (${allDraftCandidates.length})`}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -464,13 +500,15 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
             {statusFilter === "ANOMALI"
               ? "🎉 Tidak ada data jam bolong! Semua jam masuk & pulang tercatat lengkap."
               : statusFilter === "ALPHA"
-              ? "Tidak ada data Alpha pada filter ini."
+              ? "🎉 Tidak ada data Alpha pada filter ini!"
+              : statusFilter === "DRAFT"
+              ? "🎉 Tidak ada draft yang perlu disahkan."
               : "Tidak ada data absensi yang sesuai filter."}
           </div>
         ) : (
           filteredRecords.map((rec) => {
             const isSelected = selectedIds.has(rec.id);
-            const isVerified = rec.verification_status === "TERVERIFIKASI";
+            const isVerified = rec.verification_status === "TERVERIFIKASI" && !rec.isAlpha;
             const calc = rec.calc;
             const worker = rec.worker;
 
@@ -480,20 +518,20 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                 className={`rounded-2xl border transition-all p-3.5 sm:p-4 shadow-2xs ${
                   isSelected
                     ? "border-blue-400 bg-blue-50/40 ring-2 ring-blue-400/30"
+                    : rec.isAlpha
+                    ? "border-rose-200 bg-rose-50/30 hover:border-rose-300"
                     : rec.isAnomaly && !isVerified
-                    ? "border-rose-300 bg-rose-50/40 ring-1 ring-rose-200"
+                    ? "border-orange-300 bg-orange-50/40 ring-1 ring-orange-200"
                     : isVerified
                     ? "border-slate-200/90 bg-white hover:border-slate-300"
-                    : rec.isAlpha
-                    ? "border-slate-200 bg-slate-50/60 hover:border-slate-300"
                     : "border-amber-200/90 bg-gradient-to-r from-amber-50/40 to-white hover:border-amber-300"
                 }`}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   {/* Left: Checkbox + Worker Info + Date */}
                   <div className="flex items-start sm:items-center gap-3">
-                    {/* Checkbox hanya muncul jika belum verif dan BUKAN Alpha */}
-                    {canWrite && !isVerified && !rec.isAlpha ? (
+                    {/* Checkbox bisa dicentang untuk DRAFT dan ALPHA */}
+                    {canWrite && (!isVerified || rec.isAlpha) ? (
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -527,13 +565,13 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
 
                         {/* Tag Anomali (Hanya jika bukan Alpha) */}
                         {!rec.isAlpha && rec.isMissingOut && !isVerified && (
-                          <span className="rounded-full bg-rose-100 border border-rose-300 px-2 py-0.5 text-[10px] font-black text-rose-800 animate-pulse">
+                          <span className="rounded-full bg-orange-100 border border-orange-300 px-2 py-0.5 text-[10px] font-black text-orange-800 animate-pulse">
                             ⚠️ Lupa Scan Pulang
                           </span>
                         )}
                         {!rec.isAlpha && rec.isMissingIn && !isVerified && (
                           <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-black text-amber-800">
-                            ⚠️️ Scan Masuk Kosong
+                            ⚠️ Scan Masuk Kosong
                           </span>
                         )}
                       </div>
@@ -548,7 +586,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                           <span className={rec.isMissingOut && !rec.isAlpha ? "text-rose-600 font-black" : ""}>{rec.actual_out || "--:--"}</span>
                         </span>
                         <span>•</span>
-                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${rec.isAlpha ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-700"}`}>
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${rec.isAlpha ? "bg-rose-100 text-rose-700 font-bold" : "bg-slate-100 text-slate-700"}`}>
                           {rec.isAlpha ? "ALPHA" : rec.attendance_status}
                         </span>
                         {rec.day_class && !rec.isAlpha ? (
@@ -581,13 +619,13 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                     ) : null}
 
                     {/* Status Badge */}
-                    {isVerified ? (
-                      <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-900">
-                        ✅ TERVERIFIKASI
-                      </span>
-                    ) : rec.isAlpha ? (
+                    {rec.isAlpha ? (
                       <span className="rounded-full bg-rose-100 border border-rose-300 px-2.5 py-0.5 text-[11px] font-extrabold text-rose-800">
                         ❌ ALPHA
+                      </span>
+                    ) : isVerified ? (
+                      <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-900">
+                        ✅ TERVERIFIKASI
                       </span>
                     ) : (
                       <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-900">
