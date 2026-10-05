@@ -51,6 +51,20 @@ type Props = {
   shiftSettings?: Record<string, any>;
 };
 
+function getEffectiveDayClass(rec: AttendanceRecordItem): "FULL_DAY" | "HALF_DAY" {
+  if (rec.day_class === "HALF_DAY" || rec.day_class === "FULL_DAY") {
+    return rec.day_class;
+  }
+  // Deteksi otomatis jika masuk jam 12:00 ke atas atau jam 01:00 - 06:00 (maksudnya jam 1-6 siang)
+  if (rec.actual_in) {
+    const h = parseInt(rec.actual_in.slice(0, 2), 10);
+    if (h >= 12 || (h >= 1 && h <= 6)) {
+      return "HALF_DAY";
+    }
+  }
+  return "FULL_DAY";
+}
+
 export default function AttendanceManager({ records, workers, canWrite, shiftSettings }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<"DRAFT" | "TERVERIFIKASI" | "ALPHA" | "ANOMALI">("DRAFT");
@@ -84,11 +98,9 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
       const isMissingIn = !rec.actual_in || rec.actual_in === "--:--" || rec.actual_in.trim() === "";
       const isMissingOut = !rec.actual_out || rec.actual_out === "--:--" || rec.actual_out.trim() === "";
       
-      // Seseorang dianggap ALPHA jika statusnya ALPHA atau kedua scan masuk & pulangnya kosong
       const isAlpha = rec.attendance_status === "ALPHA" || (isMissingIn && isMissingOut);
-      
-      // Jam bolong (anomali) hanya berlaku jika bukan ALPHA dan ada status HADIR (misal lupa scan pulang tapi ada scan masuk)
       const isAnomaly = !isAlpha && (isMissingIn || isMissingOut) && rec.attendance_status === "HADIR";
+      const effectiveDayClass = getEffectiveDayClass(rec);
 
       return {
         ...rec,
@@ -98,6 +110,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
         isMissingOut,
         isAlpha,
         isAnomaly,
+        effectiveDayClass,
       };
     });
   }, [records, workerMap, shiftSettings]);
@@ -185,7 +198,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
       return {
         id: row.id,
-        day_class: defaultDayClass,
+        day_class: row.effectiveDayClass || defaultDayClass,
         overtime_minutes: ot,
         notes: row.notes || undefined,
       };
@@ -208,7 +221,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
       return {
         id: row.id,
-        day_class: defaultDayClass,
+        day_class: row.effectiveDayClass || defaultDayClass,
         overtime_minutes: ot,
         notes: row.notes || undefined,
       };
@@ -225,7 +238,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
 
   return (
     <div className="space-y-4">
-      {/* 1. Header Ringkasan Status (Tanpa Tab 'Semua Presensi' yang Membingungkan) */}
+      {/* 1. Header Ringkasan Status */}
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
         {/* Draft */}
         <div
@@ -275,7 +288,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
               : "border-slate-200 bg-white text-slate-700 hover:border-orange-300"
           }`}
         >
-          <p className="text-[11px] font-bold text-orange-700">⚠️ Jam Bolong</p>
+          <p className="text-[11px] font-bold text-orange-700">⚠️️ Jam Bolong</p>
           <p className="mt-1 text-xl sm:text-2xl font-black text-orange-900">{anomalyCount}</p>
         </div>
       </div>
@@ -511,6 +524,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
             const isVerified = rec.verification_status === "TERVERIFIKASI" && !rec.isAlpha;
             const calc = rec.calc;
             const worker = rec.worker;
+            const dayClass = rec.effectiveDayClass;
 
             return (
               <div
@@ -589,11 +603,11 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                         <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${rec.isAlpha ? "bg-rose-100 text-rose-700 font-bold" : "bg-slate-100 text-slate-700"}`}>
                           {rec.isAlpha ? "ALPHA" : rec.attendance_status}
                         </span>
-                        {rec.day_class && !rec.isAlpha ? (
-                          <span className="rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[11px] font-bold border border-blue-200">
-                            {rec.day_class}
+                        {!rec.isAlpha && (
+                          <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold border ${dayClass === "HALF_DAY" ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
+                            {dayClass}
                           </span>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   </div>
@@ -685,7 +699,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Klasifikasi Hari</label>
                           <select
                             name="day_class"
-                            defaultValue={rec.day_class || "FULL_DAY"}
+                            defaultValue={dayClass}
                             className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-semibold"
                           >
                             <option value="FULL_DAY">FULL DAY</option>
@@ -729,7 +743,7 @@ export default function AttendanceManager({ records, workers, canWrite, shiftSet
                     ) : (
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                         <div className="text-xs text-slate-600">
-                          Data ini sudah diverifikasi dengan klasifikasi: <b>{rec.day_class || "FULL_DAY"}</b>, lembur: <b>{formatMinutesToHours(rec.overtime_minutes)}</b> ({rec.overtime_minutes} menit).
+                          Data ini sudah diverifikasi dengan klasifikasi: <b>{dayClass}</b>, lembur: <b>{formatMinutesToHours(rec.overtime_minutes)}</b> ({rec.overtime_minutes} menit).
                         </div>
                         <form action={unverifyAttendanceAction}>
                           <input type="hidden" name="attendance_id" value={rec.id} />
