@@ -147,84 +147,87 @@ function QuickManualAttendanceSheet({
   };
 
   // Simpan BATCH super cepat & HANYA untuk pekerja yang diceklis (checked)
-  const handleSaveAll = async () => {
+  const handleSaveAll = () => {
     setSaveSuccess(false);
+    const itemsToSave: any[] = [];
+
+    for (const w of activeWorkerList) {
+      const row = rowStates[w.id];
+      // HANYA SIMPAN YANG DICEKLIS! Yang tidak diceklis diabaikan (tidak dibuatkan data)
+      if (!row || !row.isPresent) continue;
+
+      let normalizedIn = (row.actualIn || "").trim().replace(".", ":");
+      if (normalizedIn) {
+        const parts = normalizedIn.split(":");
+        let h = parseInt(parts[0], 10);
+        const m = parts[1] || "00";
+        // Jika input 01:00 s/d 06:00 (maksudnya jam 1 s/d 6 siang), otomatis jadikan 13:00 s/d 18:00
+        if (h >= 1 && h <= 6) {
+          h += 12;
+        }
+        normalizedIn = `${String(h).padStart(2, "0")}:${m}:00`;
+      }
+
+      let effectiveOut = (row.overtimeOut ? row.overtimeOut : row.actualOut).trim().replace(".", ":");
+      if (effectiveOut && effectiveOut.length === 5) {
+        effectiveOut = `${effectiveOut}:00`;
+      }
+
+      const paySystem = isBulananWorker(w) ? "BULANAN" : "HARIAN";
+      const calc = calculateShiftOvertime(
+        date,
+        normalizedIn,
+        effectiveOut,
+        paySystem,
+        null,
+        shiftSettings
+      );
+
+      // Otomatis tentukan HALF DAY jika masuk jam 12 siang ke atas atau durasi kerja <= 5 jam
+      let dayClass: "FULL_DAY" | "HALF_DAY" = "FULL_DAY";
+      if (normalizedIn && effectiveOut) {
+        const inH = parseInt(normalizedIn.slice(0, 2), 10);
+        const outH = parseInt(effectiveOut.slice(0, 2), 10);
+        const inM = inH * 60 + parseInt(normalizedIn.slice(3, 5), 10);
+        const outM = outH * 60 + parseInt(effectiveOut.slice(3, 5), 10);
+        if (inH >= 12 || outH <= 13 || (outM - inM > 0 && outM - inM <= 300)) {
+          dayClass = "HALF_DAY";
+        }
+      }
+
+      itemsToSave.push({
+        worker_id: w.id,
+        attendance_date: date,
+        schedule_in: dayInfo.defaultIn,
+        schedule_out: dayInfo.defaultOut,
+        actual_in: normalizedIn,
+        actual_out: effectiveOut,
+        day_class: dayClass,
+        attendance_status: "HADIR",
+        overtime_minutes: calc.overtimeMinutes,
+        source: "MANUAL",
+        notes: row.notes || (row.overtimeOut ? `Lembur pulang ${row.overtimeOut}` : null),
+      });
+    }
+
+    if (itemsToSave.length === 0) {
+      alert("Pilih minimal satu pekerja yang hadir untuk disimpan.");
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append("items", JSON.stringify(itemsToSave));
+
     startTransition(async () => {
-      const itemsToSave: any[] = [];
-
-      for (const w of activeWorkerList) {
-        const row = rowStates[w.id];
-        // HANYA SIMPAN YANG DICEKLIS! Yang tidak diceklis diabaikan (tidak dibuatkan data)
-        if (!row || !row.isPresent) continue;
-
-        let normalizedIn = (row.actualIn || "").trim().replace(".", ":");
-        if (normalizedIn) {
-          const parts = normalizedIn.split(":");
-          let h = parseInt(parts[0], 10);
-          const m = parts[1] || "00";
-          // Jika input 01:00 s/d 06:00 (maksudnya jam 1 s/d 6 siang), otomatis jadikan 13:00 s/d 18:00
-          if (h >= 1 && h <= 6) {
-            h += 12;
-          }
-          normalizedIn = `${String(h).padStart(2, "0")}:${m}:00`;
-        }
-
-        let effectiveOut = (row.overtimeOut ? row.overtimeOut : row.actualOut).trim().replace(".", ":");
-        if (effectiveOut && effectiveOut.length === 5) {
-          effectiveOut = `${effectiveOut}:00`;
-        }
-
-        const paySystem = isBulananWorker(w) ? "BULANAN" : "HARIAN";
-        const calc = calculateShiftOvertime(
-          date,
-          normalizedIn,
-          effectiveOut,
-          paySystem,
-          null,
-          shiftSettings
-        );
-
-        // Otomatis tentukan HALF DAY jika masuk jam 12 siang ke atas atau durasi kerja <= 5 jam
-        let dayClass: "FULL_DAY" | "HALF_DAY" = "FULL_DAY";
-        if (normalizedIn && effectiveOut) {
-          const inH = parseInt(normalizedIn.slice(0, 2), 10);
-          const outH = parseInt(effectiveOut.slice(0, 2), 10);
-          const inM = inH * 60 + parseInt(normalizedIn.slice(3, 5), 10);
-          const outM = outH * 60 + parseInt(effectiveOut.slice(3, 5), 10);
-          if (inH >= 12 || outH <= 13 || (outM - inM > 0 && outM - inM <= 300)) {
-            dayClass = "HALF_DAY";
-          }
-        }
-
-        itemsToSave.push({
-          worker_id: w.id,
-          attendance_date: date,
-          schedule_in: dayInfo.defaultIn,
-          schedule_out: dayInfo.defaultOut,
-          actual_in: normalizedIn,
-          actual_out: effectiveOut,
-          day_class: dayClass,
-          attendance_status: "HADIR",
-          overtime_minutes: calc.overtimeMinutes,
-          source: "MANUAL",
-          notes: row.notes || (row.overtimeOut ? `Lembur pulang ${row.overtimeOut}` : null),
-        });
-      }
-
-      if (itemsToSave.length === 0) {
-        alert("Pilih minimal satu pekerja yang hadir untuk disimpan.");
-        return;
-      }
-
-      const fd = new FormData();
-      fd.append("items", JSON.stringify(itemsToSave));
-
       try {
         await addBulkAttendanceAction(fd);
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 4000);
       } catch (err: any) {
-        alert(err?.message || "Gagal menyimpan absensi.");
+        // NEXT_REDIRECT adalah sinyal sukses dari Next.js, abaikan agar tidak memicu alert
+        if (err?.message && !err.message.includes("NEXT_REDIRECT")) {
+          alert(err.message);
+        }
       }
     });
   };
