@@ -874,6 +874,25 @@ export async function unverifyAttendanceAction(f: FormData) {
   );
 }
 
+export async function deleteAttendanceAction(f: FormData) {
+  const path = "/dashboard/absensi";
+  await mutate(
+    path,
+    "absensi.write",
+    async () => {
+      const s = await createClient();
+      const attId = id(f, "attendance_id");
+      const { error } = await s
+        .from("attendance_records")
+        .delete()
+        .eq("id", attId);
+
+      if (error) throw error;
+    },
+    "Data absensi berhasil dihapus."
+  );
+}
+
 export async function finalizePayrollAction(f: FormData) {
   await mutate(
     "/dashboard/payroll",
