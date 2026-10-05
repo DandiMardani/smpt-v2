@@ -41,7 +41,7 @@ export function ExportWorkerButton({ workers }: Props) {
       escape(w.phone ? `="${w.phone}"` : "-"),
       escape(w.wage_system || w.pay_system || w.wage_type || "-"),
       escape(w.position || w.role || "-"),
-      escape(w.children_count ?? w.dependents_count ?? 0),
+      escape(w.children_count ?? w.dependents_count ?? w.number_of_children ?? 0),
       escape(w.address || "-"),
       escape(w.status || "AKTIF"),
       escape(w.ktp_photo_url || w.ktp_url || "-"),
@@ -71,14 +71,21 @@ export function ExportWorkerButton({ workers }: Props) {
 
   return (
     <>
-      {/* CSS Khusus Cetak A4 agar tidak tumpang tindih dan semua pekerja tercetak rapi */}
+      {/* CSS Cetak A4: Pas 1 Lembar & Tanpa Halaman Kosong di Belakang */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
             @media print {
               @page {
                 size: A4 portrait;
-                margin: 8mm 8mm 10mm 8mm;
+                margin: 6mm 8mm 6mm 8mm;
+              }
+              html, body {
+                height: auto !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
               }
               body * {
                 visibility: hidden;
@@ -95,6 +102,8 @@ export function ExportWorkerButton({ workers }: Props) {
                 margin: 0 !important;
                 padding: 0 !important;
                 background: #ffffff !important;
+                break-after: avoid !important;
+                page-break-after: avoid !important;
               }
               tr {
                 break-inside: avoid !important;
@@ -125,72 +134,85 @@ export function ExportWorkerButton({ workers }: Props) {
         </button>
       </div>
 
-      {/* Area Cetak Lembar Bersih (Hanya muncul saat print) */}
+      {/* Area Lembar Cetak PDF */}
       <div className="hidden print:block print-master-pekerja-sheet text-slate-900 font-sans">
-        <div className="border-b-2 border-slate-800 pb-2 mb-3">
+        <div className="border-b-2 border-slate-800 pb-1.5 mb-2.5">
           <div className="flex justify-between items-end">
             <div>
-              <h1 className="text-base font-black tracking-tight text-slate-950">
+              <h1 className="text-sm font-black tracking-tight text-slate-950">
                 DAFTAR MASTER PEKERJA & IDENTITAS KTP
               </h1>
-              <p className="text-[10px] text-slate-500 font-medium">
+              <p className="text-[9px] text-slate-500 font-medium">
                 Dicetak pada: {new Date().toLocaleDateString("id-ID", { dateStyle: "full" })} · Sistem SMPT V2
               </p>
             </div>
             <div className="text-right">
-              <span className="text-[10px] font-bold bg-slate-100 border border-slate-300 px-2 py-0.5 rounded">
+              <span className="text-[9px] font-bold bg-slate-100 border border-slate-300 px-2 py-0.5 rounded">
                 Total: {workers.length} Pekerja
               </span>
             </div>
           </div>
         </div>
 
-        <table className="w-full text-left border-collapse text-[10px] leading-tight">
+        <table className="w-full text-left border-collapse text-[9.5px] leading-tight">
           <thead>
             <tr className="border-b border-slate-400 bg-slate-100 font-bold text-slate-800">
-              <th className="py-1 px-1 text-center w-6">No</th>
-              <th className="py-1 px-1.5 w-36">Pekerja</th>
-              <th className="py-1 px-1.5 w-32">NIK & No. HP</th>
+              <th className="py-1 px-1 text-center w-5">No</th>
+              <th className="py-1 px-1.5 w-32">Pekerja</th>
+              <th className="py-1 px-1.5 w-28">NIK & No. HP</th>
               <th className="py-1 px-1.5 w-28">Bagian / Jabatan</th>
+              <th className="py-1 px-1 text-center w-14">Jml Anak</th>
               <th className="py-1 px-1.5">Alamat</th>
-              <th className="py-1 px-1 text-center w-24">Fisik Foto KTP</th>
+              <th className="py-1 px-1 text-center w-20">Fisik Foto KTP</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
             {workers.map((w: any, index: number) => {
               const ktpUrl = w.ktp_photo_url || w.ktp_url;
+              const children = Number(w.children_count ?? w.dependents_count ?? w.number_of_children ?? 0);
+
               return (
                 <tr key={w.id || index} className="align-top">
-                  <td className="py-1.5 px-1 text-center text-slate-500 font-medium">{index + 1}</td>
-                  <td className="py-1.5 px-1.5">
+                  <td className="py-1 px-1 text-center text-slate-500 font-medium">{index + 1}</td>
+                  <td className="py-1 px-1.5">
                     <p className="font-extrabold text-slate-950">{w.name}</p>
-                    <p className="text-[9px] font-mono text-slate-500">{w.worker_code || "-"}</p>
+                    <p className="text-[8.5px] font-mono text-slate-500">{w.worker_code || "-"}</p>
                   </td>
-                  <td className="py-1.5 px-1.5">
-                    <p className="font-bold font-mono text-[9.5px] text-slate-800">{w.nik || "-"}</p>
-                    <p className="text-[9px] text-slate-600">{w.phone || "-"}</p>
+                  <td className="py-1 px-1.5">
+                    <p className="font-bold font-mono text-[9px] text-slate-800">{w.nik || "-"}</p>
+                    <p className="text-[8.5px] text-slate-600">{w.phone || "-"}</p>
                   </td>
-                  <td className="py-1.5 px-1.5">
+                  <td className="py-1 px-1.5">
                     <p className="font-bold text-slate-800">
                       {w.department || "PRODUKSI"}
                     </p>
-                    <p className="text-[9px] text-slate-600">
+                    <p className="text-[8.5px] text-slate-600">
                       {w.position || "-"} ({w.wage_system || w.pay_system || "HARIAN"})
                     </p>
                   </td>
-                  <td className="py-1.5 px-1.5 text-slate-700 leading-snug">
+                  {/* Kolom Jumlah Anak / Tanggungan */}
+                  <td className="py-1 px-1 text-center">
+                    {children > 0 ? (
+                      <span className="font-black text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-[9px]">
+                        {children} Anak
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-[9px]">-</span>
+                    )}
+                  </td>
+                  <td className="py-1 px-1.5 text-slate-700 leading-snug text-[9px]">
                     {w.address || "-"}
                   </td>
-                  <td className="py-1.5 px-1 text-center">
+                  <td className="py-1 px-1 text-center">
                     {ktpUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={ktpUrl}
                         alt={`KTP ${w.name}`}
-                        className="h-9 w-14 object-cover rounded border border-slate-300 mx-auto shadow-2xs"
+                        className="h-8 w-12 object-cover rounded border border-slate-300 mx-auto shadow-2xs"
                       />
                     ) : (
-                      <span className="text-[9px] text-slate-400 italic">Tanpa KTP</span>
+                      <span className="text-[8.5px] text-slate-400 italic">Tanpa KTP</span>
                     )}
                   </td>
                 </tr>
