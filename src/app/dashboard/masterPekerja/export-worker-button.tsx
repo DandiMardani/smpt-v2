@@ -10,7 +10,7 @@ type Props = {
 export function ExportWorkerButton({ workers }: Props) {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
 
-  // 1. Export Excel Ringan (Link tetap disediakan untuk klik cepat)
+  // 1. Export Excel Ringan (.csv)
   const handleExportExcel = () => {
     if (!workers || workers.length === 0) {
       alert("Tidak ada data pekerja untuk diekspor.");
@@ -18,6 +18,7 @@ export function ExportWorkerButton({ workers }: Props) {
     }
 
     const headers = [
+      "No",
       "Kode Pekerja",
       "Nama Lengkap",
       "NIK",
@@ -32,12 +33,13 @@ export function ExportWorkerButton({ workers }: Props) {
 
     const escape = (val: unknown) => `"${String(val ?? "").replace(/"/g, '""')}"`;
 
-    const rows = workers.map((w: any) => [
+    const rows = workers.map((w: any, idx: number) => [
+      idx + 1,
       escape(w.worker_code || w.code || "-"),
       escape(w.name || "-"),
       escape(w.nik ? `="${w.nik}"` : "-"),
       escape(w.phone ? `="${w.phone}"` : "-"),
-      escape(w.wage_system || w.wage_type || "-"),
+      escape(w.wage_system || w.pay_system || w.wage_type || "-"),
       escape(w.position || w.role || "-"),
       escape(w.children_count ?? w.dependents_count ?? 0),
       escape(w.address || "-"),
@@ -64,80 +66,131 @@ export function ExportWorkerButton({ workers }: Props) {
     setShowPrintPreview(true);
     setTimeout(() => {
       window.print();
-    }, 300);
+    }, 250);
   };
 
   return (
     <>
+      {/* CSS Khusus Cetak A4 agar tidak tumpang tindih dan semua pekerja tercetak rapi */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 8mm 8mm 10mm 8mm;
+              }
+              body * {
+                visibility: hidden;
+              }
+              .print-master-pekerja-sheet,
+              .print-master-pekerja-sheet * {
+                visibility: visible;
+              }
+              .print-master-pekerja-sheet {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+              }
+              tr {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+              }
+              thead {
+                display: table-header-group;
+              }
+            }
+          `,
+        }}
+      />
+
       <div className="flex items-center gap-2 print:hidden">
         <button
           type="button"
           onClick={handleExportExcel}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 active:scale-95 transition"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 active:scale-95 transition cursor-pointer"
         >
           📊 Export Excel
         </button>
         <button
           type="button"
           onClick={handlePrint}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 shadow-2xs hover:bg-blue-100 active:scale-95 transition"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 shadow-2xs hover:bg-blue-100 active:scale-95 transition cursor-pointer"
         >
           🖨️ Cetak / PDF Lengkap Foto KTP
         </button>
       </div>
 
-      {/* Area Khusus Cetak PDF (Otomatis muncul saat tombol Cetak PDF diklik) */}
-      <div className="hidden print:block fixed inset-0 bg-white z-[9999] p-6 text-slate-900">
-        <div className="border-b border-slate-300 pb-3 mb-4">
-          <h1 className="text-xl font-bold">DAFTAR MASTER PEKERJA & IDENTITAS KTP</h1>
-          <p className="text-xs text-slate-500">
-            Dicetak pada: {new Date().toLocaleDateString("id-ID", { dateStyle: "full" })} · Sistem SMPT V2
-          </p>
+      {/* Area Cetak Lembar Bersih (Hanya muncul saat print) */}
+      <div className="hidden print:block print-master-pekerja-sheet text-slate-900 font-sans">
+        <div className="border-b-2 border-slate-800 pb-2 mb-3">
+          <div className="flex justify-between items-end">
+            <div>
+              <h1 className="text-base font-black tracking-tight text-slate-950">
+                DAFTAR MASTER PEKERJA & IDENTITAS KTP
+              </h1>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Dicetak pada: {new Date().toLocaleDateString("id-ID", { dateStyle: "full" })} · Sistem SMPT V2
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] font-bold bg-slate-100 border border-slate-300 px-2 py-0.5 rounded">
+                Total: {workers.length} Pekerja
+              </span>
+            </div>
+          </div>
         </div>
 
-        <table className="w-full text-left border-collapse text-xs">
+        <table className="w-full text-left border-collapse text-[10px] leading-tight">
           <thead>
-            <tr className="border-b-2 border-slate-400 bg-slate-100">
-              <th className="p-2">No</th>
-              <th className="p-2">Pekerja</th>
-              <th className="p-2">NIK & No. HP</th>
-              <th className="p-2">Upah / Jabatan</th>
-              <th className="p-2">Alamat</th>
-              <th className="p-2 text-center">Fisik Foto KTP</th>
+            <tr className="border-b border-slate-400 bg-slate-100 font-bold text-slate-800">
+              <th className="py-1 px-1 text-center w-6">No</th>
+              <th className="py-1 px-1.5 w-36">Pekerja</th>
+              <th className="py-1 px-1.5 w-32">NIK & No. HP</th>
+              <th className="py-1 px-1.5 w-28">Bagian / Jabatan</th>
+              <th className="py-1 px-1.5">Alamat</th>
+              <th className="py-1 px-1 text-center w-24">Fisik Foto KTP</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-200">
             {workers.map((w: any, index: number) => {
               const ktpUrl = w.ktp_photo_url || w.ktp_url;
               return (
-                <tr key={w.id || index} className="border-b border-slate-200">
-                  <td className="p-2 align-top text-slate-400">{index + 1}</td>
-                  <td className="p-2 align-top">
-                    <p className="font-bold text-slate-900">{w.name}</p>
-                    <p className="text-[10px] text-slate-500">{w.worker_code || "-"}</p>
+                <tr key={w.id || index} className="align-top">
+                  <td className="py-1.5 px-1 text-center text-slate-500 font-medium">{index + 1}</td>
+                  <td className="py-1.5 px-1.5">
+                    <p className="font-extrabold text-slate-950">{w.name}</p>
+                    <p className="text-[9px] font-mono text-slate-500">{w.worker_code || "-"}</p>
                   </td>
-                  <td className="p-2 align-top">
-                    <p className="font-medium font-mono text-[11px]">{w.nik || "-"}</p>
-                    <p className="text-[10px] text-slate-500">{w.phone || "-"}</p>
+                  <td className="py-1.5 px-1.5">
+                    <p className="font-bold font-mono text-[9.5px] text-slate-800">{w.nik || "-"}</p>
+                    <p className="text-[9px] text-slate-600">{w.phone || "-"}</p>
                   </td>
-                  <td className="p-2 align-top">
-                    <span className="font-semibold text-slate-700">{w.wage_system || "-"}</span>
-                    <p className="text-[10px] text-slate-500">{w.position || "-"}</p>
+                  <td className="py-1.5 px-1.5">
+                    <p className="font-bold text-slate-800">
+                      {w.department || "PRODUKSI"}
+                    </p>
+                    <p className="text-[9px] text-slate-600">
+                      {w.position || "-"} ({w.wage_system || w.pay_system || "HARIAN"})
+                    </p>
                   </td>
-                  <td className="p-2 align-top text-slate-600 max-w-xs text-[11px]">
+                  <td className="py-1.5 px-1.5 text-slate-700 leading-snug">
                     {w.address || "-"}
                   </td>
-                  {/* Foto KTP langsung dirender sebagai gambar fisik */}
-                  <td className="p-2 align-top text-center w-36">
+                  <td className="py-1.5 px-1 text-center">
                     {ktpUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={ktpUrl}
                         alt={`KTP ${w.name}`}
-                        className="h-20 w-32 object-cover rounded border border-slate-300 mx-auto"
+                        className="h-9 w-14 object-cover rounded border border-slate-300 mx-auto shadow-2xs"
                       />
                     ) : (
-                      <span className="text-[10px] text-slate-400 italic">Belum ada KTP</span>
+                      <span className="text-[9px] text-slate-400 italic">Tanpa KTP</span>
                     )}
                   </td>
                 </tr>
