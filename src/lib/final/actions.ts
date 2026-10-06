@@ -870,6 +870,44 @@ export async function addAttendanceAction(f: FormData) {
   );
 }
 
+export async function addBulkAttendanceAction(f: FormData) {
+  await mutate(
+    "/dashboard/absensi",
+    "absensi.write",
+    async () => {
+      const s = await createClient();
+      const raw = f.get("items");
+      if (!raw || typeof raw !== "string") throw new Error("Data absensi tidak valid.");
+      const items = JSON.parse(raw);
+      if (!Array.isArray(items) || items.length === 0) return;
+
+      const payload = items.map((it: any) => ({
+        worker_id: it.worker_id,
+        attendance_date: it.attendance_date,
+        schedule_in: it.schedule_in || null,
+        schedule_out: it.schedule_out || null,
+        actual_in: it.actual_in || null,
+        actual_out: it.actual_out || null,
+        day_class: it.day_class || null,
+        attendance_status: it.attendance_status || "HADIR",
+        overtime_minutes: Number(it.overtime_minutes || 0),
+        source: it.source || "MANUAL",
+        notes: it.notes || null,
+        verification_status: it.attendance_status === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
+      }));
+
+      for (let i = 0; i < payload.length; i += 100) {
+        const chunk = payload.slice(i, i + 100);
+        const { error } = await s
+          .from("attendance_records")
+          .upsert(chunk, { onConflict: "worker_id,attendance_date" });
+        if (error) throw error;
+      }
+    },
+    "Data absensi berhasil disimpan secara massal."
+  );
+}
+
 export async function verifyAttendanceAction(f: FormData) {
   await mutate(
     "/dashboard/absensi",
