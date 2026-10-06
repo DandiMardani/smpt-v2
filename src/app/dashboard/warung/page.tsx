@@ -37,14 +37,8 @@ export default async function WarungPage() {
     workers = data || [];
   }
 
-  // 2. Normalisasi nota lama Dandi Store agar seragam
-  if (isAdmin) {
-    await supabase
-      .from("cash_advances")
-      .update({ warung_name: "Dandi Store", warung_id: warungId })
-      .eq("category", "KASBON_WARUNG")
-      .or("warung_name.is.null,warung_name.eq.Warung Luar,warung_name.eq.''");
-  }
+  // 2. Normalisasi nota: jangan paksa update ke Dandi Store jika tidak ada keperluan
+
 
   // 3. Hak Akses Query Data Transaksi:
   // - Admin: Ambil SELURUH kasbon warung agar bisa melihat kartu per-warung

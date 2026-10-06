@@ -110,13 +110,7 @@ export function WarungPortal({
   const availableWarungs = useMemo(() => {
     const map = new Map<string, { name: string; totalDebt: number; workerCount: Set<string>; txCount: number }>();
 
-    map.set("Dandi Store", {
-      name: "Dandi Store",
-      totalDebt: 0,
-      workerCount: new Set(),
-      txCount: 0,
-    });
-
+    // Pastikan warung Ratno selalu ada
     map.set("ratno", {
       name: "ratno",
       totalDebt: 0,
@@ -124,17 +118,10 @@ export function WarungPortal({
       txCount: 0,
     });
 
-    if (currentWarung.name && !map.has(currentWarung.name)) {
-      map.set(currentWarung.name, {
-        name: currentWarung.name,
-        totalDebt: 0,
-        workerCount: new Set(),
-        txCount: 0,
-      });
-    }
-
     transactions.forEach((tx) => {
-      const wName = tx.warung_name && tx.warung_name.trim() !== "" ? tx.warung_name : "Dandi Store";
+      const rawName = tx.warung_name && tx.warung_name.trim() !== "" ? tx.warung_name.trim() : "ratno";
+      // Normalisasikan: jika ada variasi nama ratno, gabungkan
+      const wName = rawName.toLowerCase() === "ratno" ? "ratno" : rawName;
       let entry = map.get(wName);
       if (!entry) {
         entry = {
@@ -171,7 +158,7 @@ export function WarungPortal({
       return transactions;
     }
     return transactions.filter((tx) => 
-      (tx.warung_name || "Dandi Store").toLowerCase() === selectedWarungFilter.toLowerCase()
+      (tx.warung_name || "ratno").toLowerCase() === selectedWarungFilter.toLowerCase()
     );
   }, [transactions, selectedWarungFilter, isAdmin, currentWarung.name]);
 
@@ -730,7 +717,7 @@ export function WarungPortal({
                         return (
                           <tr key={tx.id} className="hover:bg-orange-50/30 transition">
                             <td className="py-3 px-3 font-semibold text-[#b45309] whitespace-nowrap">
-                              {tx.warung_name || "Dandi Store"}
+                              {tx.warung_name || "ratno"}
                             </td>
                             <td className="py-3 px-2 text-slate-700">
                               <div className="font-medium text-slate-800">{tx.notes}</div>
