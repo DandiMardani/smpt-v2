@@ -69,7 +69,6 @@ type Props = {
   payrollRuns?: FinalizedPayrollRun[];
 };
 
-// Deteksi cerdas apakah record absensi merupakan shift setengah hari (HALF_DAY)
 function checkIsHalfDay(rec: AttendanceRecordItem): boolean {
   if (rec.day_class === "HALF_DAY") return true;
   if (rec.actual_in) {
@@ -98,8 +97,8 @@ export default function AttendanceManager({
 }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<AttendanceStatusFilter>("DRAFT");
+  const [payTypeFilter, setPayTypeFilter] = useState<"ALL" | "BULANAN" | "HARIAN">("ALL");
 
-  // Otomatis fokus ke tanggal terbaru yang ada di data agar layar tidak kepanjangan
   const latestDateInRecords = useMemo(() => {
     return records.length > 0 ? records[0].attendance_date : "";
   }, [records]);
@@ -118,7 +117,6 @@ export default function AttendanceManager({
     return new Map(workers.map((w) => [w.id, w]));
   }, [workers]);
 
-  // Pre-calculate shift overtimes, deteksi anomali, status payroll, dan klasifikasi Half Day
   const enrichedRecords = useMemo(() => {
     return records.map((rec) => {
       const worker = workerMap.get(rec.worker_id);
@@ -140,7 +138,6 @@ export default function AttendanceManager({
       const isAnomaly = (isMissingIn || isMissingOut) && isHadir;
       const isHalfDay = isHadir && checkIsHalfDay(rec);
 
-      // Cek apakah tanggal absensi pekerja ini sudah masuk periode payroll yang FINAL (sudah dibayar)
       const matchingPayrollRun = (payrollRuns || []).find((run) => {
         const isTypeMatch =
           (run.payroll_type === "MINGGUAN" && paySystem === "HARIAN") ||
@@ -156,6 +153,7 @@ export default function AttendanceManager({
       return {
         ...rec,
         worker,
+        paySystem,
         calc,
         isMissingIn,
         isMissingOut,
@@ -169,10 +167,14 @@ export default function AttendanceManager({
     });
   }, [records, workerMap, shiftSettings, payrollRuns]);
 
-  // Hitungan metrik akurat (berdasarkan filter tanggal jika dipilih)
+  // Scope records mengikuti filter tanggal & tipe pekerja untuk perhitungan metrik
   const currentScopedRecords = useMemo(() => {
-    return dateFilter ? enrichedRecords.filter((r) => r.attendance_date === dateFilter) : enrichedRecords;
-  }, [enrichedRecords, dateFilter]);
+    return enrichedRecords.filter((r) => {
+      if (dateFilter && r.attendance_date !== dateFilter) return false;
+      if (payTypeFilter !== "ALL" && r.paySystem !== payTypeFilter) return false;
+      return true;
+    });
+  }, [enrichedRecords, dateFilter, payTypeFilter]);
 
   const totalCount = currentScopedRecords.length;
   const draftCount = currentScopedRecords.filter(
@@ -192,7 +194,6 @@ export default function AttendanceManager({
   const paidCount = currentScopedRecords.filter((r) => r.isPaid).length;
   const nonHadirCount = currentScopedRecords.filter((r) => !r.isHadir).length;
 
-  // Filter records berdasarkan status & tanggal & pencarian
   const filteredRecords = useMemo(() => {
     return enrichedRecords.filter((rec) => {
       if (statusFilter === "DRAFT") {
@@ -218,6 +219,9 @@ export default function AttendanceManager({
       if (dateFilter && rec.attendance_date !== dateFilter) {
         return false;
       }
+      if (payTypeFilter !== "ALL" && rec.paySystem !== payTypeFilter) {
+        return false;
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const wName = rec.worker?.name?.toLowerCase() || "";
@@ -230,19 +234,17 @@ export default function AttendanceManager({
       }
       return true;
     });
-  }, [enrichedRecords, statusFilter, dateFilter, searchQuery]);
+  }, [enrichedRecords, statusFilter, dateFilter, payTypeFilter, searchQuery]);
 
   const selectableRecords = filteredRecords.filter((r) => !r.isPaid);
   const isAllSelected =
     selectableRecords.length > 0 &&
     selectableRecords.every((r) => selectedIds.has(r.id));
 
-  // Drafts yang terpilih dan siap disahkan
   const selectedDrafts = filteredRecords.filter(
     (r) => selectedIds.has(r.id) && !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
   );
 
-  // Semua draft siap sahkan di filter saat ini
   const allDraftsInFilter = filteredRecords.filter(
     (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
   );
@@ -309,7 +311,6 @@ export default function AttendanceManager({
     });
   }
 
-  // FIX: Menjaga status HALF_DAY agar tidak tertimpa Full Day secara massal
   function handleBulkVerifySelected() {
     if (selectedDrafts.length === 0) return;
     const items = selectedDrafts.map((row) => {
@@ -332,7 +333,6 @@ export default function AttendanceManager({
     });
   }
 
-  // FIX: Menjaga status HALF_DAY pada verifikasi semua draft
   function handleBulkVerifyAllDrafts() {
     if (allDraftsInFilter.length === 0) return;
     const items = allDraftsInFilter.map((row) => {
@@ -453,67 +453,110 @@ export default function AttendanceManager({
         </div>
       )}
 
-      {/* 3. Filter Controls & Navigasi Tanggal Per Hari */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-3.5 shadow-2xs">
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari nama pekerja, kode, atau finger..."
-            className="w-full sm:w-56 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition"
-          />
-
-          {/* Quick Date Stepper (Per Hari) */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button
-              type="button"
-              onClick={() => handleStepDate(-1)}
-              className="px-2 py-1 bg-white hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-black shadow-2xs cursor-pointer"
-              title="Hari Sebelumnya"
-            >
-              ◀ H-1
-            </button>
-
+      {/* 3. Filter Controls: Pencarian, Tanggal & Filter Tipe Pekerja */}
+      <div className="space-y-3 rounded-2xl border border-slate-200/90 bg-white p-3.5 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
             <input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => {
-                setDateFilter(e.target.value);
-                setSelectedIds(new Set());
-              }}
-              className="rounded-lg bg-transparent px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari nama pekerja, kode, atau finger..."
+              className="w-full sm:w-52 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition"
             />
 
-            <button
-              type="button"
-              onClick={() => handleStepDate(1)}
-              className="px-2 py-1 bg-white hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-black shadow-2xs cursor-pointer"
-              title="Hari Berikutnya"
-            >
-              H+1 ▶
-            </button>
+            {/* Quick Date Stepper (Per Hari) */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => handleStepDate(-1)}
+                className="px-2 py-1 bg-white hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-black shadow-2xs cursor-pointer"
+                title="Hari Sebelumnya"
+              >
+                ◀ H-1
+              </button>
+
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => {
+                  setDateFilter(e.target.value);
+                  setSelectedIds(new Set());
+                }}
+                className="rounded-lg bg-transparent px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+              />
+
+              <button
+                type="button"
+                onClick={() => handleStepDate(1)}
+                className="px-2 py-1 bg-white hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-black shadow-2xs cursor-pointer"
+                title="Hari Berikutnya"
+              >
+                H+1 ▶
+              </button>
+            </div>
+
+            {dateFilter ? (
+              <button
+                type="button"
+                onClick={() => setDateFilter("")}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline cursor-pointer px-1"
+              >
+                Semua Tgl
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDateFilter(latestDateInRecords)}
+                className="text-xs font-semibold text-slate-600 hover:text-slate-800 underline cursor-pointer px-1"
+              >
+                Hari Ini
+              </button>
+            )}
           </div>
 
-          {dateFilter ? (
+          {/* Filter Tipe Pekerja (Bulanan vs Harian) */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
             <button
               type="button"
-              onClick={() => setDateFilter("")}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline cursor-pointer px-1"
+              onClick={() => {
+                setPayTypeFilter("ALL");
+                setSelectedIds(new Set());
+              }}
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                payTypeFilter === "ALL" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+              }`}
             >
-              Lihat Semua Tanggal
+              Semua Tipe
             </button>
-          ) : (
             <button
               type="button"
-              onClick={() => setDateFilter(latestDateInRecords)}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-800 underline cursor-pointer px-1"
+              onClick={() => {
+                setPayTypeFilter("BULANAN");
+                setSelectedIds(new Set());
+              }}
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                payTypeFilter === "BULANAN" ? "bg-purple-600 text-white shadow-2xs" : "text-purple-800 hover:text-purple-950"
+              }`}
             >
-              Fokus Hari Ini
+              👔 Bulanan
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => {
+                setPayTypeFilter("HARIAN");
+                setSelectedIds(new Set());
+              }}
+              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                payTypeFilter === "HARIAN" ? "bg-blue-600 text-white shadow-2xs" : "text-blue-800 hover:text-blue-950"
+              }`}
+            >
+              👷‍♂️ Harian
+            </button>
+          </div>
         </div>
 
+        {/* Tab Status Presensi */}
         <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl text-xs font-semibold overflow-x-auto no-scrollbar">
           <button
             type="button"
@@ -929,7 +972,7 @@ export default function AttendanceManager({
                             onClick={() => handleDeleteSingle(rec.id, worker?.name || `Pekerja #${rec.worker_id}`, rec.attendance_date)}
                             className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-1.5 text-xs font-bold text-rose-800 hover:bg-rose-200 transition shadow-2xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                           >
-                            <span>🗑️</span>
+                            <span>🗑️️</span>
                             <span>Hapus Data</span>
                           </button>
                         </div>
