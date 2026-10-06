@@ -61,13 +61,15 @@ export function DirectIssueUnifiedForm({
   const [selectedProjectId, setSelectedProjectId] = useState<number>(() => (projects.length === 1 ? projects[0].id : 0));
   const [selectedProductId, setSelectedProductId] = useState<number>(0);
   const [selectedBomId, setSelectedBomId] = useState<number>(0);
+  const [rollDestination, setRollDestination] = useState<string>("CUTTING");
 
   // State untuk Hasil Cutting
   const [selectedCuttingComponentId, setSelectedCuttingComponentId] = useState<number>(0);
-  const [cuttingDestination, setCuttingDestination] = useState<"SABLON" | "PRODUKSI">("SABLON");
+  const [cuttingDestination, setCuttingDestination] = useState<"SABLON" | "PRODUKSI" | "MR_WU" | "TEMPAT_LAIN">("SABLON");
 
   // State untuk Hasil Sablon
   const [selectedSablonComponentId, setSelectedSablonComponentId] = useState<number>(0);
+  const [sablonDestination, setSablonDestination] = useState<"PRODUKSI" | "MR_WU" | "TEMPAT_LAIN">("PRODUKSI");
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -229,13 +231,25 @@ export function DirectIssueUnifiedForm({
             </select>
           </Field>
 
-          <Field label="Tujuan Pengeluaran">
-            <select name="purpose" className={`${inputClass} font-bold text-blue-900`}>
+          <Field label="Kategori Tujuan Pengeluaran">
+            <select
+              value={rollDestination}
+              onChange={(e) => setRollDestination(e.target.value)}
+              className={`${inputClass} font-bold text-blue-900`}
+            >
               <option value="CUTTING">✂️ CUTTING (Potong Kain / Roll)</option>
-              <option value="PRODUKSI">🧵 PRODUKSI (Jahit / Assembling)</option>
-              <option value="SABLON">🎨 SABLON (Cetak Sablon Langsung)</option>
+              <option value="SABLON">🎨 Supplier Sablon (Cetak Langsung)</option>
+              <option value="PRODUKSI">🧵 Divisi Jahit / Produksi (Internal Pabrik)</option>
+              <option value="MR_WU">🏭 Pabrik Mitra MR WU (Kerjasama)</option>
+              <option value="TEMPAT_LAIN">📦 Tempat Lain / Supplier Lain / Retur</option>
             </select>
           </Field>
+          <input type="hidden" name="destination" value={rollDestination} />
+          <input
+            type="hidden"
+            name="purpose"
+            value={rollDestination === "MR_WU" || rollDestination === "TEMPAT_LAIN" ? "PRODUKSI" : rollDestination}
+          />
 
           <Field label="Jumlah (Qty)">
             <input
@@ -330,17 +344,20 @@ export function DirectIssueUnifiedForm({
 
           <input type="hidden" name="product_id" value={selectedCuttingItem?.product_id ?? ""} />
 
-          <Field label="Tujuan Pengeluaran">
+          <Field label="Kategori Tujuan Pengeluaran">
             <select
               value={cuttingDestination}
-              onChange={(e) => setCuttingDestination(e.target.value as "SABLON" | "PRODUKSI")}
+              onChange={(e) => setCuttingDestination(e.target.value as any)}
               className={`${inputClass} font-bold text-blue-900`}
             >
-              <option value="SABLON">🎨 Ke Bagian SABLON (Butuh Sablon)</option>
-              <option value="PRODUKSI">🧵 Ke SIAP PRODUKSI (Langsung Jahit)</option>
+              <option value="SABLON">🎨 Supplier Sablon (Buaran)</option>
+              <option value="PRODUKSI">🧵 Divisi Jahit / Siap Produksi (Internal Pabrik)</option>
+              <option value="MR_WU">🏭 Pabrik Mitra Kerjasama MR WU</option>
+              <option value="TEMPAT_LAIN">📦 Tempat Lain / Supplier Lain / Retur</option>
             </select>
           </Field>
 
+          <input type="hidden" name="destination" value={cuttingDestination} />
           <input
             type="hidden"
             name="action"
@@ -366,6 +383,8 @@ export function DirectIssueUnifiedForm({
               placeholder={
                 cuttingDestination === "SABLON"
                   ? "Contoh: Kirim ke Sablon Meja 2"
+                  : cuttingDestination === "MR_WU"
+                  ? "Contoh: Kirim ke Pabrik Rekanan MR WU"
                   : "Contoh: Serahkan ke Operator Jahit"
               }
               className={inputClass}
@@ -402,7 +421,17 @@ export function DirectIssueUnifiedForm({
               className={`${primaryButtonClass} w-full sm:w-auto px-8 py-3 text-sm font-black shadow-md flex items-center justify-center gap-2`}
             >
               <span>✂️➔</span>
-              <span>Keluarkan Hasil Cutting ({cuttingDestination === "SABLON" ? "Ke Sablon" : "Ke Jahit"})</span>
+              <span>
+                Keluarkan Hasil Cutting (
+                {cuttingDestination === "SABLON"
+                  ? "Ke Supplier Sablon"
+                  : cuttingDestination === "PRODUKSI"
+                  ? "Ke Divisi Jahit"
+                  : cuttingDestination === "MR_WU"
+                  ? "Kirim ke Pabrik Mitra MR WU"
+                  : "Tempat Lain"}
+                )
+              </span>
             </button>
           </div>
         </form>
@@ -434,14 +463,19 @@ export function DirectIssueUnifiedForm({
           </Field>
 
           <input type="hidden" name="product_id" value={selectedSablonItem?.product_id ?? ""} />
+          <input type="hidden" name="destination" value={sablonDestination} />
           <input type="hidden" name="action" value="SABLON_KE_SIAP_PRODUKSI" />
 
-          <Field label="Tujuan Pengeluaran">
-            <input
-              readOnly
-              value="🧵 SIAP PRODUKSI (Jahit / Assembling)"
-              className={`${inputClass} bg-slate-50 font-bold text-slate-700`}
-            />
+          <Field label="Kategori Tujuan Pengeluaran">
+            <select
+              value={sablonDestination}
+              onChange={(e) => setSablonDestination(e.target.value as any)}
+              className={`${inputClass} font-bold text-blue-900`}
+            >
+              <option value="PRODUKSI">🧵 Divisi Jahit / Siap Produksi (Internal Pabrik)</option>
+              <option value="MR_WU">🏭 Pabrik Mitra Kerjasama MR WU</option>
+              <option value="TEMPAT_LAIN">📦 Tempat Lain / Supplier Lain / Retur</option>
+            </select>
           </Field>
 
           <Field label={`Jumlah Dikeluarkan (${selectedSablonItem?.unit || "Pcs"})`}>
@@ -458,7 +492,15 @@ export function DirectIssueUnifiedForm({
           </Field>
 
           <Field label="Keterangan">
-            <input name="notes" placeholder="Contoh: Diserahkan ke SPV Jahit" className={inputClass} />
+            <input
+              name="notes"
+              placeholder={
+                sablonDestination === "MR_WU"
+                  ? "Contoh: Kirim ke Pabrik Rekanan MR WU"
+                  : "Contoh: Diserahkan ke SPV Jahit"
+              }
+              className={inputClass}
+            />
           </Field>
 
           <div className="sm:col-span-2 lg:col-span-3 flex justify-end pt-2">
@@ -468,7 +510,15 @@ export function DirectIssueUnifiedForm({
               className={`${primaryButtonClass} w-full sm:w-auto px-8 py-3 text-sm font-black shadow-md flex items-center justify-center gap-2`}
             >
               <span>🎨➔</span>
-              <span>Keluarkan Hasil Sablon Ke Produksi (Jahit)</span>
+              <span>
+                Keluarkan Hasil Sablon (
+                {sablonDestination === "PRODUKSI"
+                  ? "Ke Divisi Jahit"
+                  : sablonDestination === "MR_WU"
+                  ? "Kirim ke Pabrik Mitra MR WU"
+                  : "Tempat Lain"}
+                )
+              </span>
             </button>
           </div>
         </form>

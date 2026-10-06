@@ -31,16 +31,19 @@ export default async function Page({ searchParams }: Props) {
   const isCheckerRole = access.role === "CHECKER";
   const userEmail = access.email?.toLowerCase().trim();
 
-  const [or, ir, cr] = await Promise.all([
+  const [or, ir, cr, wr] = await Promise.all([
     s.from("production_orders").select("*").order("order_date", { ascending: false }).limit(200),
     s.from("production_order_items").select("*").limit(1000),
     s.from("production_checks").select("*").order("check_date", { ascending: false }).limit(300),
+    s.from("workers").select("id, name, worker_code, department, position").limit(500),
   ]);
-  const e = [or.error, ir.error, cr.error].find(Boolean);
+  const e = [or.error, ir.error, cr.error, wr.error].find(Boolean);
   if (e) throw new Error(e.message);
 
   let orders = (or.data ?? []) as any[];
   let checks = (cr.data ?? []) as any[];
+  const workers = (wr.data ?? []) as any[];
+  const workerMap = new Map(workers.map((w) => [w.id, w]));
 
   // Scoping: Jika user login adalah CHECKER, fokuskan ke SPK dan input milik checker tersebut
   if (isCheckerRole && userEmail) {
@@ -182,10 +185,16 @@ export default async function Page({ searchParams }: Props) {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Operator #{o?.operator_worker_id} · Sisa penugasan <b>{qty(remain)} {i.unit_snapshot}</b> · Target/Produk {qty(i.qty_per_product_snapshot)}
-                        {o?.due_date ? ` · Target Selesai: ${o.due_date}` : ""}
-                      </p>
+                      {(() => {
+                        const op = workerMap.get(o?.operator_worker_id);
+                        const opText = op ? `${op.name} (${op.worker_code})` : `Operator #${o?.operator_worker_id}`;
+                        return (
+                          <p className="text-xs text-slate-500 mt-1">
+                            Operator: <b className="text-slate-800 font-bold">{opText}</b> · Sisa penugasan <b>{qty(remain)} {i.unit_snapshot}</b> · Target/Produk {qty(i.qty_per_product_snapshot)}
+                            {o?.due_date ? ` · Target Selesai: ${o.due_date}` : ""}
+                          </p>
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
@@ -229,8 +238,10 @@ export default async function Page({ searchParams }: Props) {
         <TableWrap>
           <thead>
             <tr>
-              <Th>Kode</Th>
+              <Th>Kode Pemeriksaan</Th>
               <Th>Tanggal</Th>
+              <Th>SPK & Pekerjaan</Th>
+              <Th>Operator</Th>
               <Th>Qty Sah</Th>
               <Th>Reject</Th>
               <Th>Status</Th>
@@ -240,30 +251,42 @@ export default async function Page({ searchParams }: Props) {
           <tbody>
             {checks.length === 0 ? (
               <tr>
-                <Td colSpan={6} className="text-center py-6 text-slate-400">
+                <Td colSpan={8} className="text-center py-6 text-slate-400">
                   Belum ada riwayat hasil pemeriksaan yang Anda input.
                 </Td>
               </tr>
             ) : (
-              checks.map((x: any) => (
-                <tr key={x.id}>
-                  <Td>{x.check_code}</Td>
-                  <Td>{x.check_date}</Td>
-                  <Td className="font-bold text-emerald-700">{qty(x.good_qty)}</Td>
-                  <Td className={Number(x.reject_qty) > 0 ? "font-bold text-rose-600" : ""}>{qty(x.reject_qty)}</Td>
-                  <Td>{x.status}</Td>
-                  <Td>
-                    {canOperate && x.status === "AKTIF" ? (
-                      <form action={cancelCheckerResultAction}>
-                        <input type="hidden" name="check_id" value={x.id} />
-                        <button className={dangerClass}>Batalkan</button>
-                      </form>
-                    ) : (
-                      "-"
-                    )}
-                  </Td>
-                </tr>
-              ))
+              checks.map((x: any) => {
+                const item = items.find((it) => it.id === x.order_item_id);
+                const order = item ? orderMap.get(item.order_id) : null;
+                const op = order ? workerMap.get(order.operator_worker_id) : null;
+                const opName = op ? `${op.name} (${op.worker_code})` : order?.operator_worker_id ? `Operator #${order.operator_worker_id}` : "-";
+
+                return (
+                  <tr key={x.id}>
+                    <Td className="font-mono text-xs font-bold text-slate-700">{x.check_code}</Td>
+                    <Td>{x.check_date}</Td>
+                    <Td>
+                      <div className="font-bold text-slate-900">{order?.spk_code || "-"}</div>
+                      <div className="text-xs text-slate-500">{item?.work_item_name_snapshot || "-"}</div>
+                    </Td>
+                    <Td className="font-medium text-slate-800">{opName}</Td>
+                    <Td className="font-bold text-emerald-700">{qty(x.good_qty)}</Td>
+                    <Td className={Number(x.reject_qty) > 0 ? "font-bold text-rose-600" : ""}>{qty(x.reject_qty)}</Td>
+                    <Td><Badge>{x.status}</Badge></Td>
+                    <Td>
+                      {canOperate && x.status === "AKTIF" ? (
+                        <form action={cancelCheckerResultAction}>
+                          <input type="hidden" name="check_id" value={x.id} />
+                          <button className={dangerClass}>Batalkan</button>
+                        </form>
+                      ) : (
+                        "-"
+                      )}
+                    </Td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </TableWrap>

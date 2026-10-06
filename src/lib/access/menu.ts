@@ -58,7 +58,9 @@ export const MENU_PERMISSION_BY_ID: Readonly<Record<string, string>> = {
   // 4. QC & Distribusi
   qc: "qc.view",
   stokBarangJadi: "stok_barang_jadi.view",
+  bundlingIsian: "bundling_isian.view",
   transferBarangJadi: "transfer_barang_jadi.view",
+  mitraMrWu: "mr_wu.view",
   barangLuar: "barang_luar.view",
   masterSet: "master_set.view",
   packingSet: "packing_set.view",
@@ -66,7 +68,7 @@ export const MENU_PERMISSION_BY_ID: Readonly<Record<string, string>> = {
   targetEmbarkasi: "target_embarkasi.view",
   pengirimanEmbarkasi: "pengiriman_embarkasi.view",
   rejectEmbarkasi: "reject_embarkasi.view",
-  pengirimanKlien: "stok_barang_jadi.view",
+  pengirimanKlien: "pengiriman_klien.view",
 
   // 5. SDM & Tenaga Kerja
   masterPekerja: "master_pekerja.view",
@@ -114,7 +116,7 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("masterBahan", "Master Bahan Baku"),
       item("masterBarangJadi", "Master Barang Jadi"),
       item("masterLokasi", "Master Lokasi Gudang & Rak"),
-      item("masterVendor", "Master Supplier & Vendor"),
+      item("masterVendor", "Master Supplier"),
       item("masterEmbarkasi", "Master Embarkasi"),
     ],
   },
@@ -153,7 +155,9 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
     children: [
       item("qc", "Quality Control (QC)"),
       item("stokBarangJadi", "Stok Barang Jadi"),
+      item("bundlingIsian", "Bundling Isian Koper"),
       item("transferBarangJadi", "Transfer Barang Jadi"),
+      item("mitraMrWu", "Portal Mitra MR WU"),
       item("barangLuar", "Penerimaan Barang Luar"),
       item("masterSet", "Master Set"),
       item("packingSet", "Packing Set"),
@@ -161,7 +165,6 @@ export const SMPT_MENU_TREE: readonly MenuEntry[] = [
       item("targetEmbarkasi", "Target Embarkasi"),
       item("pengirimanEmbarkasi", "Pengiriman & Tracking"),
       item("rejectEmbarkasi", "Reject & Kekurangan"),
-      item("pengirimanKlien", "Surat Jalan & Kirim Klien"),
     ],
   },
   {
@@ -237,7 +240,9 @@ export const SMPT_HAJI_MENU_TREE: readonly MenuEntry[] = [
     children: [
       item("qc", "Quality Control (QC)", "/dashboard/qc?category=HAJI"),
       item("stokBarangJadi", "Stok Barang Jadi"),
+      item("bundlingIsian", "Bundling Isian Koper"),
       item("transferBarangJadi", "Transfer Barang Jadi"),
+      item("mitraMrWu", "Portal Mitra MR WU"),
       item("masterSet", "Master Set"),
       item("packingSet", "Packing Set"),
       item("stokSet", "Stok Set"),
@@ -314,7 +319,7 @@ export const SMPT_GUDANG_MENU_TREE: readonly MenuEntry[] = [
     text: "Master Data Gudang",
     children: [
       item("masterBahan", "Master Bahan Baku"),
-      item("masterVendor", "Master Supplier & Vendor"),
+      item("masterVendor", "Master Supplier"),
       item("masterLokasi", "Master Lokasi Gudang & Rak"),
     ],
   },

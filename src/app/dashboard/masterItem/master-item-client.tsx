@@ -514,26 +514,19 @@ export function MasterItemCardActions({
   q: string;
 }) {
   return (
-    <div
-      className="flex items-center gap-1.5 ml-auto lg:ml-1"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className="flex items-center gap-1.5 ml-auto lg:ml-1">
       <span
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          e.stopPropagation();
-          const details = (e.currentTarget as HTMLElement).closest("details");
-          if (details) details.open = !details.open;
-        }}
-        className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs cursor-pointer select-none"
+        title="Klik untuk membuka/menutup form edit"
+        className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/80 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 group-open:bg-blue-600 group-open:text-white group-open:border-blue-600 transition shadow-2xs pointer-events-none select-none cursor-pointer"
       >
         ✏️ Edit ▾
       </span>
       {canWrite ? (
         <form
           action={deleteWorkItem}
+          onClick={(e) => e.stopPropagation()}
           onSubmit={(e) => {
+            e.stopPropagation();
             if (!confirm(`Yakin ingin menghapus item pekerjaan "${itemName}"?`)) {
               e.preventDefault();
             }

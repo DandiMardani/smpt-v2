@@ -13,8 +13,9 @@ import {
 import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
-import { cancelPoReceipt, cancelReceipt, createReceipt, receivePoReceipt, updateReceipt } from "./actions";
+import { cancelPoReceipt, cancelReceipt, createReceipt, receivePoReceipt, receiveSablonWip, updateReceipt } from "./actions";
 import { ManualReceiptForm } from "./manual-receipt-form";
+import { SablonReceiptForm, type SablonCompItem } from "./sablon-receipt-form";
 
 type Props = { searchParams: Promise<SearchParams> };
 type Material = {
@@ -72,7 +73,7 @@ export default async function Page({ searchParams }: Props) {
   const query = await searchParams;
   const supabase = await createClient();
 
-  const [materialsResult, receiptsResult, openPoResult] = await Promise.all([
+  const [materialsResult, receiptsResult, openPoResult, sablonLocRes, sablonBalancesRes, compsRes, prodsRes] = await Promise.all([
     supabase
       .from("materials")
       .select("id,material_code,name,standard_unit")
@@ -88,6 +89,10 @@ export default async function Page({ searchParams }: Props) {
     canReceivePo
       ? supabase.from("v_purchase_order_open_lines").select("purchase_order_line_id,purchase_order_id,po_number,supplier_name,material_id,material_code,material_name,ordered_quantity,purchase_unit,conversion_factor,ordered_stock_quantity,stock_unit,received_stock_quantity,outstanding_stock_quantity,lot_tracking_mode").order("purchase_order_id").order("purchase_order_line_id").limit(500)
       : Promise.resolve({ data: [], error: null }),
+    supabase.from("stock_locations").select("id,code").eq("code", "SABLON").single(),
+    supabase.from("stock_balances").select("cutting_component_id,quantity,location_id").eq("item_kind", "CUTTING_COMPONENT").gt("quantity", 0),
+    supabase.from("cutting_components").select("id,component_code,name,color,unit,product_id").eq("status", "AKTIF").order("component_code"),
+    supabase.from("project_products").select("id,name"),
   ]);
 
   if (materialsResult.error || receiptsResult.error || openPoResult.error) {
@@ -99,11 +104,30 @@ export default async function Page({ searchParams }: Props) {
   const openPoLines = (openPoResult.data ?? []) as OpenPoLine[];
   const materialMap = new Map(materials.map((material) => [material.id, material]));
 
+  const sablonLocId = sablonLocRes.data?.id;
+  const sablonBalanceMap = new Map<number, number>();
+  (sablonBalancesRes.data ?? []).forEach((b) => {
+    if (b.location_id === sablonLocId && b.cutting_component_id) {
+      sablonBalanceMap.set(b.cutting_component_id, Number(b.quantity));
+    }
+  });
+  const prodMap = new Map(((prodsRes.data ?? []) as { id: number; name: string }[]).map((p) => [p.id, p.name]));
+  const sablonCompItems: SablonCompItem[] = ((compsRes.data ?? []) as { id: number; component_code: string; name: string; color: string; unit: string; product_id: number | null }[]).map((c) => ({
+    id: c.id,
+    component_code: c.component_code,
+    name: c.name,
+    color: c.color,
+    unit: c.unit,
+    product_id: c.product_id,
+    product_name: c.product_id ? prodMap.get(c.product_id) : undefined,
+    qtyInSablon: sablonBalanceMap.get(c.id) || 0,
+  }));
+
   return (
     <MasterPageShell
       eyebrow="Gudang & Material"
       title="Barang Masuk Gudang"
-      description="Penerimaan Bahan Baku (Kain Roll / Aksesoris). Qty disimpan apa adanya, lalu stok otomatis dinormalisasi ke satuan standar Master Bahan."
+      description="Pintu Masuk Terpadu: Penerimaan Bahan Baku Supplier (Kain Roll / Aksesoris) dan Penerimaan Hasil Sablon (Kembali dari Subkontraktor)."
     >
       <Notice success={param(query, "success")} error={param(query, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
@@ -198,6 +222,18 @@ export default async function Page({ searchParams }: Props) {
             openPoLines={openPoLines}
             units={units}
             action={createReceipt}
+          />
+        </SectionCard>
+      ) : null}
+
+      {canWrite ? (
+        <SectionCard
+          title="🎨 Penerimaan Hasil Sablon (Kembali dari Subkontraktor)"
+          description="Pintu Masuk Hasil Sablon: Catat barang potongan yang selesai disablon dan kembali masuk ke pabrik. Saldo otomatis masuk ke Gudang Hasil (WIP) dengan status Selesai Sablon."
+        >
+          <SablonReceiptForm
+            components={sablonCompItems}
+            action={receiveSablonWip}
           />
         </SectionCard>
       ) : null}

@@ -129,3 +129,87 @@ export async function cancelSpkAction(f: FormData) {
   revalidatePath("/dashboard/setoran");
   redirectWithMessage(PATH, "success", "SPK berhasil DIBATALKAN.");
 }
+
+export async function editSpkAction(f: FormData) {
+  await requirePermission("spk.write");
+  const s = await createClient();
+
+  const orderId = Number(f.get("order_id"));
+  if (!orderId) redirectWithMessage(PATH, "error", "ID SPK tidak valid.");
+
+  // Check order status
+  const { data: order, error: oErr } = await s
+    .from("production_orders")
+    .select("id, spk_code, status, project_id, product_id")
+    .eq("id", orderId)
+    .single();
+
+  if (oErr || !order) {
+    redirectWithMessage(PATH, "error", "Data SPK tidak ditemukan.");
+  }
+
+  if (["SELESAI", "DIBATALKAN"].includes(order.status)) {
+    redirectWithMessage(PATH, "error", `SPK dengan status ${order.status} tidak dapat diedit.`);
+  }
+
+  // 1. Process Removed Items
+  const removedItemIds = f.getAll("remove_item_id").map(Number).filter((x) => x > 0);
+  for (const rItemId of removedItemIds) {
+    const { error: remErr } = await s.rpc("remove_production_order_item", {
+      p_order_id: orderId,
+      p_order_item_id: rItemId,
+    });
+    if (remErr) {
+      redirectWithMessage(PATH, "error", errorMessage(remErr, `Gagal menghapus item #${rItemId}.`));
+    }
+  }
+
+  // 2. Process Existing Items Qty Updates
+  const existingItemIds = f.getAll("existing_item_id").map(Number).filter((x) => x > 0);
+  for (const itemId of existingItemIds) {
+    if (removedItemIds.includes(itemId)) continue;
+
+    const workItemId = Number(f.get(`item_work_id_${itemId}`));
+    const newQty = Number(f.get(`item_qty_${itemId}`));
+
+    if (!Number.isFinite(newQty) || newQty <= 0) {
+      redirectWithMessage(PATH, "error", "Jumlah Qty penugasan harus lebih besar dari 0.");
+    }
+
+    if (workItemId > 0) {
+      const { error: updErr } = await s.rpc("add_production_order_item", {
+        p_order_id: orderId,
+        p_work_item_id: workItemId,
+        p_assigned_qty: newQty,
+      });
+      if (updErr) {
+        redirectWithMessage(PATH, "error", errorMessage(updErr, "Gagal memperbarui kuantiti item SPK."));
+      }
+    }
+  }
+
+  // 3. Process Newly Added Item (if any)
+  const newWorkItemId = Number(f.get("add_work_item_id"));
+  const newWorkItemQty = Number(f.get("add_work_item_qty"));
+  if (newWorkItemId > 0 && newWorkItemQty > 0) {
+    const { error: addErr } = await s.rpc("add_production_order_item", {
+      p_order_id: orderId,
+      p_work_item_id: newWorkItemId,
+      p_assigned_qty: newWorkItemQty,
+    });
+    if (addErr) {
+      redirectWithMessage(PATH, "error", errorMessage(addErr, "Gagal menambahkan item baru ke SPK."));
+    }
+  }
+
+  revalidatePath(PATH);
+  revalidatePath("/dashboard/borongan");
+  revalidatePath("/dashboard/setoran");
+  revalidatePath("/dashboard/produksi");
+
+  redirectWithMessage(
+    PATH,
+    "success",
+    `SPK ${order.spk_code} berhasil diperbarui. Checker terkait telah menerima tanda perubahan.`
+  );
+}

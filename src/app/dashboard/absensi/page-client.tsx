@@ -5,6 +5,7 @@ import SecureAttendanceImport from "@/components/attendance/secure-attendance-im
 import AttendanceManager, {
   type AttendanceRecordItem,
   type WorkerItem,
+  type FinalizedPayrollRun,
 } from "@/components/attendance/attendance-manager";
 import PayrollSettingsModal, {
   type PayrollSettingsMap,
@@ -462,6 +463,7 @@ export function AttendancePageClient({
   workers,
   attendance,
   settingsMap,
+  payrollRuns,
   canWrite,
   successParam,
   errorParam,
@@ -469,6 +471,7 @@ export function AttendancePageClient({
   workers: WorkerItem[];
   attendance: AttendanceRecordItem[];
   settingsMap: PayrollSettingsMap;
+  payrollRuns?: FinalizedPayrollRun[];
   canWrite: boolean;
   successParam?: string;
   errorParam?: string;
@@ -542,6 +545,7 @@ export function AttendancePageClient({
           workers={workers}
           canWrite={canWrite}
           shiftSettings={settingsMap}
+          payrollRuns={payrollRuns}
         />
       </Card>
     </PageShell>

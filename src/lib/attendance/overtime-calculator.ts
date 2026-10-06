@@ -13,6 +13,7 @@ export type ShiftOvertimeResult = {
   sundayBonusAmount: number;
   sundayMealAmount: number;
   fridayOvertimeNextWeek: boolean;
+  suggestedDayClass: "FULL_DAY" | "HALF_DAY";
   description: string;
 };
 
@@ -59,6 +60,40 @@ export function formatMinutesToHours(minutes: number): string {
  *   * Masuk Minggu = Lembur standar 8 jam + Uang Makan Rp 50.000
  *   * Lembur lewat 17:00 minimal 4 jam (pulang >= 21:00) = Tambahan Rp 17.500
  */
+/**
+ * Penentuan Klasifikasi Hari:
+ * - HALF DAY (Setengah Hari):
+ *   1. Masuk siang: jam masuk sekitar jam 12:00 (>= 11:30) dengan jadwal pokok 12:00 s/d 17:00 (atau s/d 15:00 Sabtu).
+ *      Kelebihan lewat 17:00 (atau lewat 15:00 Sabtu) TETAP dihitung sebagai lembur.
+ *   2. Masuk pagi tapi pulang siang (<= 12:30).
+ * - FULL DAY (Satu Hari Penuh):
+ *   1. Masuk pagi (08:00) pulang 17:00 di hari kerja (Senin - Jumat).
+ *   2. Masuk pagi (08:00) pulang 15:00 di hari Sabtu (jadwal resmi Sabtu memang 08:00 - 15:00, Full Day).
+ *   3. Masuk hari Minggu shift standar (08:00 - 17:00).
+ */
+export function determineDayClass(
+  attendanceDate: string,
+  actualIn?: string | null,
+  actualOut?: string | null
+): "FULL_DAY" | "HALF_DAY" {
+  const inMin = timeToMinutes(actualIn);
+  const outMin = timeToMinutes(actualOut);
+
+  if (inMin === null && outMin === null) return "FULL_DAY";
+
+  // 1. Masuk siang: jam masuk >= 11:30 (misal masuk jam 12:00)
+  if (inMin !== null && inMin >= 11 * 60 + 30) {
+    return "HALF_DAY";
+  }
+
+  // 2. Masuk pagi tapi pulang siang: jam keluar <= 12:30
+  if (inMin !== null && inMin < 10 * 60 && outMin !== null && outMin <= 12 * 60 + 30) {
+    return "HALF_DAY";
+  }
+
+  return "FULL_DAY";
+}
+
 export function calculateShiftOvertime(
   attendanceDate: string,
   actualIn?: string | null,
@@ -110,6 +145,8 @@ export function calculateShiftOvertime(
     ? Number(shiftSettings?.BULANAN_SUNDAY_MEAL ?? 50000)
     : 0;
 
+  const suggestedDayClass = determineDayClass(attendanceDate, actualIn, actualOut);
+
   // Jika admin menginput menit lembur manual secara eksplisit
   if (typeof manualOvertimeMinutes === "number" && manualOvertimeMinutes > 0) {
     const otMin = Math.round(manualOvertimeMinutes);
@@ -136,6 +173,7 @@ export function calculateShiftOvertime(
       sundayBonusAmount: sundayBonus,
       sundayMealAmount: sundayMeal,
       fridayOvertimeNextWeek: isFriday && otMin > 0,
+      suggestedDayClass,
       description: isSunday
         ? (isBulanan
             ? `Hari Minggu: ${formatMinutesToHours(otMin)} lembur + Uang Makan Rp 50.000${qualifies4h ? " + Tambahan Rp 17.500" : ""}`
@@ -175,6 +213,7 @@ export function calculateShiftOvertime(
         sundayBonusAmount: 0,
         sundayMealAmount: sundayMealDefault,
         fridayOvertimeNextWeek: false,
+        suggestedDayClass,
         description: otPast17 > 0
           ? `Minggu lembur 8 jam + lewat 17:00 (${formatMinutesToHours(otPast17)}) + Makan Minggu Rp 50rb${qualifies4h ? " + Tambahan Rp 17.500" : ""}`
           : "Hari Minggu: lembur standar 8 jam + Uang Makan Minggu Rp 50.000",
@@ -202,6 +241,7 @@ export function calculateShiftOvertime(
           sundayBonusAmount: sundayBonusDefault,
           sundayMealAmount: 0,
           fridayOvertimeNextWeek: false,
+          suggestedDayClass,
           description: calculatedOtMinutes > 0
             ? `Minggu masuk (08:00-17:00) + lembur lewat 17:00 ${formatMinutesToHours(calculatedOtMinutes)} + Tambahan Rp 20.000${qualifies4h ? " + Tambahan Rp 5.000" : ""}`
             : "Hari Minggu: shift standar (08:00 - 17:00) + Tambahan Minggu Rp 20.000 (lembur < 30 mnt diabaikan)",
@@ -222,6 +262,7 @@ export function calculateShiftOvertime(
           sundayBonusAmount: sundayBonusDefault,
           sundayMealAmount: 0,
           fridayOvertimeNextWeek: false,
+          suggestedDayClass,
           description: "Hari Minggu: shift standar (08:00 - 17:00) + Tambahan Minggu Rp 20.000",
         };
       }
@@ -231,24 +272,40 @@ export function calculateShiftOvertime(
     if (outMin !== null && outMin > standardOutMinutes) {
       const rawDiff = outMin - standardOutMinutes;
       calculatedOtMinutes = rawDiff >= minOtThreshold ? rawDiff : 0;
-      description = calculatedOtMinutes > 0
-        ? `Sabtu lembur lewat 15:00: ${formatMinutesToHours(calculatedOtMinutes)}`
-        : "Sabtu: pulang lewat jam 15:00 kurang dari 30 menit (lembur 0)";
+      if (suggestedDayClass === "HALF_DAY") {
+        description = calculatedOtMinutes > 0
+          ? `Sabtu Setengah Hari (12:00 s/d 15:00) + lembur lewat 15:00: ${formatMinutesToHours(calculatedOtMinutes)}`
+          : "Sabtu Setengah Hari (12:00 s/d 15:00), lembur < 30 mnt diabaikan";
+      } else {
+        description = calculatedOtMinutes > 0
+          ? `Sabtu lembur lewat 15:00: ${formatMinutesToHours(calculatedOtMinutes)}`
+          : "Sabtu: pulang lewat jam 15:00 kurang dari 30 menit (lembur 0)";
+      }
     } else {
       calculatedOtMinutes = 0;
-      description = "Sabtu jam normal (08:00 - 15:00), tidak ada lembur";
+      description = suggestedDayClass === "HALF_DAY"
+        ? "Sabtu Setengah Hari (12:00 s/d 15:00), tidak ada lembur"
+        : "Sabtu jam normal (08:00 - 15:00), tidak ada lembur";
     }
   } else {
     // Senin - Jumat: Pulang normal 17:00
     if (outMin !== null && outMin > standardOutMinutes) {
       const rawDiff = outMin - standardOutMinutes;
       calculatedOtMinutes = rawDiff >= minOtThreshold ? rawDiff : 0;
-      description = calculatedOtMinutes > 0
-        ? `${dayName} lembur lewat 17:00: ${formatMinutesToHours(calculatedOtMinutes)}`
-        : `${dayName}: pulang lewat 17:00 kurang dari 30 menit (lembur 0)`;
+      if (suggestedDayClass === "HALF_DAY") {
+        description = calculatedOtMinutes > 0
+          ? `Setengah Hari (12:00 s/d 17:00) + lembur lewat 17:00: ${formatMinutesToHours(calculatedOtMinutes)}`
+          : "Setengah Hari (12:00 s/d 17:00), lembur < 30 mnt diabaikan";
+      } else {
+        description = calculatedOtMinutes > 0
+          ? `${dayName} lembur lewat 17:00: ${formatMinutesToHours(calculatedOtMinutes)}`
+          : `${dayName}: pulang lewat 17:00 kurang dari 30 menit (lembur 0)`;
+      }
     } else {
       calculatedOtMinutes = 0;
-      description = `${dayName} jam normal (08:00 - 17:00), tidak ada lembur`;
+      description = suggestedDayClass === "HALF_DAY"
+        ? "Setengah Hari (12:00 s/d 17:00), tidak ada lembur"
+        : `${dayName} jam normal (08:00 - 17:00), tidak ada lembur`;
     }
   }
 
@@ -274,6 +331,7 @@ export function calculateShiftOvertime(
     sundayBonusAmount: sundayBonus,
     sundayMealAmount: sundayMeal,
     fridayOvertimeNextWeek,
+    suggestedDayClass,
     description: qualifies4h
       ? `${description} + Tambahan ${isBulanan ? "Rp 17.500" : "Rp 5.000"}`
       : description,

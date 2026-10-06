@@ -36,12 +36,12 @@ export default async function MasterVendorPage({ searchParams }: Props) {
   const materialMap = new Map(materials.map((row) => [row.id, row]));
 
   return (
-    <PageShell eyebrow="Master Data" title="Master Supplier / Vendor" description="Satu master untuk supplier pembelian dan vendor operasional. Dilengkapi fitur edit data supplier, rekening, dan relasi material.">
+    <PageShell eyebrow="Master Data" title="Master Supplier" description="Satu master untuk supplier bahan baku, perlengkapan, dan barang luar. Dilengkapi fitur edit data supplier, rekening, dan relasi material.">
       <Notice success={param(query, "success")} error={param(query, "error")} />
       {!canWrite ? <ReadOnly /> : null}
 
       {canWrite ? (
-        <Card title="Tambah Supplier / Vendor">
+        <Card title="Tambah Supplier">
           <form action={saveSupplierAction} className="grid gap-3 md:grid-cols-3">
             <Field label="Nama"><input name="name" required className={inputClass} /></Field>
             <Field label="PIC"><input name="pic_name" className={inputClass} /></Field>
@@ -88,8 +88,8 @@ export default async function MasterVendorPage({ searchParams }: Props) {
         </Card>
       ) : null}
 
-      <Card title={`Daftar Supplier / Vendor (${vendors.length})`}>
-        {vendors.length === 0 ? <Empty>Belum ada Supplier/Vendor.</Empty> : (
+      <Card title={`Daftar Supplier (${vendors.length})`}>
+        {vendors.length === 0 ? <Empty>Belum ada Supplier.</Empty> : (
           <div className="space-y-3">
             {vendors.map((x) => (
               <details key={x.id} className="group rounded-xl border border-gray-200 bg-white p-4 shadow-2xs hover:border-gray-300 transition">

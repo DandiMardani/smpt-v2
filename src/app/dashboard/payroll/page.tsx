@@ -301,10 +301,25 @@ export default async function Page({ searchParams }: Props) {
           📥 Export Slip Bulanan
         </a>
         <a
-          href={`/api/export/xlsx?report=operator_payroll_slips&run_id=${operatorRuns[0]?.id ?? ""}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-xs font-semibold text-violet-800 shadow-xs hover:bg-violet-100 transition"
+          href={`/api/export/xlsx?report=operator_payroll_slips&price_type=operator&run_id=${operatorRuns[0]?.id ?? ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3.5 py-1.5 text-xs font-semibold text-violet-900 shadow-xs hover:bg-violet-100 transition"
+          title="Slip Gaji Riil yang dibayarkan ke tukang jahit (Harga Operator · Gabungan Paspor + Ransel)"
         >
-          📥 Export Slip Borongan
+          💰 Export Upah Real Operator (Gabungan)
+        </a>
+        <a
+          href={`/api/export/xlsx?report=operator_payroll_slips&price_type=pengajuan&run_id=${operatorRuns[0]?.id ?? ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-900 shadow-xs hover:bg-emerald-100 transition"
+          title="Rekap Pengajuan Pencairan Dana (Harga Pengajuan · Pisah Paspor & Ransel · Termasuk Pekerja Harian)"
+        >
+          📑 Export Rekap Pengajuan (Per Produk)
+        </a>
+        <a
+          href={`/api/export/xlsx?report=operator_payroll_slips&run_id=${operatorRuns[0]?.id ?? ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-1.5 text-xs font-semibold text-indigo-800 shadow-xs hover:bg-indigo-100 transition"
+          title="Export Lengkap: Upah Real + Pengajuan Paspor + Pengajuan Ransel + Margin Kas Jahit"
+        >
+          📊 Export Lengkap + Margin
         </a>
       </div>
 

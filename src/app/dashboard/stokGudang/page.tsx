@@ -12,7 +12,8 @@ import { Badge, FlowNote, Metric } from "@/components/operations/ops-ui";
 import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
-import { moveWip } from "./actions";
+import { MonitoringMaterialTable, type MonitoringRow } from "./monitoring-table";
+import { WipListClient } from "./wip-list-client";
 
 type Props = { searchParams: Promise<SearchParams> };
 type L = { id: number; code: string; name: string; physical_group: string };
@@ -26,53 +27,41 @@ type B = {
   product_id: number | null;
   quantity: number | string;
 };
-type M = { id: number; material_code: string; name: string; standard_unit: string };
+type M = { id: number; material_code: string; name: string; standard_unit: string; category?: string };
 type C = { id: number; component_code: string; name: string; color: string; unit: string };
 type P = { id: number; name: string };
 type PP = { id: number; name: string };
-
-function Move({ b, action, label, secondary = false }: { b: B; action: string; label: string; secondary?: boolean }) {
-  return (
-    <form action={moveWip} className="grid gap-2 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 sm:grid-cols-[1fr_1fr_auto]">
-      <input type="hidden" name="component_id" value={b.cutting_component_id ?? ""} />
-      <input type="hidden" name="product_id" value={b.product_id ?? ""} />
-      <input type="hidden" name="action" value={action} />
-      <Field label="Tanggal">
-        <input name="transaction_date" type="date" required className={inputClass} />
-      </Field>
-      <Field label="Qty">
-        <input name="quantity" type="number" min="0.0001" max={Number(b.quantity)} step="0.0001" required className={inputClass} />
-      </Field>
-      <div className="flex items-end">
-        <button className={secondary ? secondaryButtonClass : primaryButtonClass}>{label}</button>
-      </div>
-      <input name="notes" placeholder="Keterangan" className={`${inputClass} sm:col-span-3`} />
-    </form>
-  );
-}
 
 export default async function Page({ searchParams }: Props) {
   const a = await requirePermission("stok_gudang.view");
   const canWrite = a.permissionCodes.includes("stok_gudang.write");
   const q = await searchParams;
+  const currentTab = param(q, "tab") || "stok";
   const s = await createClient();
 
-  const [lr, br, mr, cr, pr, ppr] = await Promise.all([
+  const [lr, br, mr, cr, pr, ppr, wrr, bmr, slr] = await Promise.all([
     s.from("stock_locations").select("id,code,name,physical_group"),
     s.from("stock_balances").select("id,item_kind,material_id,cutting_component_id,location_id,project_id,product_id,quantity").gt("quantity", 0),
-    s.from("materials").select("id,material_code,name,standard_unit"),
+    s.from("materials").select("id,material_code,name,standard_unit,category"),
     s.from("cutting_components").select("id,component_code,name,color,unit"),
     s.from("projects").select("id,name"),
     s.from("project_products").select("id,name"),
+    s.from("warehouse_receipts").select("material_id,quantity"),
+    s.from("bom_requirements").select("material_id,product_id,qty_per_unit").eq("status", "AKTIF").eq("component_type", "BAHAN"),
+    s.from("stock_ledger_entries").select("id,event_id,item_kind,cutting_component_id,location_id,movement_kind,quantity_delta,unit_snapshot,notes,created_at").eq("item_kind", "CUTTING_COMPONENT").order("id", { ascending: false }).limit(1000),
   ]);
 
-  const e = [lr.error, br.error, mr.error, cr.error, pr.error, ppr.error].find(Boolean);
+  const e = [lr.error, br.error, mr.error, cr.error, pr.error, ppr.error, slr.error].find(Boolean);
   if (e) throw new Error(e.message);
 
   const locs = (lr.data ?? []) as L[];
   const rows = (br.data ?? []) as B[];
+  const materials = (mr.data ?? []) as M[];
+  const receipts = (wrr.data ?? []) as { material_id: number; quantity: number | string }[];
+  const boms = (bmr.data ?? []) as { material_id: number; product_id: number; qty_per_unit: number | string }[];
+
   const lm = new Map(locs.map((x) => [x.id, x]));
-  const mm = new Map(((mr.data ?? []) as M[]).map((x) => [x.id, x]));
+  const mm = new Map(materials.map((x) => [x.id, x]));
   const cm = new Map(((cr.data ?? []) as C[]).map((x) => [x.id, x]));
   const pm = new Map(((pr.data ?? []) as P[]).map((x) => [x.id, x]));
   const ppm = new Map(((ppr.data ?? []) as PP[]).map((x) => [x.id, x]));
@@ -80,92 +69,167 @@ export default async function Page({ searchParams }: Props) {
   const raw = rows.filter((x) => lm.get(x.location_id)?.code === "GUDANG_BAHAN");
   const wip = rows.filter((x) => lm.get(x.location_id)?.physical_group === "GUDANG_HASIL");
 
+  // Sum total masuk per material
+  const totalMasukMap = new Map<number, number>();
+  receipts.forEach((r) => {
+    totalMasukMap.set(r.material_id, (totalMasukMap.get(r.material_id) || 0) + Number(r.quantity));
+  });
+
+  // Calculate monitoring per material
+  const targetProduction = 22600; // Asumsi paket proyek haji penuh
+
+  // Specs for Tas Paspor & Ransel (products 3 & 4) and Lapisan (products 1 & 2)
+  const specPasporRanselMap = new Map<number, number>();
+  const specLapisanMap = new Map<number, number>();
+
+  boms.forEach((b) => {
+    if (!b.material_id) return;
+    const qVal = Number(b.qty_per_unit || 0);
+    if ([3, 4].includes(b.product_id)) {
+      specPasporRanselMap.set(b.material_id, (specPasporRanselMap.get(b.material_id) || 0) + qVal);
+    } else if ([1, 2].includes(b.product_id)) {
+      specLapisanMap.set(b.material_id, (specLapisanMap.get(b.material_id) || 0) + qVal);
+    }
+  });
+
+  const pasporRanselCodes = [
+    "A010", "A011", "A015", "AB03", "AB01", "A019", "A020", "A023", "A024",
+    "A026", "A028", "A029", "A031", "A032", "A033", "A035", "B010"
+  ];
+  const lapisanCodes = [
+    "A005", "AB02", "A003", "A002", "A006", "A008", "A004", "A034", "A009"
+  ];
+
+  const monitoringRows: MonitoringRow[] = [];
+
+  materials.forEach((m) => {
+    let group = "MATERIAL LAINNYA";
+    let spec = 0;
+
+    if (pasporRanselCodes.includes(m.material_code)) {
+      group = "TAS PASPORT + TAS RANSEL";
+      spec = specPasporRanselMap.get(m.id) || 0;
+    } else if (lapisanCodes.includes(m.material_code)) {
+      group = "LAPISAN KOPER / HAJI";
+      spec = specLapisanMap.get(m.id) || 0;
+    } else {
+      spec = (specPasporRanselMap.get(m.id) || 0) + (specLapisanMap.get(m.id) || 0);
+    }
+
+    const masuk = totalMasukMap.get(m.id) || 0;
+    const butuh = Math.round(spec * targetProduction);
+    const selisih = masuk - butuh;
+
+    if (masuk > 0 || butuh > 0 || pasporRanselCodes.includes(m.material_code) || lapisanCodes.includes(m.material_code)) {
+      monitoringRows.push({
+        materialId: m.id,
+        materialCode: m.material_code,
+        name: m.name,
+        unit: m.standard_unit,
+        categoryGroup: group,
+        specPerPcs: Number(spec.toFixed(4)),
+        totalMasuk: masuk,
+        totalKebutuhan: butuh,
+        selisih,
+        status: selisih < 0 ? "DEFISIT" : selisih > 0 ? "SURPLUS" : "SESUAI",
+      });
+    }
+  });
+
   return (
     <MasterPageShell
       eyebrow="Gudang & Material"
-      title="Stok Gudang"
-      description="Saldo cepat dari projection; histori sumber tetap immutable stock ledger."
+      title={currentTab === "monitoring" ? "Monitoring Material Proyek" : "Stok Gudang Material"}
+      description={
+        currentTab === "monitoring"
+          ? "Perbandingan langsung antara Total Kebutuhan Proyek (BOM) dengan Realisasi Barang Masuk Gudang (Surplus / Defisit)."
+          : "Saldo cepat stok fisik bahan baku di rak dan barang dalam proses (WIP) pabrik."
+      }
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
-      <FlowNote>
-        Gudang Hasil tetap satu custody fisik, dengan state logis: belum ditentukan, untuk Sablon, dan selesai Sablon.
-      </FlowNote>
+      {currentTab === "monitoring" ? (
+        <MonitoringMaterialTable rows={monitoringRows} targetProduction={targetProduction} />
+      ) : (
+        <>
+          <FlowNote>
+            Gudang Hasil tetap satu custody fisik, dengan state logis: belum ditentukan, untuk Sablon, dan selesai Sablon.
+          </FlowNote>
 
-      <div className="mb-3">
-        <a href="/dashboard/stokGudang/rollLot" className={secondaryButtonClass}>
-          Kelola Stock Roll / Lot
-        </a>
-      </div>
+          <div className="mb-3">
+            <a href="/dashboard/stokGudang/rollLot" className={secondaryButtonClass}>
+              Kelola Stock Roll / Lot
+            </a>
+          </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Metric label="Jenis Bahan" value={raw.length} />
-        <Metric label="Baris WIP Gudang Hasil" value={wip.length} />
-      </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Metric label="Jenis Bahan" value={raw.length} />
+            <Metric label="Baris WIP Gudang Hasil" value={wip.length} />
+          </div>
 
-      <SectionCard title="Gudang Bahan">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {raw.map((b) => {
-            const m = b.material_id ? mm.get(b.material_id) : undefined;
-            return (
-              <div key={b.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-                <b className="font-bold text-slate-900">{m?.material_code} · {m?.name}</b>
-                <p className="mt-2 text-2xl font-bold text-blue-600">
-                  {formatNumber(b.quantity)} <span className="text-sm font-normal text-slate-500">{m?.standard_unit}</span>
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </SectionCard>
-
-      <SectionCard title="Gudang Hasil / WIP">
-        <div className="space-y-4">
-          {wip.map((b) => {
-            const c = b.cutting_component_id ? cm.get(b.cutting_component_id) : undefined;
-            const l = lm.get(b.location_id);
-            return (
-              <div key={b.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-                <div className="flex flex-wrap justify-between gap-3">
-                  <div>
-                    <b className="font-bold text-slate-900">
-                      {c?.component_code} · {c?.name}{c?.color ? ` / ${c.color}` : ""}
-                    </b>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {b.project_id ? pm.get(b.project_id)?.name : "-"} · {b.product_id ? ppm.get(b.product_id)?.name : "-"}
+          <SectionCard title="Gudang Bahan">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {raw.map((b) => {
+                const m = b.material_id ? mm.get(b.material_id) : undefined;
+                return (
+                  <div key={b.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
+                    <b className="font-bold text-slate-900">{m?.material_code} · {m?.name}</b>
+                    <p className="mt-2 text-2xl font-bold text-blue-600">
+                      {formatNumber(b.quantity)} <span className="text-sm font-normal text-slate-500">{m?.standard_unit}</span>
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    <Badge>{l?.name}</Badge>
-                    <Badge>{formatNumber(b.quantity)} {c?.unit}</Badge>
-                  </div>
-                </div>
+                );
+              })}
+            </div>
+          </SectionCard>
 
-                {canWrite ? (
-                  <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                    {l?.code === "GUDANG_HASIL_BELUM" ? (
-                      <>
-                        <Move b={b} action="TANDAI_SABLON" label="Tandai untuk Sablon" />
-                        <Move b={b} action="CUTTING_KE_SIAP_PRODUKSI" label="Kirim ke Siap Produksi" />
-                      </>
-                    ) : null}
-                    {l?.code === "GUDANG_HASIL_SABLON" ? (
-                      <>
-                        <Move b={b} action="BATAL_TANDA_SABLON" label="Batalkan Tanda" secondary />
-                        <Move b={b} action="KIRIM_SABLON" label="Kirim ke Sablon" />
-                      </>
-                    ) : null}
-                    {l?.code === "GUDANG_HASIL_SELESAI_SABLON" ? (
-                      <Move b={b} action="SABLON_KE_SIAP_PRODUKSI" label="Kirim ke Siap Produksi" />
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </SectionCard>
+          <SectionCard
+            title={`Gudang Hasil / WIP (${wip.length})`}
+            description="Pantau barang potongan hasil cutting. Buka form mutasi untuk mengalirkan ke Sablon atau Siap Produksi, serta cek riwayat log pergerakan."
+          >
+            <WipListClient
+              items={wip.map((b) => {
+                const c = b.cutting_component_id ? cm.get(b.cutting_component_id) : undefined;
+                const l = lm.get(b.location_id);
+                return {
+                  id: b.id,
+                  cutting_component_id: b.cutting_component_id,
+                  location_id: b.location_id,
+                  project_id: b.project_id,
+                  product_id: b.product_id,
+                  quantity: b.quantity,
+                  component_code: c?.component_code,
+                  component_name: c?.name,
+                  component_color: c?.color,
+                  component_unit: c?.unit,
+                  location_code: l?.code,
+                  location_name: l?.name,
+                  project_name: b.project_id ? pm.get(b.project_id)?.name : undefined,
+                  product_name: b.product_id ? ppm.get(b.product_id)?.name : undefined,
+                };
+              })}
+              ledgerEntries={((slr.data ?? []) as any[]).map((e) => {
+                const l = lm.get(e.location_id);
+                return {
+                  id: e.id,
+                  event_id: e.event_id,
+                  cutting_component_id: e.cutting_component_id,
+                  location_id: e.location_id,
+                  movement_kind: e.movement_kind,
+                  quantity_delta: Number(e.quantity_delta),
+                  unit_snapshot: e.unit_snapshot,
+                  notes: e.notes,
+                  created_at: e.created_at,
+                  location_code: l?.code,
+                  location_name: l?.name,
+                };
+              })}
+              canWrite={canWrite}
+            />
+          </SectionCard>
+        </>
+      )}
     </MasterPageShell>
   );
 }

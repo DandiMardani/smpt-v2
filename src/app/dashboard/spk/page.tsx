@@ -22,7 +22,7 @@ export default async function Page({ searchParams }: Props) {
     : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
   const s = await createClient();
 
-  const [pr, ppr, wr, ir, or, oir, checkerRes] = await Promise.all([
+  const [pr, ppr, wr, ir, or, oir, checkerRes, checksRes] = await Promise.all([
     s.from("projects").select("id, name, status, product_category").order("name").limit(300),
     s.from("project_products").select("id, project_id, name, target_production, status").eq("status", "AKTIF").order("name").limit(500),
     s.from("workers").select("id, worker_code, name, department, position, pay_system, status").eq("status", "AKTIF").order("name").limit(500),
@@ -30,9 +30,10 @@ export default async function Page({ searchParams }: Props) {
     s.from("production_orders").select("*").order("order_date", { ascending: false }).limit(200),
     s.from("production_order_items").select("*").limit(2000),
     s.rpc("smpt_spk_checker_options"),
+    s.from("production_checks").select("order_item_id, good_qty, reject_qty, status").eq("status", "AKTIF").limit(3000),
   ]);
 
-  const err = [pr.error, ppr.error, wr.error, ir.error, or.error, oir.error, checkerRes.error].find(Boolean);
+  const err = [pr.error, ppr.error, wr.error, ir.error, or.error, oir.error, checkerRes.error, checksRes.error].find(Boolean);
   if (err) throw new Error(err.message);
 
   const allProjectsRaw = (pr.data ?? []) as any[];
@@ -102,24 +103,20 @@ export default async function Page({ searchParams }: Props) {
 
   const rawOrders = (or.data ?? []) as any[];
   const rawItems = (oir.data ?? []) as any[];
+  const rawChecks = (checksRes.data ?? []) as any[];
+
+  const checkedItemIds = new Set(
+    rawChecks
+      .filter((c: any) => Number(c.good_qty || 0) + Number(c.reject_qty || 0) > 0)
+      .map((c: any) => Number(c.order_item_id))
+  );
 
   const filteredRawOrders = categoryParam
     ? rawOrders.filter((o) => projectCategoryMap.get(o.project_id) === categoryParam)
     : rawOrders;
 
-  const orders: SpkOrder[] = filteredRawOrders.map((o) => ({
-    id: o.id,
-    spk_code: o.spk_code,
-    order_date: o.order_date,
-    due_date: o.due_date,
-    status: o.status,
-    project_id: o.project_id,
-    product_id: o.product_id,
-    operator_worker_id: o.operator_worker_id,
-    checker_email: o.checker_email,
-    supervisor_worker_id: o.supervisor_worker_id,
-    notes: o.notes,
-    items: rawItems
+  const orders: SpkOrder[] = filteredRawOrders.map((o) => {
+    const orderItems = rawItems
       .filter((i) => i.order_id === o.id)
       .map((i) => ({
         id: i.id,
@@ -131,8 +128,25 @@ export default async function Page({ searchParams }: Props) {
         operator_price_snapshot: i.operator_price_snapshot,
         is_final_output_snapshot: i.is_final_output_snapshot,
         status: i.status,
-      })),
-  }));
+        has_checks: checkedItemIds.has(Number(i.id)),
+      }));
+
+    return {
+      id: o.id,
+      spk_code: o.spk_code,
+      order_date: o.order_date,
+      due_date: o.due_date,
+      status: o.status,
+      project_id: o.project_id,
+      product_id: o.product_id,
+      operator_worker_id: o.operator_worker_id,
+      checker_email: o.checker_email,
+      supervisor_worker_id: o.supervisor_worker_id,
+      notes: o.notes,
+      has_checks: orderItems.some((i) => i.has_checks),
+      items: orderItems,
+    };
+  });
 
   const pageEyebrow =
     categoryParam === "HAJI"

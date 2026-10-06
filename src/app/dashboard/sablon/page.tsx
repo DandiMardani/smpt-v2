@@ -12,6 +12,7 @@ import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
 import { returnToWarehouse } from "./actions";
+import { SablonSubkonMonitoring } from "./sablon-subkon-monitoring";
 
 type Props = { searchParams: Promise<SearchParams> };
 type L = { id: number; code: string };
@@ -62,12 +63,15 @@ export default async function Page({ searchParams }: Props) {
         Tidak ada Sablon → Produksi langsung. Gudang tetap pusat custody antarbagian.
       </FlowNote>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Metric label="WIP di Sablon" value={rows.length} />
-        <Metric label="Jalur Keluar" value="Kembali ke Gudang" />
-      </div>
+      {/* DASHBOARD MONITORING SUPPLIER SABLON (BUARAN & PABRIK MITRA MR WU) */}
+      <SectionCard
+        title="📊 Monitoring Supplier Sablon (Buaran & Pabrik Mitra MR WU)"
+        description="Pantau alur kain potongan haji & garuda yang dikirim ke supplier sablon, penerimaan hasil sablon, serta aksesoris cetak jadi yang dialirkan ke pabrik mitra kerjasama MR WU."
+      >
+        <SablonSubkonMonitoring />
+      </SectionCard>
 
-      <SectionCard title="Stok Fisik di Sablon">
+      <SectionCard title="Stok Fisik di Sablon (Aktif)">
         <div className="space-y-3">
           {rows.length === 0 ? <p className="text-sm text-slate-500">Belum ada WIP di Sablon.</p> : null}
           {rows.map((x) => {

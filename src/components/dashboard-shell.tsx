@@ -12,6 +12,7 @@ import {
 } from "react";
 import { logout } from "@/app/auth/actions";
 import type { MenuEntry, MenuGroupChild } from "@/lib/access/menu";
+import { AdminNotificationBell } from "@/components/navigation/admin-notification-bell";
 
 type UserProfile = {
   displayName: string;
@@ -191,7 +192,6 @@ export function DashboardShell({
 }: Props) {
   const pathname = usePathname();
 
-  const [workspace, setWorkspace] = useState<"ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM">("ALL");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [contentWide, setContentWide] = useState<boolean>(true);
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
@@ -211,19 +211,6 @@ export function DashboardShell({
 
   useEffect(() => {
     try {
-      const savedWorkspace = localStorage.getItem("smpt_workspace");
-      if (
-        savedWorkspace === "ALL" ||
-        savedWorkspace === "HAJI" ||
-        savedWorkspace === "REGULER" ||
-        savedWorkspace === "GUDANG" ||
-        savedWorkspace === "SDM"
-      ) {
-        setWorkspace(savedWorkspace);
-        document.cookie = `smpt_workspace=${savedWorkspace}; path=/; max-age=31536000; SameSite=Lax`;
-      } else {
-        document.cookie = `smpt_workspace=ALL; path=/; max-age=31536000; SameSite=Lax`;
-      }
       const savedCollapsed = localStorage.getItem("smpt_sidebar_collapsed");
       if (savedCollapsed !== null) {
         setSidebarCollapsed(savedCollapsed === "true");
@@ -235,44 +222,18 @@ export function DashboardShell({
     } catch {}
   }, []);
 
-  const handleWorkspaceChange = useCallback((mode: "ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM") => {
-    setWorkspace(mode);
-    try {
-      localStorage.setItem("smpt_workspace", mode);
-      document.cookie = `smpt_workspace=${mode}; path=/; max-age=31536000; SameSite=Lax`;
-    } catch {}
-  }, []);
-
   const isLinkActive = useCallback((href: string) => {
     const [hrefPath] = href.split("?");
     return pathname === hrefPath;
   }, [pathname]);
 
-  const getNextWorkspace = useCallback(
-    (current: "ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM"): "ALL" | "REGULER" | "HAJI" | "GUDANG" | "SDM" => {
-      if (current === "ALL") return "REGULER";
-      if (current === "REGULER") return "HAJI";
-      if (current === "HAJI") return "GUDANG";
-      if (current === "GUDANG") return "SDM";
-      return "ALL";
-    },
-    []
-  );
-
   const effectiveMenuEntries: MenuEntry[] = useMemo(() => {
-    if (workspace === "ALL" && allEntries && allEntries.length > 0) return allEntries;
-    if (workspace === "REGULER" && regulerEntries && regulerEntries.length > 0) return regulerEntries;
-    if (workspace === "HAJI" && hajiEntries && hajiEntries.length > 0) return hajiEntries;
-    if (workspace === "GUDANG" && gudangEntries && gudangEntries.length > 0) return gudangEntries;
-    if (workspace === "SDM" && sdmEntries && sdmEntries.length > 0) return sdmEntries;
     return allEntries && allEntries.length > 0 ? allEntries : menuEntries;
-  }, [workspace, allEntries, regulerEntries, hajiEntries, gudangEntries, sdmEntries, menuEntries]);
+  }, [allEntries, menuEntries]);
 
   const mobileMenuEntries: MenuEntry[] = useMemo(() => {
     const q = mobileFilter.trim().toLowerCase();
-    const sourceEntries = q
-      ? (allEntries && allEntries.length > 0 ? allEntries : effectiveMenuEntries)
-      : effectiveMenuEntries;
+    const sourceEntries = allEntries && allEntries.length > 0 ? allEntries : effectiveMenuEntries;
     if (!q) return sourceEntries;
 
     return sourceEntries
@@ -536,72 +497,31 @@ export function DashboardShell({
           )}
         </div>
 
-        {/* Desktop Workspace Mode Switcher */}
-        {!sidebarCollapsed ? (
-          <div className="border-b border-slate-100 bg-slate-50/70 p-2">
-            <div className="grid grid-cols-5 gap-1 rounded-xl bg-slate-200/70 p-1 text-[10px] font-bold">
-              <button
-                type="button"
-                onClick={() => handleWorkspaceChange("ALL")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "ALL" ? "bg-blue-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <span>🌐</span>
-                <span className="text-[9px]">Semua</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleWorkspaceChange("REGULER")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "REGULER" ? "bg-indigo-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <span>🎒</span>
-                <span className="text-[9px]">Reguler</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleWorkspaceChange("HAJI")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "HAJI" ? "bg-emerald-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <span>🕋</span>
-                <span className="text-[9px]">Haji</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleWorkspaceChange("GUDANG")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "GUDANG" ? "bg-sky-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <span>📦</span>
-                <span className="text-[9px]">Gudang</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleWorkspaceChange("SDM")}
-                className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                  workspace === "SDM" ? "bg-amber-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <span>👥</span>
-                <span className="text-[9px]">SDM</span>
-              </button>
+        {/* Quick Search on Desktop Sidebar */}
+        {!sidebarCollapsed && (
+          <div className="border-b border-slate-100 bg-slate-50/70 p-2.5">
+            <div className="relative">
+              <input
+                type="text"
+                value={sidebarFilter}
+                onChange={(e) => setSidebarFilter(e.target.value)}
+                placeholder="Cari menu & modul..."
+                className="w-full rounded-xl border border-slate-200 bg-white pl-8 pr-7 py-1.5 text-xs font-medium text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <svg className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              {sidebarFilter && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarFilter("")}
+                  className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 text-xs"
+                >
+                  ✕
+                </button>
+              )}
             </div>
-          </div>
-        ) : (
-          <div className="flex justify-center border-b border-slate-100 py-2">
-            <button
-              type="button"
-              onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
-              title={`Beralih mode (${workspace})`}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold shadow-xs transition"
-            >
-              {workspace === "ALL" ? "🌐" : workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
-            </button>
           </div>
         )}
 
@@ -628,10 +548,16 @@ export function DashboardShell({
                   );
                 }
 
+                const isGroupActive = entry.children.some((child) => {
+                  if (child.type === "item") return isLinkActive(child.href);
+                  return (child as any).children?.some((sub: any) => isLinkActive(sub.href));
+                });
+                const isGroupOpen = Boolean(sidebarFilter) || (openGroups[entry.id] ?? isGroupActive);
+
                 return (
                   <details
                     key={entry.id}
-                    open={Boolean(sidebarFilter) || (openGroups[entry.id] ?? true)}
+                    open={isGroupOpen}
                     onToggle={(e) => {
                       const isOpen = e.currentTarget.open;
                       setOpenGroups((prev) => ({ ...prev, [entry.id]: isOpen }));
@@ -643,9 +569,14 @@ export function DashboardShell({
                         <span className="text-slate-400 group-hover/group:text-slate-600">{getCategoryIcon(entry.id, "h-4 w-4")}</span>
                         <span>{entry.text}</span>
                       </div>
-                      <svg className="h-3.5 w-3.5 text-slate-400 transition-transform duration-200 group-open/group:rotate-90" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                      </svg>
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-400 group-hover/group:bg-slate-200 group-hover/group:text-slate-600">
+                          {entry.children.length}
+                        </span>
+                        <svg className="h-3.5 w-3.5 text-slate-400 transition-transform duration-200 group-open/group:rotate-90" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                        </svg>
+                      </div>
                     </summary>
 
                     <div className="mt-1 space-y-0.5 border-l-2 border-slate-200/80 pl-2 ml-4">
@@ -778,16 +709,8 @@ export function DashboardShell({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {/* Workspace Pill */}
-              <button
-                type="button"
-                onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
-                title={`Beralih mode: ${workspace}`}
-                className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-100"
-              >
-                <span>{workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}</span>
-                <span className="hidden sm:inline">{workspace}</span>
-              </button>
+              {/* Notification Bell with Tracking Flyout */}
+              <AdminNotificationBell userRole={userProfile.role} />
 
               {/* User Avatar */}
               <Link
@@ -854,63 +777,6 @@ export function DashboardShell({
               </button>
             </div>
 
-            {/* 4 Tombol Pilihan Ruang Kerja */}
-            <div className="p-3 bg-slate-50/80 border-b border-slate-100">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 px-0.5">Ruang Kerja Aktif:</p>
-              <div className="grid grid-cols-5 gap-1 rounded-xl bg-slate-200/60 p-1 text-[10px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => handleWorkspaceChange("ALL")}
-                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                    workspace === "ALL" ? "bg-blue-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <span>🌐</span>
-                  <span className="text-[9px]">Semua</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleWorkspaceChange("REGULER")}
-                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                    workspace === "REGULER" ? "bg-indigo-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <span>🎒</span>
-                  <span className="text-[9px]">Reguler</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleWorkspaceChange("HAJI")}
-                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                    workspace === "HAJI" ? "bg-emerald-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <span>🕋</span>
-                  <span className="text-[9px]">Haji</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleWorkspaceChange("GUDANG")}
-                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                    workspace === "GUDANG" ? "bg-sky-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <span>📦</span>
-                  <span className="text-[9px]">Gudang</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleWorkspaceChange("SDM")}
-                  className={`flex flex-col items-center justify-center py-1.5 rounded-lg transition-all ${
-                    workspace === "SDM" ? "bg-amber-600 text-white shadow-xs font-extrabold" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <span>👥</span>
-                  <span className="text-[9px]">SDM</span>
-                </button>
-              </div>
-            </div>
-
             {/* Quick Search on Mobile Drawer */}
             <div className="px-3.5 py-2 border-b border-slate-100 bg-white">
               <div className="relative">
@@ -946,7 +812,6 @@ export function DashboardShell({
                     type="button"
                     onClick={() => {
                       setMobileFilter("");
-                      handleWorkspaceChange("ALL");
                     }}
                     className="mt-2 text-xs text-blue-600 font-bold hover:underline"
                   >
@@ -1082,12 +947,12 @@ export function DashboardShell({
         </div>
       ) : null}
 
-      {/* 4. FLOATING MOBILE BOTTOM NAVIGATION DOCK */}
-      <nav className="fixed bottom-3 inset-x-3 z-40 mx-auto flex h-14 max-w-sm items-center justify-around rounded-2xl border border-slate-200/90 bg-white/95 px-2 shadow-2xl backdrop-blur-xl ring-1 ring-slate-900/5 lg:hidden">
+      {/* 4. FLOATING MOBILE BOTTOM NAVIGATION DOCK (UNIVERSAL SHORTCUTS) */}
+      <nav className="fixed bottom-3 inset-x-3 z-40 mx-auto flex h-14 max-w-md items-center justify-around rounded-2xl border border-slate-200/90 bg-white/95 px-2 shadow-2xl backdrop-blur-xl ring-1 ring-slate-900/5 lg:hidden">
         <Link
           href="/dashboard"
-          className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
-            pathname === "/dashboard" ? "text-blue-600 bg-blue-50/80" : "text-slate-500 hover:text-slate-900"
+          className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+            pathname === "/dashboard" ? "text-blue-600 bg-blue-50/80 font-black" : "text-slate-500 hover:text-slate-900"
           }`}
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1097,110 +962,67 @@ export function DashboardShell({
           <span>Home</span>
         </Link>
 
-        {workspace === "HAJI" && (
-          <>
-            <Link
-              href="/dashboard/spk"
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
-                pathname.startsWith("/dashboard/spk") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-              </svg>
-              <span>SPK</span>
-            </Link>
-            <Link
-              href="/dashboard/qc"
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
-                pathname.startsWith("/dashboard/qc") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              <span className="text-sm leading-none">🔍</span>
-              <span>QC</span>
-            </Link>
-          </>
-        )}
-
-        {workspace === "REGULER" && (
-          <>
-            <Link
-              href="/dashboard/produksiReguler"
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
-                pathname.startsWith("/dashboard/produksiReguler") ? "text-indigo-700 bg-indigo-50/80" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              <span className="text-sm leading-none">⚡</span>
-              <span>Setoran</span>
-            </Link>
-            <Link
-              href="/dashboard/qc"
-              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
-                pathname.startsWith("/dashboard/qc") ? "text-emerald-700 bg-emerald-50/80" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              <span className="text-sm leading-none">🔍</span>
-              <span>QC</span>
-            </Link>
-          </>
-        )}
-
-        {workspace === "GUDANG" && (
-          <Link
-            href="/dashboard/barangMasukGudang"
-            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
-              pathname.includes("barangMasukGudang") ? "text-sky-700 bg-sky-50/80" : "text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-            </svg>
-            <span>Masuk</span>
-          </Link>
-        )}
-
-        {workspace === "SDM" && (
-          <Link
-            href="/dashboard/payroll"
-            className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold transition ${
-              pathname.startsWith("/dashboard/payroll") ? "text-amber-700 bg-amber-50/80" : "text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect width="18" height="12" x="3" y="6" rx="2" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-            <span>Payroll</span>
-          </Link>
-        )}
-
-        <button
-          type="button"
-          onClick={() => handleWorkspaceChange(getNextWorkspace(workspace))}
-          title="Beralih Ruang Kerja"
-          className="flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-extrabold text-slate-700 active:scale-95 transition"
+        <Link
+          href="/dashboard/spk"
+          className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+            pathname.startsWith("/dashboard/spk") ? "text-emerald-700 bg-emerald-50/80 font-black" : "text-slate-500 hover:text-slate-900"
+          }`}
         >
-          <span className="text-sm leading-none">
-            {workspace === "ALL" ? "🌐" : workspace === "REGULER" ? "🎒" : workspace === "HAJI" ? "🕋" : workspace === "GUDANG" ? "📦" : "👥"}
-          </span>
-          <span className="text-[9px] font-black uppercase tracking-tight text-blue-600">
-            {workspace === "ALL" ? "Semua" : workspace === "REGULER" ? "Reg" : workspace === "HAJI" ? "Haji" : workspace === "GUDANG" ? "Gdg" : "SDM"} ⇄
-          </span>
-        </button>
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+          </svg>
+          <span>SPK</span>
+        </Link>
+
+        <Link
+          href="/dashboard/qc"
+          className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+            pathname.startsWith("/dashboard/qc") ? "text-emerald-700 bg-emerald-50/80 font-black" : "text-slate-500 hover:text-slate-900"
+          }`}
+        >
+          <span className="text-sm leading-none">🔍</span>
+          <span>QC</span>
+        </Link>
+
+        <Link
+          href="/dashboard/stokGudang"
+          className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+            pathname.startsWith("/dashboard/stokGudang") || pathname.startsWith("/dashboard/stokBarangJadi")
+              ? "text-sky-700 bg-sky-50/80 font-black"
+              : "text-slate-500 hover:text-slate-900"
+          }`}
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          </svg>
+          <span>Stok</span>
+        </Link>
+
+        <Link
+          href="/dashboard/pengirimanEmbarkasi"
+          className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold transition ${
+            pathname.startsWith("/dashboard/pengirimanEmbarkasi") || pathname.startsWith("/dashboard/targetEmbarkasi")
+              ? "text-purple-700 bg-purple-50/80 font-black"
+              : "text-slate-500 hover:text-slate-900"
+          }`}
+        >
+          <span className="text-sm leading-none">🚚</span>
+          <span>Kirim</span>
+        </Link>
 
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="flex flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-900 transition"
+          className="flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-slate-900 transition"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="4" y1="12" x2="20" y2="12" />
             <line x1="4" y1="6" x2="20" y2="6" />
             <line x1="4" y1="18" x2="20" y2="18" />
           </svg>
-          <span>Menu</span>
+          <span>Semua</span>
         </button>
       </nav>
     </div>

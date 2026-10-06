@@ -249,6 +249,7 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
   const totalBudgetOperator = targetProduction * totalOngkosOperator;
   const totalBudgetBorongan = targetProduction * totalOngkosPengajuan;
   const totalBudgetHppRiil = targetProduction * totalHppRiil;
+  const totalBudgetHPPProposed = targetProduction * totalHPPProposed;
 
   const itemPekerjaanHref =
     selectedProject && selectedProduct
@@ -334,22 +335,22 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* 4 SUMMARY KPI CARDS: MODAL UPAH, BIAYA BAHAN, MODAL HPP PRODUKSI, HARGA BORONGAN */}
+          {/* 4 SUMMARY KPI CARDS: HARGA PENGAJUAN, BIAYA BAHAN, TOTAL HPP PENGAJUAN, MODAL OPERATOR */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
+            <div className="rounded-2xl border-2 border-blue-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Ongkos Tukang (Operator)</p>
-                <span className="text-lg">🪡</span>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Biaya Produksi (Harga Pengajuan)</p>
+                <span className="text-lg">🧵</span>
               </div>
-              <div className="mt-2 text-2xl font-black text-emerald-900">{formatRupiah(totalOngkosOperator)} <span className="text-xs font-medium text-slate-500">/ pcs</span></div>
+              <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(totalOngkosPengajuan)} <span className="text-xs font-medium text-slate-500">/ pcs</span></div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Total Modal Upah: <b className="text-emerald-950">{formatRupiah(totalBudgetOperator)}</b> ({productWorkItems.length} item pekerjaan).
+                Total Biaya Produksi: <b className="text-blue-950">{formatRupiah(totalBudgetBorongan)}</b> ({productWorkItems.length} item pekerjaan).
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Biaya Bahan Baku (BOM)</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-600">Biaya Bahan Baku & Jasa (BOM)</p>
                 <span className="text-lg">📦</span>
               </div>
               <div className="mt-2 text-2xl font-black text-slate-900">{formatRupiah(totalBiayaBahan)} <span className="text-xs font-medium text-slate-500">/ pcs</span></div>
@@ -358,25 +359,25 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
               </p>
             </div>
 
-            <div className="rounded-2xl border-2 border-amber-200 bg-white p-4 sm:p-5 shadow-xs">
+            <div className="rounded-2xl border-2 border-blue-500 bg-blue-50/40 p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Modal HPP Produksi / Pcs</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Total HPP (Nilai Pengajuan)</p>
                 <span className="text-lg">💎</span>
               </div>
-              <div className="mt-2 text-2xl font-black text-amber-900">{formatRupiah(totalHppRiil)} <span className="text-xs font-medium text-slate-500">/ pcs</span></div>
-              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Bahan ({formatRupiah(totalBiayaBahan)}) + Tukang ({formatRupiah(totalOngkosOperator)}). Total: <b className="text-amber-950">{formatRupiah(totalBudgetHppRiil)}</b>.
+              <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(totalHPPProposed)} <span className="text-xs font-medium text-blue-700">/ pcs</span></div>
+              <p className="mt-1 text-xs text-blue-900/80 font-medium leading-relaxed">
+                Bahan ({formatRupiah(totalBiayaBahan)}) + Produksi ({formatRupiah(totalOngkosPengajuan)}). Total: <b className="text-blue-950 font-bold">{formatRupiah(totalBudgetHPPProposed)}</b>.
               </p>
             </div>
 
-            <div className="rounded-2xl border-2 border-blue-200 bg-white p-4 sm:p-5 shadow-xs">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Harga Borongan (Pengajuan)</p>
-                <span className="text-lg">🧵</span>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Modal Riil Operator (Pabrik)</p>
+                <span className="text-lg">💵</span>
               </div>
-              <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(totalOngkosPengajuan)} <span className="text-xs font-medium text-slate-500">/ pcs</span></div>
+              <div className="mt-2 text-2xl font-black text-slate-800">{formatRupiah(totalHppRiil)} <span className="text-xs font-medium text-slate-500">/ pcs</span></div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Nilai borongan yang diajukan ke klien (Total: <b className="text-blue-950">{formatRupiah(totalBudgetBorongan)}</b>).
+                Upah Operator: {formatRupiah(totalOngkosOperator)}/pcs · Margin: <b className="text-emerald-700 font-bold">+{formatRupiah(totalHPPProposed - totalHppRiil)}/pcs</b>.
               </p>
             </div>
           </div>
@@ -549,24 +550,24 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                 })}
 
                 {/* Grand Total Footer Summary With Integrated Labor Wage */}
-                <div className="mt-4 rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4.5">
-                  <div className="space-y-2 text-sm">
-                    <div className="flex flex-wrap items-center justify-between border-b border-emerald-200/80 pb-2">
-                      <span className="text-slate-600 font-medium">1. Total Estimasi Biaya Bahan Baku (BOM):</span>
+                <div className="mt-4 rounded-xl border-2 border-blue-200 bg-blue-50/40 p-4.5">
+                  <div className="space-y-2.5 text-sm">
+                    <div className="flex flex-wrap items-center justify-between border-b border-blue-200/60 pb-2">
+                      <span className="text-slate-700 font-medium">1. Total Estimasi Biaya Bahan Baku & Jasa (BOM):</span>
                       <b className="font-bold text-slate-900">{formatRupiah(totalBiayaBahan)} / pcs · Total: {formatRupiah(totalBudgetBahan)}</b>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between border-b border-emerald-200/80 pb-2">
-                      <span className="text-emerald-800 font-medium">2. Total Ongkos Tukang (dari Master Item Pekerjaan):</span>
-                      <b className="font-bold text-emerald-900">{formatRupiah(totalOngkosOperator)} / pcs · Total: {formatRupiah(totalBudgetOperator)}</b>
+                    <div className="flex flex-wrap items-center justify-between border-b border-blue-200/60 pb-2">
+                      <span className="text-blue-900 font-semibold">2. Biaya Produksi / Harga Pengajuan (dari Master Item Pekerjaan):</span>
+                      <b className="font-bold text-blue-900">{formatRupiah(totalOngkosPengajuan)} / pcs · Total: {formatRupiah(totalBudgetBorongan)}</b>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between border-b border-emerald-200/80 pb-2 text-base">
-                      <span className="font-extrabold text-amber-900">3. Total Modal HPP Produksi (Bahan + Ongkos Tukang):</span>
-                      <b className="font-black text-amber-950 text-lg">{formatRupiah(totalHppRiil)} / pcs · Total: {formatRupiah(totalBudgetHppRiil)}</b>
+                    <div className="flex flex-wrap items-center justify-between border-b border-blue-300 pb-2 text-base">
+                      <span className="font-extrabold text-blue-950">3. Total HPP / Nilai Pengajuan (Bahan + Harga Pengajuan):</span>
+                      <b className="font-black text-blue-950 text-lg">{formatRupiah(totalHPPProposed)} / pcs · Total: {formatRupiah(totalBudgetHPPProposed)}</b>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between text-xs text-blue-700 pt-1">
-                      <span>Nilai Borongan Diajukan (Total Harga Pengajuan):</span>
+                    <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 pt-1">
+                      <span>Perbandingan Modal Riil Operator:</span>
                       <span>
-                        <b>{formatRupiah(totalOngkosPengajuan)} / pcs</b> · Total Borongan: <b>{formatRupiah(totalBudgetBorongan)}</b>
+                        Harga Operator: <b>{formatRupiah(totalOngkosOperator)} / pcs</b> · Modal Riil Pabrik: <b>{formatRupiah(totalHppRiil)} / pcs</b> · Margin Pabrik: <b className="text-emerald-700 font-bold">+{formatRupiah(totalHPPProposed - totalHppRiil)} / pcs</b>
                       </span>
                     </div>
                   </div>
@@ -586,34 +587,34 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2.5 font-bold">Produk</th>
                     <th className="py-2.5 font-bold">Target</th>
-                    <th className="py-2.5 font-bold">Modal Bahan / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Modal Bahan</th>
-                    <th className="py-2.5 font-bold">Modal Upah / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Modal Upah</th>
-                    <th className="py-2.5 font-bold">Modal HPP / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Modal HPP</th>
+                    <th className="py-2.5 font-bold">Biaya Bahan / Pcs</th>
+                    <th className="py-2.5 font-bold">Total Biaya Bahan</th>
+                    <th className="py-2.5 font-bold">Harga Pengajuan / Pcs</th>
+                    <th className="py-2.5 font-bold">Total Harga Pengajuan</th>
+                    <th className="py-2.5 font-bold text-blue-900">Total HPP Pengajuan / Pcs</th>
+                    <th className="py-2.5 font-bold text-blue-950">Total Nilai Pengajuan</th>
                     <th className="py-2.5 font-bold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {productBomRecap.map((pr) => (
-                    <tr key={pr.product.id} className={pr.product.id === selectedProduct ? "bg-emerald-50/60 font-semibold" : ""}>
+                    <tr key={pr.product.id} className={pr.product.id === selectedProduct ? "bg-blue-50/60 font-semibold" : ""}>
                       <td className="py-2.5">
-                        <span className="font-mono text-emerald-700 mr-1.5">{pr.product.product_code}</span>
+                        <span className="font-mono text-blue-700 mr-1.5">{pr.product.product_code}</span>
                         {pr.product.name}
-                        {pr.product.id === selectedProduct ? <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">Aktif</span> : null}
+                        {pr.product.id === selectedProduct ? <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">Aktif</span> : null}
                       </td>
                       <td className="py-2.5">{formatNumber(pr.product.target_production)} {pr.product.unit}</td>
                       <td className="py-2.5 font-bold text-slate-700">{formatRupiah(pr.materialCostPerPcs)}</td>
                       <td className="py-2.5 font-bold text-slate-900">{formatRupiah(pr.totalMaterialCost)}</td>
-                      <td className="py-2.5 font-bold text-emerald-800">{formatRupiah(pr.operatorWagePerPcs)}</td>
-                      <td className="py-2.5 font-bold text-emerald-950">{formatRupiah(pr.totalOperatorWage)}</td>
-                      <td className="py-2.5 font-black text-amber-900">{formatRupiah(pr.hppRiilPerPcs)}</td>
-                      <td className="py-2.5 font-black text-amber-950">{formatRupiah(pr.totalHppRiil)}</td>
+                      <td className="py-2.5 font-bold text-blue-800">{formatRupiah(pr.proposedWagePerPcs)}</td>
+                      <td className="py-2.5 font-bold text-blue-950">{formatRupiah(pr.totalProposedWage)}</td>
+                      <td className="py-2.5 font-black text-blue-900">{formatRupiah(pr.hppBoronganPerPcs)}</td>
+                      <td className="py-2.5 font-black text-blue-950">{formatRupiah(pr.totalHppBorongan)}</td>
                       <td className="py-2.5">
                         <Link
                           href={`/dashboard/masterKebutuhan?project=${selectedProject}&product=${pr.product.id}`}
-                          className="text-emerald-700 hover:underline font-semibold"
+                          className="text-blue-700 hover:underline font-semibold"
                         >
                           Buka BOM →
                         </Link>
@@ -628,9 +629,9 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                     <td className="py-3">-</td>
                     <td className="py-3 text-slate-900">{formatRupiah(grandProjectMaterialCost)}</td>
                     <td className="py-3">-</td>
-                    <td className="py-3 text-emerald-900">{formatRupiah(grandProjectOperatorWage)}</td>
+                    <td className="py-3 text-blue-900">{formatRupiah(grandProjectProposedWage)}</td>
                     <td className="py-3">-</td>
-                    <td className="py-3 text-amber-950">{formatRupiah(grandProjectHppRiil)}</td>
+                    <td className="py-3 text-blue-950">{formatRupiah(grandProjectHppBorongan)}</td>
                     <td className="py-3">-</td>
                   </tr>
                 </tfoot>
@@ -681,44 +682,44 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
               </p>
             </div>
 
-            <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Total Modal Ongkos Tukang</p>
-                <span className="text-lg">🪡</span>
-              </div>
-              <div className="mt-2 text-2xl font-black text-emerald-900">{formatRupiah(grandProjectOperatorWage)}</div>
-              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Total modal upah operator dari seluruh item pekerjaan di proyek ini.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border-2 border-amber-200 bg-white p-4 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Grand Total Modal HPP Proyek</p>
-                <span className="text-lg">💎</span>
-              </div>
-              <div className="mt-2 text-2xl font-black text-amber-900">{formatRupiah(grandProjectHppRiil)}</div>
-              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Modal Bahan ({formatRupiah(grandProjectMaterialCost)}) + Upah Tukang ({formatRupiah(grandProjectOperatorWage)}).
-              </p>
-            </div>
-
             <div className="rounded-2xl border-2 border-blue-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Total Nilai Pengajuan Borongan</p>
-                <span className="text-lg">📋</span>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Total Biaya Produksi (Pengajuan)</p>
+                <span className="text-lg">🧵</span>
               </div>
               <div className="mt-2 text-2xl font-black text-blue-900">{formatRupiah(grandProjectProposedWage)}</div>
               <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
-                Total omzet nilai borongan yang diajukan ke pemilik proyek ({projectProducts.length} produk).
+                Total biaya produksi yang diajukan ke pemilik proyek ({projectProducts.length} produk).
+              </p>
+            </div>
+
+            <div className="rounded-2xl border-2 border-blue-500 bg-blue-50/40 p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Grand Total HPP (Nilai Pengajuan Proyek)</p>
+                <span className="text-lg">💎</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-blue-950">{formatRupiah(grandProjectHppBorongan)}</div>
+              <p className="mt-1 text-xs text-blue-900/80 font-medium leading-relaxed">
+                Bahan ({formatRupiah(grandProjectMaterialCost)}) + Pengajuan Jahit ({formatRupiah(grandProjectProposedWage)}).
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Modal Riil Operator (Pabrik)</p>
+                <span className="text-lg">💵</span>
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-800">{formatRupiah(grandProjectHppRiil)}</div>
+              <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">
+                Modal Bersih Upah: {formatRupiah(grandProjectOperatorWage)} · Margin: <b className="text-emerald-700 font-bold">+{formatRupiah(grandProjectHppBorongan - grandProjectHppRiil)}</b>.
               </p>
             </div>
           </div>
 
           {/* SectionCard: REKAPITULASI MODAL & HPP SEMUA PRODUK DALAM PROYEK */}
           <SectionCard
-            title={`Rekapitulasi Modal & HPP per Produk · Proyek ${currentProject.name}`}
-            description="Daftar semua produk dalam proyek ini beserta rincian modal bahan baku, ongkos tukang/operator, dan HPP produksi per unit maupun total proyek."
+            title={`Rekapitulasi Kebutuhan & Nilai Pengajuan per Produk · Proyek ${currentProject.name}`}
+            description="Daftar semua produk dalam proyek ini beserta rincian biaya bahan baku, biaya produksi pengajuan, dan total HPP pengajuan per unit maupun total proyek."
           >
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -726,12 +727,12 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2.5 font-bold">Produk</th>
                     <th className="py-2.5 font-bold">Target</th>
-                    <th className="py-2.5 font-bold">Modal Bahan / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Modal Bahan</th>
-                    <th className="py-2.5 font-bold">Modal Upah / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Modal Upah</th>
-                    <th className="py-2.5 font-bold">Modal HPP / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Modal HPP</th>
+                    <th className="py-2.5 font-bold">Biaya Bahan / Pcs</th>
+                    <th className="py-2.5 font-bold">Total Biaya Bahan</th>
+                    <th className="py-2.5 font-bold">Harga Pengajuan / Pcs</th>
+                    <th className="py-2.5 font-bold">Total Harga Pengajuan</th>
+                    <th className="py-2.5 font-bold text-blue-900">Total HPP Pengajuan / Pcs</th>
+                    <th className="py-2.5 font-bold text-blue-950">Total Nilai Pengajuan</th>
                     <th className="py-2.5 font-bold">Aksi</th>
                   </tr>
                 </thead>
@@ -739,20 +740,20 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                   {productBomRecap.map((pr) => (
                     <tr key={pr.product.id}>
                       <td className="py-2.5">
-                        <span className="font-mono text-emerald-700 mr-1.5">{pr.product.product_code}</span>
+                        <span className="font-mono text-blue-700 mr-1.5">{pr.product.product_code}</span>
                         {pr.product.name}
                       </td>
                       <td className="py-2.5">{formatNumber(pr.product.target_production)} {pr.product.unit}</td>
                       <td className="py-2.5 font-bold text-slate-700">{formatRupiah(pr.materialCostPerPcs)}</td>
                       <td className="py-2.5 font-bold text-slate-900">{formatRupiah(pr.totalMaterialCost)}</td>
-                      <td className="py-2.5 font-bold text-emerald-800">{formatRupiah(pr.operatorWagePerPcs)}</td>
-                      <td className="py-2.5 font-bold text-emerald-950">{formatRupiah(pr.totalOperatorWage)}</td>
-                      <td className="py-2.5 font-black text-amber-900">{formatRupiah(pr.hppRiilPerPcs)}</td>
-                      <td className="py-2.5 font-black text-amber-950">{formatRupiah(pr.totalHppRiil)}</td>
+                      <td className="py-2.5 font-bold text-blue-800">{formatRupiah(pr.proposedWagePerPcs)}</td>
+                      <td className="py-2.5 font-bold text-blue-950">{formatRupiah(pr.totalProposedWage)}</td>
+                      <td className="py-2.5 font-black text-blue-900">{formatRupiah(pr.hppBoronganPerPcs)}</td>
+                      <td className="py-2.5 font-black text-blue-950">{formatRupiah(pr.totalHppBorongan)}</td>
                       <td className="py-2.5">
                         <Link
                           href={`/dashboard/masterKebutuhan?project=${selectedProject}&product=${pr.product.id}`}
-                          className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition inline-block"
+                          className="rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 transition inline-block"
                         >
                           Buka BOM Produk →
                         </Link>
@@ -767,9 +768,9 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                     <td className="py-3">-</td>
                     <td className="py-3 text-slate-900">{formatRupiah(grandProjectMaterialCost)}</td>
                     <td className="py-3">-</td>
-                    <td className="py-3 text-emerald-900">{formatRupiah(grandProjectOperatorWage)}</td>
+                    <td className="py-3 text-blue-900">{formatRupiah(grandProjectProposedWage)}</td>
                     <td className="py-3">-</td>
-                    <td className="py-3 text-amber-950">{formatRupiah(grandProjectHppRiil)}</td>
+                    <td className="py-3 text-blue-950">{formatRupiah(grandProjectHppBorongan)}</td>
                     <td className="py-3">-</td>
                   </tr>
                 </tfoot>

@@ -12,6 +12,15 @@ export const dangerClass =
 export const secondaryClass =
   "inline-flex min-h-9 items-center justify-center rounded-xl border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 shadow-xs transition hover:bg-gray-50";
 
+import {
+  MasterNavTabs,
+  GudangNavTabs,
+  SdmNavTabs,
+  ProduksiNavTabs,
+  QcNavTabs,
+  KeuanganNavTabs,
+} from "@/components/navigation/hub-nav-tabs";
+
 export function PageShell({
   eyebrow,
   title,
@@ -23,6 +32,42 @@ export function PageShell({
   description: string;
   children: ReactNode;
 }) {
+  const isSdm =
+    eyebrow.toLowerCase().includes("sdm") ||
+    title.toLowerCase().includes("pekerja") ||
+    title.toLowerCase().includes("absensi") ||
+    title.toLowerCase().includes("kasbon") ||
+    title.toLowerCase().includes("payroll");
+
+  const isGudang =
+    eyebrow.toLowerCase().includes("gudang") ||
+    eyebrow.toLowerCase().includes("material") ||
+    eyebrow.toLowerCase().includes("logistik");
+
+  const isProduksi =
+    eyebrow.toLowerCase().includes("produksi") ||
+    eyebrow.toLowerCase().includes("pabrik") ||
+    title.toLowerCase().includes("spk") ||
+    title.toLowerCase().includes("cutting") ||
+    title.toLowerCase().includes("sablon");
+
+  const isQc =
+    eyebrow.toLowerCase().includes("qc") ||
+    eyebrow.toLowerCase().includes("distribusi");
+
+  const isKeuangan =
+    eyebrow.toLowerCase().includes("keuangan") ||
+    eyebrow.toLowerCase().includes("kas");
+
+  const isMaster =
+    !isSdm &&
+    !isGudang &&
+    !isProduksi &&
+    !isQc &&
+    !isKeuangan &&
+    (eyebrow.toLowerCase().includes("master") ||
+      title.toLowerCase().includes("master"));
+
   return (
     <div className="space-y-6">
       <header className="border-b border-gray-200/90 pb-4">
@@ -30,6 +75,12 @@ export function PageShell({
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-gray-900 sm:text-3xl">{title}</h1>
         <p className="mt-1.5 max-w-4xl text-sm leading-6 text-gray-600">{description}</p>
       </header>
+      {isMaster ? <MasterNavTabs /> : null}
+      {isGudang ? <GudangNavTabs /> : null}
+      {isSdm ? <SdmNavTabs /> : null}
+      {isProduksi ? <ProduksiNavTabs /> : null}
+      {isQc ? <QcNavTabs /> : null}
+      {isKeuangan ? <KeuanganNavTabs /> : null}
       {children}
     </div>
   );

@@ -1,22 +1,24 @@
 import { dangerButtonClass, Field, inputClass, MasterPageShell, Notice, primaryButtonClass, ReadOnlyBanner, SectionCard } from "@/components/master/master-ui";
 import { Badge, FlowNote, Metric } from "@/components/operations/ops-ui";
-import { ProjectProductFields } from "@/components/forms/project-product-fields";
 import { requirePermission } from "@/lib/access/current-user";
 import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
 import { cancelResult, cancelUsage, recordLotUsage, recordResult, recordUsage, saveComponent } from "./actions";
 import { CuttingDailyResultForm } from "./cutting-input-client";
+import { CuttingHajiMonitoring } from "./cutting-haji-monitoring";
+import { AdminCuttingComponentForm } from "./admin-cutting-component-form";
+import { CuttingRekapTable } from "./cutting-rekap-table";
 
 type Props = { searchParams: Promise<SearchParams> };
 type P = { id: number; project_code: string; name: string };
 type PP = { id: number; product_code: string; project_id: number; name: string; target_production?: number | string };
-type C = { id: number; component_code: string; project_id: number; product_id: number | null; name: string; qty_per_product: number | string; unit: string; color: string; status: string };
+type C = { id: number; component_code: string; project_id: number; product_id: number | null; name: string; qty_per_product: number | string; unit: string; color: string; notes?: string | null; status: string };
 type L = { id: number; code: string };
 type B = { id: number; material_id: number | null; location_id: number; project_id: number | null; product_id: number | null; bom_requirement_id: number | null; quantity: number | string };
 type M = { id: number; material_code: string; name: string; standard_unit: string; lot_tracking_mode: string };
-type Bom = { id: number; project_id: number; product_id: number | null; material_id: number | null; component_name: string; unit: string };
+type Bom = { id: number; project_id: number; product_id: number | null; material_id: number | null; component_name: string; unit: string; qty_per_unit?: number | string };
 type U = { id: number; usage_code: string; usage_date: string; bom_requirement_id: number; material_id: number; material_lot_id: number | null; quantity: number | string; unit_snapshot: string; input_quantity: number | string | null; input_unit: string | null; officer: string; status: string };
-type R = { id: number; result_code: string; result_date: string; cutting_component_id: number; good_qty: number | string; reject_qty: number | string; unit_snapshot: string; officer: string; status: string };
+type R = { id: number; result_code: string; result_date: string; cutting_component_id: number; good_qty: number | string; reject_qty: number | string; unit_snapshot: string; officer: string; notes?: string | null; status: string };
 type Lot = { id: number; lot_code: string; roll_number: string; material_id: number; material_name: string; normalized_unit: string; remaining_normalized_quantity: number | string; original_unit: string; current_project_id: number | null; current_product_id: number | null; current_bom_requirement_id: number | null; location_code: string; status: string };
 
 const UNITS = ["METER", "YARD", "CM", "MM", "FT", "INCH", "KG", "GRAM", "MG", "TON", "LITER", "ML", "PCS", "LUSIN"];
@@ -32,13 +34,13 @@ export default async function Page({ searchParams }: Props) {
   const [pr, ppr, cr, lr, br, mr, bmr, ur, rr, lotr] = await Promise.all([
     s.from("projects").select("id,project_code,name").limit(300),
     s.from("project_products").select("id,product_code,project_id,name,target_production").eq("status", "AKTIF").limit(1000),
-    s.from("cutting_components").select("id,component_code,project_id,product_id,name,qty_per_product,unit,color,status").order("id", { ascending: false }).limit(1200),
+    s.from("cutting_components").select("id,component_code,project_id,product_id,name,qty_per_product,unit,color,notes,status").order("id", { ascending: false }).limit(1200),
     s.from("stock_locations").select("id,code"),
     s.from("stock_balances").select("id,material_id,location_id,project_id,product_id,bom_requirement_id,quantity").eq("item_kind", "MATERIAL").gt("quantity", 0).limit(1500),
     s.from("materials").select("id,material_code,name,standard_unit,lot_tracking_mode").limit(1200),
-    s.from("bom_requirements").select("id,project_id,product_id,material_id,component_name,unit").eq("component_type", "BAHAN").eq("status", "AKTIF").limit(2500),
+    s.from("bom_requirements").select("id,project_id,product_id,material_id,component_name,unit,qty_per_unit").eq("component_type", "BAHAN").eq("status", "AKTIF").limit(2500),
     s.from("cutting_material_usages").select("id,usage_code,usage_date,bom_requirement_id,material_id,material_lot_id,quantity,unit_snapshot,input_quantity,input_unit,officer,status").order("id", { ascending: false }).limit(100),
-    s.from("cutting_daily_results").select("id,result_code,result_date,cutting_component_id,good_qty,reject_qty,unit_snapshot,officer,status").order("id", { ascending: false }).limit(100),
+    s.from("cutting_daily_results").select("id,result_code,result_date,cutting_component_id,good_qty,reject_qty,unit_snapshot,officer,notes,status").order("result_date", { ascending: false }).limit(3000),
     s.from("v_material_lot_status").select("id,lot_code,roll_number,material_id,material_name,normalized_unit,remaining_normalized_quantity,original_unit,current_project_id,current_product_id,current_bom_requirement_id,location_code,status").eq("location_code", "CUTTING").order("updated_at", { ascending: false }).limit(1000),
   ]);
 
@@ -62,6 +64,31 @@ export default async function Page({ searchParams }: Props) {
   const lotMap = new Map(lots.map((x) => [x.id, x]));
   const activeLots = lots.filter((x) => ["AVAILABLE", "PARTIAL"].includes(x.status) && Number(x.remaining_normalized_quantity) > 0);
   const trackedKeys = new Set(activeLots.map((x) => `${x.current_project_id ?? 0}:${x.current_product_id ?? 0}:${x.material_id}:${x.current_bom_requirement_id ?? 0}`));
+
+  // Hitung sisa stok aktual bahan baku di Gudang Bahan
+  const warehouseLoc = ((lr.data ?? []) as L[]).find((x) => x.code === "GUDANG_BAHAN")?.id;
+  const warehouseStockMap = new Map<number, number>();
+  for (const b of (br.data ?? []) as B[]) {
+    if (b.location_id === warehouseLoc && b.material_id) {
+      warehouseStockMap.set(b.material_id, (warehouseStockMap.get(b.material_id) || 0) + Number(b.quantity || 0));
+    }
+  }
+
+  const bomsWithStock = ((bmr.data ?? []) as Bom[]).map((b) => {
+    const m = b.material_id ? mm.get(b.material_id) : null;
+    return {
+      id: b.id,
+      project_id: b.project_id,
+      product_id: b.product_id,
+      material_id: b.material_id,
+      material_code: m?.material_code,
+      material_name: m?.name,
+      component_name: b.component_name || m?.name || "Bahan Baku",
+      qty_per_unit: Number(b.qty_per_unit) || 0,
+      unit: b.unit || m?.standard_unit || "PCS",
+      stock_in_warehouse: b.material_id ? (warehouseStockMap.get(b.material_id) || 0) : 0,
+    };
+  });
 
   const resultsByComponent = new Map<number, { good: number; reject: number }>();
   for (const r of results) {
@@ -92,39 +119,28 @@ export default async function Page({ searchParams }: Props) {
         <Metric label="Hasil Terakhir" value={results.length} />
       </div>
 
+      {/* MONITORING REKAP HASIL POTONG & PEMAKAIAN BAHAN KAIN HAJI 2026 */}
+      <CuttingHajiMonitoring
+        componentsData={comps
+          .filter((c) => c.project_id === 1 || (pm.get(c.project_id)?.name || "").toLowerCase().includes("haji"))
+          .map((c) => ({
+            id: c.id,
+            component_code: c.component_code,
+            name: c.name,
+            product_name: ppm.get(c.product_id ?? 0)?.name || "Produk",
+            qty_per_product: Number(c.qty_per_product) || 1,
+            notes: c.notes || null,
+            total_good: resultsByComponent.get(c.id)?.good || 0,
+          }))}
+      />
+
       {canWrite && isAdmin ? (
         <SectionCard title="Tambah Komponen Cutting (Khusus Admin)">
-          <form action={saveComponent} className="grid gap-3 md:grid-cols-4">
-            <ProjectProductFields
-              projects={projects.map((x) => ({ id: x.id, name: x.name, code: x.project_code }))}
-              products={products.map((x) => ({ id: x.id, project_id: x.project_id, name: x.name, code: x.product_code }))}
-              className={inputClass}
-            />
-            <Field label="Nama Bagian">
-              <input name="name" required className={inputClass} />
-            </Field>
-            <Field label="Qty/Produk">
-              <input name="qty_per_product" type="number" min="0.0001" step="0.0001" required className={inputClass} />
-            </Field>
-            <Field label="Satuan">
-              <input name="unit" required className={inputClass} />
-            </Field>
-            <Field label="Warna">
-              <input name="color" className={inputClass} />
-            </Field>
-            <Field label="Status">
-              <select name="status" className={inputClass}>
-                <option>AKTIF</option>
-                <option>NONAKTIF</option>
-              </select>
-            </Field>
-            <Field label="Keterangan">
-              <input name="notes" className={inputClass} />
-            </Field>
-            <div className="flex items-end">
-              <button className={primaryButtonClass}>Simpan Komponen</button>
-            </div>
-          </form>
+          <AdminCuttingComponentForm
+            projects={projects}
+            products={products}
+            boms={bomsWithStock}
+          />
         </SectionCard>
       ) : null}
 
@@ -242,103 +258,34 @@ export default async function Page({ searchParams }: Props) {
         />
       ) : null}
 
-      {/* Tabel Komponen Yang Sudah Di-Cutting */}
+      {/* Rekap Komponen Hasil Cutting dengan Riwayat Akordion Buka-Tutup, Edit & Hapus */}
       <SectionCard
         title={`📊 Rekap Komponen Hasil Cutting (${comps.length})`}
-        description="Pantau progres hasil potong per komponen: perbandingan hasil baik akumulasi vs target kebutuhan produk."
+        description="Klik tombol panah di sebelah kiri untuk membuka/menutup riwayat hasil potong harian, mengedit data, atau membatalkan/menghapus hasil potong."
       >
-        {comps.length === 0 ? (
-          <p className="text-sm text-slate-500">Belum ada master komponen cutting yang terdaftar.</p>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-700">
-                  <th className="p-3">Komponen</th>
-                  <th className="p-3">Proyek & Produk</th>
-                  <th className="p-3 text-right">Target Kebutuhan</th>
-                  <th className="p-3 text-right">Sudah Dipotong</th>
-                  <th className="p-3 text-right">Reject</th>
-                  <th className="p-3 text-right">Sisa Target</th>
-                  <th className="p-3 text-center">Progress</th>
-                  <th className="p-3 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {comps.map((c) => {
-                  const summary = resultsByComponent.get(c.id) || { good: 0, reject: 0 };
-                  const prod = c.product_id ? ppm.get(c.product_id) : undefined;
-                  const proj = pm.get(c.project_id);
-                  const targetQty = prod?.target_production
-                    ? Math.round(Number(prod.target_production) * Number(c.qty_per_product || 1))
-                    : 0;
-                  const remaining = Math.max(0, targetQty - summary.good);
-                  const progressPct =
-                    targetQty > 0
-                      ? Math.min(100, Math.round((summary.good / targetQty) * 100))
-                      : summary.good > 0
-                        ? 100
-                        : 0;
-                  const isDone = targetQty > 0 ? summary.good >= targetQty : summary.good > 0;
-
-                  return (
-                    <tr key={c.id} className="hover:bg-blue-50/20 transition">
-                      <td className="p-3">
-                        <b className="text-slate-900 font-semibold">{c.name}</b>
-                        {c.color ? <span className="ml-1 text-slate-500">({c.color})</span> : null}
-                        <p className="font-mono text-[11px] text-blue-600">{c.component_code}</p>
-                      </td>
-                      <td className="p-3">
-                        <span className="font-semibold text-slate-800">{prod?.name || "-"}</span>
-                        <p className="text-[11px] text-slate-500">{proj?.name || "Proyek"}</p>
-                      </td>
-                      <td className="p-3 text-right font-mono text-slate-600">
-                        {targetQty > 0 ? `${formatNumber(targetQty)} ${c.unit}` : "-"}
-                      </td>
-                      <td className="p-3 text-right font-mono font-black text-emerald-700">
-                        {formatNumber(summary.good)} {c.unit}
-                      </td>
-                      <td className="p-3 text-right font-mono font-medium text-rose-600">
-                        {summary.reject > 0 ? `${formatNumber(summary.reject)} ${c.unit}` : "0"}
-                      </td>
-                      <td className="p-3 text-right font-mono text-slate-700">
-                        {targetQty > 0 ? `${formatNumber(remaining)} ${c.unit}` : "-"}
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <div className="w-16 h-2 rounded-full bg-slate-100 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                isDone ? "bg-emerald-500" : progressPct > 0 ? "bg-blue-500" : "bg-slate-300"
-                              }`}
-                              style={{ width: `${progressPct}%` }}
-                            />
-                          </div>
-                          <span className="font-mono text-[11px] font-semibold text-slate-700">{progressPct}%</span>
-                        </div>
-                      </td>
-                      <td className="p-3 text-center">
-                        {isDone ? (
-                          <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                            SELESAI
-                          </span>
-                        ) : summary.good > 0 ? (
-                          <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
-                            BERJALAN
-                          </span>
-                        ) : (
-                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                            BELUM
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <CuttingRekapTable
+          components={comps.map((c) => {
+            const prod = c.product_id ? ppm.get(c.product_id) : undefined;
+            const proj = pm.get(c.project_id);
+            return {
+              id: c.id,
+              component_code: c.component_code,
+              project_id: c.project_id,
+              product_id: c.product_id,
+              name: c.name,
+              qty_per_product: c.qty_per_product,
+              unit: c.unit,
+              color: c.color,
+              notes: c.notes,
+              status: c.status,
+              product_name: prod?.name,
+              project_name: proj?.name,
+              target_production: prod?.target_production ? Number(prod.target_production) : undefined,
+            };
+          })}
+          results={results}
+          canWrite={canWrite}
+        />
       </SectionCard>
 
       <SectionCard title="Riwayat Cutting">

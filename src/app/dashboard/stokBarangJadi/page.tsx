@@ -56,7 +56,7 @@ export default async function StokBarangJadiPage({ searchParams }: Props) {
     const prev = maklonBalancesMap.get(fgId) || {
       qty: 0,
       unit: tx.unit || "PCS",
-      vendorNote: tx.description || "Vendor Maklon",
+      vendorNote: tx.description || "Supplier Maklon",
     };
     prev.qty += delta;
     if (tx.description) prev.vendorNote = tx.description;
@@ -159,7 +159,7 @@ export default async function StokBarangJadiPage({ searchParams }: Props) {
         <span className="text-[11px] font-black uppercase tracking-wider text-indigo-600">QC & Logistik</span>
         <h1 className="text-xl font-black text-slate-900">Stok Barang Jadi</h1>
         <p className="mt-0.5 text-xs text-slate-500">
-          Monitoring fisik di rak gudang pusat dan titipan siap kirim di maklon/vendor luar.
+          Monitoring fisik di rak gudang pusat dan titipan siap kirim di maklon/supplier luar.
         </p>
       </div>
 
@@ -194,7 +194,7 @@ export default async function StokBarangJadiPage({ searchParams }: Props) {
           <p className="mt-1 font-mono text-lg sm:text-2xl font-black text-amber-700">
             {totalQtyMaklon.toLocaleString("id-ID")}
           </p>
-          <span className="text-[10px] text-amber-600 font-semibold">Standby di Vendor</span>
+          <span className="text-[10px] text-amber-600 font-semibold">Standby di Supplier</span>
         </div>
       </div>
 

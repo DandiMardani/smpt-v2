@@ -1,5 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import {
+  MasterNavTabs,
+  GudangNavTabs,
+  SdmNavTabs,
+  ProduksiNavTabs,
+  QcNavTabs,
+  KeuanganNavTabs,
+} from "@/components/navigation/hub-nav-tabs";
 
 export function MasterPageShell({
   eyebrow,
@@ -12,6 +20,42 @@ export function MasterPageShell({
   description: string;
   children: ReactNode;
 }) {
+  const isSdm =
+    eyebrow.toLowerCase().includes("sdm") ||
+    title.toLowerCase().includes("pekerja") ||
+    title.toLowerCase().includes("absensi") ||
+    title.toLowerCase().includes("kasbon") ||
+    title.toLowerCase().includes("payroll");
+
+  const isGudang =
+    eyebrow.toLowerCase().includes("gudang") ||
+    eyebrow.toLowerCase().includes("material") ||
+    eyebrow.toLowerCase().includes("logistik");
+
+  const isProduksi =
+    eyebrow.toLowerCase().includes("produksi") ||
+    eyebrow.toLowerCase().includes("pabrik") ||
+    title.toLowerCase().includes("spk") ||
+    title.toLowerCase().includes("cutting") ||
+    title.toLowerCase().includes("sablon");
+
+  const isQc =
+    eyebrow.toLowerCase().includes("qc") ||
+    eyebrow.toLowerCase().includes("distribusi");
+
+  const isKeuangan =
+    eyebrow.toLowerCase().includes("keuangan") ||
+    eyebrow.toLowerCase().includes("kas");
+
+  const isMaster =
+    !isSdm &&
+    !isGudang &&
+    !isProduksi &&
+    !isQc &&
+    !isKeuangan &&
+    (eyebrow.toLowerCase().includes("master") ||
+      title.toLowerCase().includes("master"));
+
   return (
     <div className="space-y-6">
       <header className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
@@ -21,6 +65,12 @@ export function MasterPageShell({
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{title}</h1>
         <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
       </header>
+      {isMaster ? <MasterNavTabs /> : null}
+      {isGudang ? <GudangNavTabs /> : null}
+      {isSdm ? <SdmNavTabs /> : null}
+      {isProduksi ? <ProduksiNavTabs /> : null}
+      {isQc ? <QcNavTabs /> : null}
+      {isKeuangan ? <KeuanganNavTabs /> : null}
       {children}
     </div>
   );

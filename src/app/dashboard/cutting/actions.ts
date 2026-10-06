@@ -187,3 +187,35 @@ export async function cancelResult(f: FormData) {
   refresh();
   redirectWithMessage(PATH, "success", "Hasil Cutting dibatalkan dengan reversal.");
 }
+
+export async function updateResult(f: FormData) {
+  await requirePermission("cutting.write");
+  const resultId = getId(f, "result_id");
+  const compId = getId(f, "component_id");
+  const goodQty = getNumber(f, "good_qty", { min: 0 });
+  const rejectQty = getNumber(f, "reject_qty", { min: 0 });
+  const officer = getText(f, "officer");
+  const notes = getText(f, "notes") || null;
+  const resultDate = getOptionalDate(f, "result_date");
+  if (!resultDate) throw new Error("Tanggal wajib diisi.");
+
+  try {
+    // 1. Reversal previous record
+    await callRpc("cancel_cutting_result", { p_result_id: resultId });
+
+    // 2. Re-record revised result
+    await callRpc("record_cutting_result", {
+      p_result_date: resultDate,
+      p_cutting_component_id: compId,
+      p_good_qty: goodQty,
+      p_reject_qty: rejectQty,
+      p_officer: officer,
+      p_notes: notes || undefined,
+    });
+  } catch (e) {
+    redirectWithMessage(PATH, "error", errorMessage(e, "Hasil Cutting gagal diperbarui."));
+  }
+  refresh();
+  redirectWithMessage(PATH, "success", "Hasil Cutting berhasil diperbarui.");
+}
+

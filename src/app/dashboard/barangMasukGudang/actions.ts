@@ -10,7 +10,7 @@ import {
   getText,
   redirectWithMessage,
 } from "@/lib/master/action-utils";
-import { callRpc } from "@/lib/operations/ops-utils";
+import { callRpc, optionalId } from "@/lib/operations/ops-utils";
 
 const PATH = "/dashboard/barangMasukGudang";
 
@@ -147,4 +147,36 @@ export async function cancelPoReceipt(formData: FormData) {
   }
   [PATH, "/dashboard/stokGudang", "/dashboard/bahan", "/dashboard/procurement"].forEach((path) => revalidatePath(path));
   redirectWithMessage(PATH, "success", "Penerimaan PO dibatalkan dengan reversal ledger dan outstanding PO dikembalikan.");
+}
+
+export async function receiveSablonWip(formData: FormData) {
+  await requirePermission("barang_masuk_gudang.write");
+  try {
+    const date = getOptionalDate(formData, "receipt_date");
+    if (!date) throw new Error("Tanggal wajib diisi.");
+
+    await callRpc("move_wip_stock", {
+      p_transaction_date: date,
+      p_cutting_component_id: getId(formData, "component_id"),
+      p_product_id: optionalId(formData.get("product_id")),
+      p_quantity: getNumber(formData, "quantity", { min: 0.0001 }),
+      p_action: "KEMBALI_DARI_SABLON",
+      p_notes: getText(formData, "notes") || null,
+    });
+  } catch (error) {
+    redirectWithMessage(
+      PATH,
+      "error",
+      errorMessage(error, "Penerimaan hasil Sablon ke Gudang gagal."),
+    );
+  }
+
+  [PATH, "/dashboard/stokGudang", "/dashboard/sablon", "/dashboard/produksi"].forEach((path) =>
+    revalidatePath(path),
+  );
+  redirectWithMessage(
+    PATH,
+    "success",
+    "Hasil Sablon berhasil diterima masuk ke Gudang Hasil (Selesai Sablon).",
+  );
 }

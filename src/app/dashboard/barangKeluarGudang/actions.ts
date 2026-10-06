@@ -69,6 +69,14 @@ export async function directIssue(formData: FormData) {
     const date = getOptionalDate(formData, "issue_date");
     if (!date) throw new Error("Tanggal wajib diisi.");
 
+    const destination = getText(formData, "destination");
+    let notes = getText(formData, "notes") || null;
+    if (destination === "MR_WU") {
+      notes = `[Transfer Pabrik Mitra MR WU] ${notes || ""}`.trim();
+    } else if (destination === "TEMPAT_LAIN") {
+      notes = `[Pengeluaran Tempat Lain / Supplier Lain] ${notes || ""}`.trim();
+    }
+
     await callRpc("direct_warehouse_issue_material", {
       p_issue_date: date,
       p_project_id: getId(formData, "project_id"),
@@ -80,7 +88,7 @@ export async function directIssue(formData: FormData) {
       p_conversion_factor: optionalFactor(formData),
       p_recipient_worker_id: optionalId(formData.get("recipient_worker_id")),
       p_recipient_name: getText(formData, "recipient_name") || null,
-      p_notes: getText(formData, "notes") || null,
+      p_notes: notes,
     });
   } catch (error) {
     redirectWithMessage(
@@ -101,10 +109,17 @@ export async function issueWipDirectly(formData: FormData) {
     if (!date) throw new Error("Tanggal wajib diisi.");
 
     const action = getText(formData, "action");
+    const destination = getText(formData, "destination");
     const componentId = getId(formData, "component_id");
     const productId = optionalId(formData.get("product_id"));
     const quantity = getNumber(formData, "quantity", { min: 0.0001 });
-    const notes = getText(formData, "notes") || null;
+    let notes = getText(formData, "notes") || null;
+
+    if (destination === "MR_WU") {
+      notes = `[Transfer Pabrik Mitra MR WU] ${notes || ""}`.trim();
+    } else if (destination === "TEMPAT_LAIN") {
+      notes = `[Pengeluaran Tempat Lain / Supplier Lain] ${notes || ""}`.trim();
+    }
 
     if (action === "KIRIM_SABLON_LANGSUNG") {
       // 1-pintu: otomatis tandai untuk sablon lalu kirim ke sablon

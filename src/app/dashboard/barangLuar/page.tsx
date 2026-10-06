@@ -1,5 +1,6 @@
 import { Notice, PageShell, ReadOnly } from "@/components/final/final-ui";
 import { BarangLuarManager } from "@/components/barang-luar/barang-luar-manager";
+import { SarungKoperMonitoring } from "@/components/sarung-koper/sarung-koper-monitoring";
 import { requirePermission } from "@/lib/access/current-user";
 import { param, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
@@ -59,6 +60,11 @@ export default async function Page({ searchParams }: Props) {
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canReceive ? <ReadOnly /> : null}
+
+      {/* DASHBOARD MONITORING SUPPLIER SARUNG KOPER (IBU MITA) */}
+      <div className="mb-6">
+        <SarungKoperMonitoring />
+      </div>
 
       <BarangLuarManager
         receipts={(rr.data ?? []) as any[]}

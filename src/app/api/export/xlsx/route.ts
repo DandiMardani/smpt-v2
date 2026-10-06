@@ -344,6 +344,7 @@ async function operatorPayrollSlipsWorkbook(
   params: URLSearchParams
 ): Promise<{ sheets: XlsxSheet[]; filename: string }> {
   const runId = positiveId(params.get("run_id"));
+  const priceType = String(params.get("price_type") || params.get("mode") || "").trim().toLowerCase();
 
   let runQuery = supabase.from("operator_payroll_runs").select("*");
   if (runId) {
@@ -358,7 +359,7 @@ async function operatorPayrollSlipsWorkbook(
   }
   const run = runData[0];
 
-  const [itemsRes, workersRes] = await Promise.all([
+  const [itemsRes, workersRes, workItemsRes, productsRes] = await Promise.all([
     supabase
       .from("operator_payroll_items")
       .select("*")
@@ -366,16 +367,22 @@ async function operatorPayrollSlipsWorkbook(
       .order("worker_id", { ascending: true })
       .order("id", { ascending: true }),
     supabase.from("workers").select("id, worker_code, name, department, position, identity_no, phone, pay_system"),
+    supabase.from("work_items").select("id, product_id, item_code, name, operator_price, proposed_price"),
+    supabase.from("project_products").select("id, name, product_code"),
   ]);
 
   if (itemsRes.error) throw itemsRes.error;
   const items = itemsRes.data ?? [];
   const workerMap = new Map<number, any>((workersRes.data ?? []).map((w: any) => [w.id, w]));
+  const wiMap = new Map<number, any>((workItemsRes.data ?? []).map((wi: any) => [wi.id, wi]));
+  const prodMap = new Map<number, any>((productsRes.data ?? []).map((p: any) => [p.id, p]));
 
-  let projectName = "SARIAYU MOM & BABY";
+  let projectName = "PROYEK HAJI 2026";
   if (run.notes && !run.notes.includes("[STATUS:")) {
     projectName = run.notes.split("\n")[0].trim().toUpperCase() || projectName;
   }
+
+  const signDate = formatIndoDate(run.period_end || jakartaToday());
 
   const columns = [
     { key: "kode_op", label: "KODE OP", width: 14 },
@@ -389,79 +396,179 @@ async function operatorPayrollSlipsWorkbook(
     { key: "total", label: "TOTAL", width: 20 },
   ];
 
-  const groupedByWorker = new Map<number, Array<any>>();
-  items.forEach((it: any) => {
-    const list = groupedByWorker.get(it.worker_id) || [];
-    list.push(it);
-    groupedByWorker.set(it.worker_id, list);
-  });
-
-  const rows: Array<Record<string, any>> = [];
-  let grandTotal = 0;
-  let opSeq = 1;
-
-  groupedByWorker.forEach((workerItems, wId) => {
-    const w: any = workerMap.get(wId);
-    const workerTotal = workerItems.reduce((acc, it) => {
-      const q = Number(it.qty_approved || 0);
-      const pr = Number(it.operator_price_snapshot || 0);
-      return acc + (Number(it.operator_value) || q * pr);
-    }, 0);
-    grandTotal += workerTotal;
-
-    const opCode = w?.worker_code
-      ? w.worker_code.startsWith("OP")
-        ? w.worker_code
-        : `OP${String(opSeq).padStart(3, "0")}`
-      : `OP${String(opSeq).padStart(3, "0")}`;
-    const workerName = (w?.name || workerItems[0]?.worker_name_snapshot || "-").toUpperCase();
-    const department = (w?.department || w?.position || "OPERATOR").toUpperCase();
-
-    workerItems.forEach((it: any, index: number) => {
-      const q = Number(it.qty_approved || 0);
-      const pr = Number(it.operator_price_snapshot || 0);
-      const subtotal = Number(it.operator_value) || q * pr;
-      const workCode = it.work_item_code_snapshot || `T${String(it.work_item_id || it.id).padStart(3, "0")}`;
-
-      rows.push({
-        kode_op: index === 0 ? opCode : "",
-        kode: workCode,
-        nama: index === 0 ? workerName : "",
-        bagian: index === 0 ? department : "",
-        item_pekerjaan: String(it.work_item_name_snapshot || "-").toUpperCase(),
-        harga: formatRupiah(pr),
-        hasil: q.toLocaleString("id-ID"),
-        jumlah: formatRupiah(subtotal),
-        total: index === 0 ? formatRupiah(workerTotal) : "",
-      });
+  // Helper pembuat baris tabel (9 kolom sesuai format standar CV. SMPT / KLASS ARTINDO)
+  function buildSheetRows(sourceItems: any[], useProposedPrice: boolean) {
+    const groupedByWorker = new Map<number, Array<any>>();
+    sourceItems.forEach((it: any) => {
+      const list = groupedByWorker.get(it.worker_id) || [];
+      list.push(it);
+      groupedByWorker.set(it.worker_id, list);
     });
 
-    opSeq += 1;
+    const rows: Array<Record<string, any>> = [];
+    let grandTotal = 0;
+    let opSeq = 1;
+
+    groupedByWorker.forEach((workerItems, wId) => {
+      const w: any = workerMap.get(wId);
+      const workerTotal = workerItems.reduce((acc, it) => {
+        const q = Number(it.qty_approved || 0);
+        const pr = useProposedPrice
+          ? Number(it.submission_price_snapshot || it.operator_price_snapshot || 0)
+          : Number(it.operator_price_snapshot || 0);
+        const lineTotal = useProposedPrice
+          ? (Number(it.submission_value) || q * pr)
+          : (Number(it.operator_value) || q * pr);
+        return acc + lineTotal;
+      }, 0);
+      grandTotal += workerTotal;
+
+      const opCode = w?.worker_code
+        ? w.worker_code.startsWith("OP")
+          ? w.worker_code
+          : `OP${String(opSeq).padStart(3, "0")}`
+        : `OP${String(opSeq).padStart(3, "0")}`;
+      const workerName = (w?.name || workerItems[0]?.worker_name_snapshot || "-").toUpperCase();
+      const department = (w?.department || w?.position || "OPERATOR").toUpperCase();
+
+      workerItems.forEach((it: any, index: number) => {
+        const q = Number(it.qty_approved || 0);
+        const pr = useProposedPrice
+          ? Number(it.submission_price_snapshot || it.operator_price_snapshot || 0)
+          : Number(it.operator_price_snapshot || 0);
+        const lineTotal = useProposedPrice
+          ? (Number(it.submission_value) || q * pr)
+          : (Number(it.operator_value) || q * pr);
+        const workCode = it.work_item_code_snapshot || `T${String(it.work_item_id || it.id).padStart(3, "0")}`;
+
+        rows.push({
+          kode_op: index === 0 ? opCode : "",
+          kode: workCode,
+          nama: index === 0 ? workerName : "",
+          bagian: index === 0 ? department : "",
+          item_pekerjaan: String(it.work_item_name_snapshot || "-").toUpperCase(),
+          harga: formatRupiah(pr),
+          hasil: q.toLocaleString("id-ID"),
+          jumlah: formatRupiah(lineTotal),
+          total: index === 0 ? formatRupiah(workerTotal) : "",
+        });
+      });
+
+      opSeq += 1;
+    });
+
+    rows.push({
+      kode_op: "",
+      kode: "",
+      nama: "",
+      bagian: "",
+      item_pekerjaan: "",
+      harga: "",
+      hasil: "",
+      jumlah: "TOTAL :",
+      total: formatRupiah(grandTotal),
+    });
+
+    rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
+    rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: `Tangerang Selatan, ${signDate}` });
+    rows.push({ kode_op: "", kode: "Disetujui,", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "Yang Mengajukan,", total: "" });
+    rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
+    rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
+    rows.push({ kode_op: "", kode: "Bony Daty", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "Dandi Mardani", total: "" });
+
+    return { rows, grandTotal };
+  }
+
+  // Pisahkan items per produk (Paspor vs Ransel)
+  const pasporItems = items.filter((it: any) => {
+    const wi = wiMap.get(it.work_item_id);
+    const prod = prodMap.get(wi?.product_id);
+    const pName = (prod?.name || it.work_item_name_snapshot || "").toUpperCase();
+    return pName.includes("PASPOR") || pName.includes("03") || (it.work_item_code_snapshot || "").startsWith("TP");
   });
 
-  rows.push({
-    kode_op: "",
-    kode: "",
-    nama: "",
-    bagian: "",
-    item_pekerjaan: "",
-    harga: "",
-    hasil: "",
-    jumlah: "TOTAL :",
-    total: formatRupiah(grandTotal),
+  const ranselItems = items.filter((it: any) => {
+    const wi = wiMap.get(it.work_item_id);
+    const prod = prodMap.get(wi?.product_id);
+    const pName = (prod?.name || it.work_item_name_snapshot || "").toUpperCase();
+    return pName.includes("RANSEL") || pName.includes("04") || (it.work_item_code_snapshot || "").startsWith("RN");
   });
 
-  const signDate = formatIndoDate(run.period_end || jakartaToday());
-  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
-  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: `Tangerang Selatan, ${signDate}` });
-  rows.push({ kode_op: "", kode: "Disetujui,", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "Yang Mengajukan,", total: "" });
-  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
-  rows.push({ kode_op: "", kode: "", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "", total: "" });
-  rows.push({ kode_op: "", kode: "Bony Daty", nama: "", bagian: "", item_pekerjaan: "", harga: "", hasil: "", jumlah: "Dandi Mardani", total: "" });
+  const otherItems = items.filter((it: any) => !pasporItems.includes(it) && !ranselItems.includes(it));
+
+  const sheets: XlsxSheet[] = [];
+
+  if (priceType === "operator") {
+    // 1. Export Murni Upah Real Operator (Harga Operator · Gabungan Seluruh Produk)
+    const { rows } = buildSheetRows(items, false);
+    sheets.push({ name: "Upah Real Operator", columns, rows, headerColor: "1E293B", tabColor: "7C3AED" });
+    return {
+      sheets,
+      filename: `SMPT-Upah-Real-Operator-${fileSlug(projectName)}-${run.period_start}-${run.period_end}.xlsx`,
+    };
+  }
+
+  if (priceType === "pengajuan") {
+    // 2. Export Murni Pengajuan (Harga Pengajuan · Terpisah Per Produk · Termasuk Harian)
+    if (pasporItems.length > 0) {
+      const { rows } = buildSheetRows(pasporItems, true);
+      sheets.push({ name: "Pengajuan Tas Paspor", columns, rows, headerColor: "065F46", tabColor: "10B981" });
+    }
+    if (ranselItems.length > 0) {
+      const { rows } = buildSheetRows(ranselItems, true);
+      sheets.push({ name: "Pengajuan Tas Ransel", columns, rows, headerColor: "1E3A8A", tabColor: "3B82F6" });
+    }
+    if (otherItems.length > 0) {
+      const { rows } = buildSheetRows(otherItems, true);
+      sheets.push({ name: "Pengajuan Item Lain", columns, rows, headerColor: "4C1D95", tabColor: "8B5CF6" });
+    }
+    const { rows: rekapRows } = buildSheetRows(items, true);
+    sheets.push({ name: "Rekap Pengajuan Gabungan", columns: columns, rows: rekapRows, headerColor: "1E293B", tabColor: "F59E0B" });
+
+    return {
+      sheets,
+      filename: `SMPT-Pengajuan-Borongan-${fileSlug(projectName)}-${run.period_start}-${run.period_end}.xlsx`,
+    };
+  }
+
+  // 3. Default: Export Komprehensif (Real Operator + Pengajuan Paspor + Pengajuan Ransel + Margin)
+  const { rows: realRows, grandTotal: totalReal } = buildSheetRows(items, false);
+  sheets.push({ name: "Upah Real Operator", columns, rows: realRows, headerColor: "1E293B", tabColor: "7C3AED" });
+
+  let totalPengajuanPaspor = 0;
+  if (pasporItems.length > 0) {
+    const { rows: pRows, grandTotal: pTot } = buildSheetRows(pasporItems, true);
+    totalPengajuanPaspor = pTot;
+    sheets.push({ name: "Pengajuan Tas Paspor", columns, rows: pRows, headerColor: "065F46", tabColor: "10B981" });
+  }
+
+  let totalPengajuanRansel = 0;
+  if (ranselItems.length > 0) {
+    const { rows: rRows, grandTotal: rTot } = buildSheetRows(ranselItems, true);
+    totalPengajuanRansel = rTot;
+    sheets.push({ name: "Pengajuan Tas Ransel", columns, rows: rRows, headerColor: "1E3A8A", tabColor: "3B82F6" });
+  }
+
+  const grandTotalPengajuan = totalPengajuanPaspor + totalPengajuanRansel;
+  const marginJahit = grandTotalPengajuan - totalReal;
+
+  const marginCols = [
+    { key: "item", label: "URAIAN KEUANGAN JAHIT", width: 35 },
+    { key: "nilai", label: "NILAI RUPIAH", width: 25 },
+    { key: "keterangan", label: "KETERANGAN", width: 45 },
+  ];
+  const marginRows = [
+    { item: "Total Pengajuan Tas Paspor", nilai: formatRupiah(totalPengajuanPaspor), keterangan: "Dihitung menggunakan Harga Pengajuan (Proposed Price)" },
+    { item: "Total Pengajuan Tas Ransel", nilai: formatRupiah(totalPengajuanRansel), keterangan: "Dihitung menggunakan Harga Pengajuan (Proposed Price)" },
+    { item: "TOTAL SELURUH PENGAJUAN", nilai: formatRupiah(grandTotalPengajuan), keterangan: "Total invoice/klaim penagihan ke manajemen / owner" },
+    { item: "TOTAL UPAH REAL OPERATOR", nilai: formatRupiah(totalReal), keterangan: "Total beban upah riil yang dibayarkan ke operator borongan" },
+    { item: "SISA MARGIN / KAS OPERASIONAL JAHIT", nilai: formatRupiah(marginJahit), keterangan: "Surplus kas operasional jahitan konveksi" },
+  ];
+  sheets.push({ name: "Rekap & Margin", columns: marginCols, rows: marginRows, headerColor: "0F172A", tabColor: "F59E0B" });
 
   return {
-    sheets: [{ name: "Pengajuan Borongan", columns, rows, headerColor: "1E293B" }],
-    filename: `SMPT-Pengajuan-Borongan-${fileSlug(projectName)}-${run.period_start}-${run.period_end}.xlsx`,
+    sheets,
+    filename: `SMPT-Laporan-Borongan-Komplit-${fileSlug(projectName)}-${run.period_start}-${run.period_end}.xlsx`,
   };
 }
 

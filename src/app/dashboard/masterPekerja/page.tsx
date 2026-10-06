@@ -62,7 +62,7 @@ export default async function Page({ searchParams }: Props) {
             <span className="font-bold text-slate-900 block mb-0.5">ℹ️ Informasi Pekerja & Akun Borongan:</span>
             Berlaku untuk semua pekerja (<b className="text-slate-800">HARIAN, BORONGAN, dan BULANAN</b>). Lampirkan <b className="text-slate-800">Foto KTP</b> dan <b className="text-slate-800">Jumlah Anak</b> untuk data kependudukan & tanggungan. Khusus pekerja <b className="text-blue-700">BORONGAN</b>, akun login aplikasi otomatis dibuatkan di sistem dengan password nama depan + 123 (contoh: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-blue-700 font-semibold">budi123</code>).
           </div>
-          <form action={createWorker} encType="multipart/form-data" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <form action={createWorker} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <WorkerFormFields />
             <div className="md:col-span-2 xl:col-span-3">
               <button className={primaryButtonClass}>Simpan Pekerja</button>

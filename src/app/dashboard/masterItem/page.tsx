@@ -356,7 +356,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
                   return (
                     <details
                       key={row.id}
-                      className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs hover:border-slate-300 transition"
+                      className="group rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs hover:border-slate-300 transition"
                     >
                       <summary className="cursor-pointer list-none">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

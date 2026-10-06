@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { cancelSpkAction, createSpkUnifiedAction, publishSpkAction } from "@/app/dashboard/spk/actions";
+import {
+  cancelSpkAction,
+  createSpkUnifiedAction,
+  editSpkAction,
+  publishSpkAction,
+} from "@/app/dashboard/spk/actions";
 
 export type SpkProject = {
   id: number;
@@ -58,6 +63,7 @@ export type SpkOrderItem = {
   operator_price_snapshot: number | string;
   is_final_output_snapshot?: boolean;
   status: string;
+  has_checks?: boolean;
 };
 
 export type SpkOrder = {
@@ -72,6 +78,7 @@ export type SpkOrder = {
   checker_email: string;
   supervisor_worker_id: number | null;
   notes: string | null;
+  has_checks?: boolean;
   items: SpkOrderItem[];
 };
 
@@ -112,6 +119,11 @@ export function SpkManager({
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [detailOrder, setDetailOrder] = useState<SpkOrder | null>(null);
+  const [editingOrder, setEditingOrder] = useState<SpkOrder | null>(null);
+  const [editItemQtys, setEditItemQtys] = useState<Record<number, string>>({});
+  const [removedItemIds, setRemovedItemIds] = useState<Set<number>>(new Set());
+  const [addWorkItemId, setAddWorkItemId] = useState<string>("");
+  const [addWorkItemQty, setAddWorkItemQty] = useState<string>("100");
 
   // Form State
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -584,6 +596,41 @@ export function SpkManager({
                             🔍 Detail
                           </button>
 
+                          {/* Tombol Edit SPK (Hanya jika belum Selesai dan belum ada setoran sah) */}
+                          {canWrite && !["SELESAI", "DIBATALKAN"].includes(order.status) && !order.has_checks ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingOrder(order);
+                                const initialQtys: Record<number, string> = {};
+                                order.items.forEach((it) => {
+                                  initialQtys[it.id] = String(it.assigned_qty);
+                                });
+                                setEditItemQtys(initialQtys);
+                                setRemovedItemIds(new Set());
+                                setAddWorkItemId("");
+                                setAddWorkItemQty("100");
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition shadow-2xs"
+                              title="Edit Item & Qty SPK"
+                            >
+                              ✏️ Edit
+                            </button>
+                          ) : canWrite && (["SELESAI", "DIBATALKAN"].includes(order.status) || order.has_checks) ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-400 select-none cursor-not-allowed"
+                              title={
+                                order.status === "SELESAI"
+                                  ? "SPK Selesai (Terkunci dari Perubahan)"
+                                  : order.status === "DIBATALKAN"
+                                  ? "SPK Dibatalkan"
+                                  : "Terkunci (Sudah ada input setoran sah dari Checker)"
+                              }
+                            >
+                              🔒 Terkunci
+                            </span>
+                          ) : null}
+
                           {order.status === "DRAFT" && canWrite ? (
                             <form action={publishSpkAction}>
                               <input type="hidden" name="order_id" value={order.id} />
@@ -1042,6 +1089,214 @@ export function SpkManager({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Modal Edit SPK */}
+      {editingOrder ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <span>✏️</span> Edit SPK: <span className="text-blue-600 font-mono">{editingOrder.spk_code}</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Perbarui kuantiti penugasan atau sesuaikan item pekerjaan sebelum diperiksa Checker.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingOrder(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Banner Notifikasi Checker */}
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+              <div className="font-bold flex items-center gap-1.5 mb-1">
+                <span>🔔</span> Notifikasi Otomatis ke Checker
+              </div>
+              <p>
+                Setiap revisi kuantiti atau item yang disimpan akan otomatis memicu tanda peringatan <b>⚠️ Diperbarui SPV</b> pada halaman Checker ({editingOrder.checker_email}).
+              </p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-500">Proyek & Produk:</span>
+                <div className="font-bold text-slate-900">
+                  {projectMap.get(editingOrder.project_id)?.name || "-"} ·{" "}
+                  <span className="text-blue-600">{productMap.get(editingOrder.product_id)?.name || "-"}</span>
+                </div>
+              </div>
+              <div>
+                <span className="text-slate-500">Operator Borongan:</span>
+                <div className="font-bold text-slate-900">
+                  {operatorMap.get(editingOrder.operator_worker_id)?.name || "-"} (
+                  {operatorMap.get(editingOrder.operator_worker_id)?.worker_code || "-"})
+                </div>
+              </div>
+            </div>
+
+            <form action={editSpkAction} className="mt-4 space-y-4">
+              <input type="hidden" name="order_id" value={editingOrder.id} />
+
+              {/* Rincian Item Pekerjaan */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Rincian Item & Qty Penugasan
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    {editingOrder.items.filter((it) => !removedItemIds.has(it.id)).length} Item Aktif
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-50 font-semibold text-slate-600 border-b border-slate-200">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Item Pekerjaan</th>
+                        <th className="px-3 py-2 text-right">Harga Satuan</th>
+                        <th className="px-3 py-2 text-center w-36">Qty Penugasan</th>
+                        <th className="px-3 py-2 text-center w-16">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {editingOrder.items.map((it) => {
+                        const isRemoved = removedItemIds.has(it.id);
+                        if (isRemoved) return null;
+
+                        const activeItemCount = editingOrder.items.filter((x) => !removedItemIds.has(x.id)).length;
+
+                        return (
+                          <tr key={it.id} className="hover:bg-slate-50/50">
+                            <td className="px-3 py-2.5 font-medium text-slate-800">
+                              <input type="hidden" name="existing_item_id" value={it.id} />
+                              <input type="hidden" name={`item_work_id_${it.id}`} value={it.work_item_id} />
+                              <div>{it.work_item_name_snapshot}</div>
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-medium text-slate-600">
+                              {money(it.operator_price_snapshot)}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <input
+                                  type="number"
+                                  name={`item_qty_${it.id}`}
+                                  value={editItemQtys[it.id] ?? it.assigned_qty}
+                                  onChange={(e) =>
+                                    setEditItemQtys((prev) => ({
+                                      ...prev,
+                                      [it.id]: e.target.value,
+                                    }))
+                                  }
+                                  min="1"
+                                  className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-center font-bold text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  required
+                                />
+                                <span className="text-slate-500 text-[11px] uppercase">{it.unit_snapshot}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              {activeItemCount > 1 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setRemovedItemIds((prev) => new Set(prev).add(it.id))}
+                                  className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                                  title="Hapus Item dari SPK"
+                                >
+                                  🗑️
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-xs">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Hidden inputs untuk items yang dihapus */}
+                {Array.from(removedItemIds).map((rId) => (
+                  <input key={rId} type="hidden" name="remove_item_id" value={rId} />
+                ))}
+              </div>
+
+              {/* Tambah Item Baru ke SPK */}
+              {(() => {
+                const existingWorkItemIds = new Set(
+                  editingOrder.items
+                    .filter((it) => !removedItemIds.has(it.id))
+                    .map((it) => it.work_item_id)
+                );
+                const unassignedItems = workItems.filter(
+                  (w) =>
+                    w.project_id === editingOrder.project_id &&
+                    (w.product_id === editingOrder.product_id || w.product_id === null) &&
+                    !existingWorkItemIds.has(w.id)
+                );
+
+                if (unassignedItems.length === 0) return null;
+
+                return (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-3.5">
+                    <h5 className="text-xs font-bold text-slate-700 mb-2">➕ Tambah Item Pekerjaan ke SPK Ini (Opsional)</h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+                      <div className="sm:col-span-2">
+                        <select
+                          name="add_work_item_id"
+                          value={addWorkItemId}
+                          onChange={(e) => setAddWorkItemId(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
+                        >
+                          <option value="">-- Pilih Item untuk Ditambahkan --</option>
+                          {unassignedItems.map((wi) => (
+                            <option key={wi.id} value={wi.id}>
+                              {wi.name} ({money(wi.operator_price)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          name="add_work_item_qty"
+                          placeholder="Qty Penugasan"
+                          value={addWorkItemQty}
+                          onChange={(e) => setAddWorkItemQty(e.target.value)}
+                          min="1"
+                          disabled={!addWorkItemId}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 disabled:opacity-50"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrder(null)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shadow-2xs flex items-center gap-1.5"
+                >
+                  <span>💾</span> Simpan Perubahan SPK
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

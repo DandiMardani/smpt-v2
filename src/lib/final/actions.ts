@@ -484,7 +484,7 @@ export async function transferFinishedGoodAction(f: FormData) {
     "/dashboard/transferBarangJadi",
     "transfer_barang_jadi.write",
     async () => {
-      await rpc("transfer_finished_good", {
+      const transferId = await rpc("transfer_finished_good", {
         p_date: date(f, "transfer_date"),
         p_finished_good_id: id(f, "finished_good_id"),
         p_source_location_id: id(f, "source_location_id"),
@@ -492,6 +492,23 @@ export async function transferFinishedGoodAction(f: FormData) {
         p_quantity: num(f, "quantity"),
         p_notes: t(f, "notes") || null,
       });
+
+      const documentNo = t(f, "document_no") || null;
+      const driverName = t(f, "driver_name") || null;
+      const vehicleNo = t(f, "vehicle_no") || null;
+
+      if (transferId && (documentNo || driverName || vehicleNo)) {
+        const s = await createClient();
+        await s
+          .from("finished_goods_transfers")
+          .update({
+            document_no: documentNo,
+            driver_name: driverName,
+            vehicle_no: vehicleNo,
+            delivery_status: "DIKIRIM",
+          })
+          .eq("id", transferId);
+      }
     },
     "Transfer Barang Jadi tersimpan."
   );
@@ -533,6 +550,51 @@ export async function packSetAction(f: FormData) {
   );
 }
 
+export async function processBundlingIsianAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const componentsRaw = t(f, "components_json");
+      let components = [];
+      try {
+        components = JSON.parse(componentsRaw || "[]");
+      } catch {
+        throw new Error("Data komponen bundling tidak valid.");
+      }
+
+      await rpc("process_bundling_isian", {
+        p_date: date(f, "bundling_date"),
+        p_bundle_fg_id: id(f, "bundle_finished_good_id"),
+        p_location_id: id(f, "location_id") || 1, // default Pabrik Pusat
+        p_bundle_qty: num(f, "bundle_qty"),
+        p_notes: t(f, "notes") || null,
+        p_components: components,
+      });
+    },
+    "Bundling Isian berhasil! Komponen satuan terpotong dan stok Paket Isian Koper bertambah di Pabrik Pusat."
+  );
+}
+
+export async function recordMrWuDailyPackingAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/mitraMrWu";
+  await mutate(
+    returnPath,
+    "packing_set.write",
+    async () => {
+      await rpc("pack_product_set", {
+        p_date: date(f, "packing_date"),
+        p_set_id: id(f, "set_id"),
+        p_location_id: id(f, "location_id"),
+        p_set_qty: num(f, "set_qty"),
+        p_notes: t(f, "notes") || "Packing Harian Pabrik Mitra MR WU",
+      });
+    },
+    "Berhasil mencatat hasil packing SET koper di MR WU! Saldo Stok SET bertambah dan siap kirim ke Embarkasi."
+  );
+}
+
 export async function createTargetAction(f: FormData) {
   await mutate(
     "/dashboard/targetEmbarkasi",
@@ -565,6 +627,12 @@ export async function createShipmentAction(f: FormData) {
     "/dashboard/pengirimanEmbarkasi",
     "pengiriman_embarkasi.operate",
     async () => {
+      const deliveryDeadline = t(f, "delivery_deadline");
+      const rawNotes = t(f, "notes") || "";
+      const finalNotes = deliveryDeadline
+        ? `[DATELINE: ${deliveryDeadline}] ${rawNotes}`.trim()
+        : rawNotes || null;
+
       await rpc("create_embarkation_shipment", {
         p_target_id: id(f, "target_id"),
         p_date: date(f, "shipment_date"),
@@ -573,7 +641,7 @@ export async function createShipmentAction(f: FormData) {
         p_document_no: t(f, "document_no") || null,
         p_driver: t(f, "driver_name") || null,
         p_vehicle: t(f, "vehicle_no") || null,
-        p_notes: t(f, "notes") || null,
+        p_notes: finalNotes,
       });
     },
     "Draft pengiriman dibuat. Stok belum berubah."
@@ -626,16 +694,150 @@ export async function createEmbarkationIssueAction(f: FormData) {
     "reject_embarkasi.write",
     async () => {
       const s = await createClient();
+
+      const itemKey = t(f, "item_key");
+      const qtyVal = Number(num(f, "quantity") || 0);
+      const daerah = t(f, "daerah") || "Asrama Haji";
+      const embarkasi = t(f, "embarkasi") || "JKS";
+      const keterangan = t(f, "keterangan") || t(f, "description") || "Reject / Klaim Fisik";
+      const tglKirim = t(f, "tgl_kirim") || new Date().toLocaleDateString("id-ID");
+      const noDokumen = t(f, "no_dokumen") || "-";
+      const statusInput = t(f, "status") || "PROSES";
+      const resolution = t(f, "resolution") || (statusInput === "SELESAI" ? "Sudah Terkirim" : "Menunggu Pengganti");
+
+      // Generate next sequence number
+      const { count } = await s.from("embarkation_issues").select("id", { count: "exact", head: true });
+      const nextNo = (count || 0) + 1;
+
+      // Construct item quantities map
+      const itemQuantities: Record<string, number> = {
+        tambahan_set: 0,
+        koper_bagasi: 0,
+        koper_kabin: 0,
+        kardus: 0,
+        paket_isian: 0,
+        cover_bagasi: 0,
+        cover_kabin: 0,
+        tas_pasport: 0,
+        tas_ransel: 0,
+        hangtag: 0,
+        logo_kemenag: 0,
+        logo_aybe: 0,
+        logo_saudi: 0,
+        sticker: 0,
+      };
+
+      if (itemKey && itemQuantities.hasOwnProperty(itemKey)) {
+        itemQuantities[itemKey] = qtyVal;
+      } else {
+        for (const k of Object.keys(itemQuantities)) {
+          const val = Number(f.get(k) || 0);
+          if (val > 0) itemQuantities[k] = val;
+        }
+      }
+
+      const totalQty = Object.values(itemQuantities).reduce((a, b) => a + b, 0) || qtyVal || 1;
+
+      const descriptionJson = JSON.stringify({
+        no: nextNo,
+        daerah,
+        embarkasi,
+        ...itemQuantities,
+        tgl_kirim: tglKirim,
+        no_dokumen: noDokumen,
+        keterangan,
+      });
+
+      // Find a shipment_id fallback if not chosen
+      let shipmentId = id(f, "shipment_id", true);
+      if (!shipmentId) {
+        const { data: latestShipment } = await s
+          .from("embarkation_shipments")
+          .select("id")
+          .order("id", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        shipmentId = latestShipment?.id;
+      }
+
+      if (!shipmentId) throw new Error("Surat jalan pengiriman terkait tidak ditemukan.");
+
+      const issueCode = `SAUDI-${String(nextNo).padStart(3, "0")}`;
+
       const { error } = await s.from("embarkation_issues").insert({
-        shipment_id: id(f, "shipment_id"),
-        issue_type: t(f, "issue_type"),
-        quantity: num(f, "quantity"),
-        description: t(f, "description"),
-        status: "OPEN",
+        issue_code: issueCode,
+        shipment_id: shipmentId,
+        issue_type: t(f, "issue_type") || "REJECT",
+        quantity: totalQty,
+        description: descriptionJson,
+        status: statusInput,
+        resolution: resolution,
       });
       if (error) throw error;
     },
-    "Masalah Embarkasi dicatat."
+    "Data reject & return embarkasi berhasil dicatat."
+  );
+}
+
+export async function updateEmbarkationIssueReturnAction(f: FormData) {
+  await mutate(
+    "/dashboard/rejectEmbarkasi",
+    "reject_embarkasi.write",
+    async () => {
+      const s = await createClient();
+      const issueId = id(f, "issue_id");
+      const noDokumen = t(f, "no_dokumen") || "-";
+      const tglKirim = t(f, "tgl_kirim") || new Date().toLocaleDateString("id-ID");
+      const statusInput = t(f, "status") || "SELESAI";
+      const resolution = t(f, "resolution") || "Sudah Terkirim / Masuk Embarkasi";
+
+      const { data: issue, error: fetchErr } = await s
+        .from("embarkation_issues")
+        .select("*")
+        .eq("id", issueId)
+        .single();
+      if (fetchErr || !issue) throw new Error("Data klaim tidak ditemukan.");
+
+      let descObj: any = {};
+      try {
+        if (issue.description && issue.description.startsWith("{")) {
+          descObj = JSON.parse(issue.description);
+        } else {
+          descObj = { keterangan: issue.description };
+        }
+      } catch {
+        descObj = { keterangan: issue.description };
+      }
+
+      descObj.no_dokumen = noDokumen;
+      descObj.tgl_kirim = tglKirim;
+
+      const { error: updErr } = await s
+        .from("embarkation_issues")
+        .update({
+          status: statusInput,
+          resolution: resolution,
+          description: JSON.stringify(descObj),
+        })
+        .eq("id", issueId);
+
+      if (updErr) throw updErr;
+    },
+    "Pengiriman return pengganti berhasil diperbarui."
+  );
+}
+
+export async function deleteEmbarkationIssueAction(f: FormData) {
+  await mutate(
+    "/dashboard/rejectEmbarkasi",
+    "reject_embarkasi.write",
+    async () => {
+      const s = await createClient();
+      const issueId = id(f, "issue_id");
+      const { error } = await s.from("embarkation_issues").delete().eq("id", issueId);
+      if (error) throw error;
+    },
+    "Catatan reject/klaim berhasil dihapus."
   );
 }
 
@@ -646,52 +848,25 @@ export async function addAttendanceAction(f: FormData) {
     async () => {
       const s = await createClient();
       const otMin = num(f, "overtime_minutes", true) ?? 0;
-      const payload = {
+      const attStatus = t(f, "attendance_status") || "HADIR";
+      const payload: any = {
         worker_id: id(f, "worker_id"),
         attendance_date: date(f, "attendance_date"),
         schedule_in: t(f, "schedule_in") || null,
         schedule_out: t(f, "schedule_out") || null,
         actual_in: t(f, "actual_in") || null,
         actual_out: t(f, "actual_out") || null,
-        day_class: t(f, "day_class") || null,
-        attendance_status: t(f, "attendance_status") || "HADIR",
+        attendance_status: attStatus,
         overtime_minutes: otMin,
         source: "MANUAL",
         notes: t(f, "notes") || null,
+        // Jika Alpha / Izin / Sakit, otomatis tercatat statusnya dan tidak perlu menunggu antrean verifikasi hadir
+        verification_status: attStatus === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
       };
       const { error } = await s.from("attendance_records").upsert(payload, { onConflict: "worker_id,attendance_date" });
       if (error) throw error;
     },
     "Absensi disimpan."
-  );
-}
-
-export async function addBulkAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const raw = t(f, "items");
-      if (!raw) return;
-      let items: any[] = [];
-      try {
-        items = JSON.parse(raw);
-      } catch {
-        throw new Error("Format data batch tidak valid.");
-      }
-      if (!items.length) return;
-
-      for (let i = 0; i < items.length; i += 100) {
-        const chunk = items.slice(i, i + 100);
-        const { error } = await s
-          .from("attendance_records")
-          .upsert(chunk, { onConflict: "worker_id,attendance_date" });
-        if (error) throw error;
-      }
-    },
-    "Absensi berhasil disimpan sekaligus."
   );
 }
 
@@ -912,12 +1087,31 @@ export async function deleteAttendanceAction(f: FormData) {
     async () => {
       const s = await createClient();
       const attId = id(f, "attendance_id");
-      const { error } = await s
-        .from("attendance_records")
-        .delete()
-        .eq("id", attId);
 
-      if (error) throw error;
+      // Verify attendance record exists
+      const { data: att, error: fetchErr } = await s
+        .from("attendance_records")
+        .select("id, attendance_date")
+        .eq("id", attId)
+        .single();
+      if (fetchErr || !att) throw new Error("Data absensi tidak ditemukan.");
+
+      // Check if it belongs to a finalized payroll run
+      const { data: finalRuns } = await s
+        .from("payroll_runs")
+        .select("id, payroll_code, period_start, period_end")
+        .eq("status", "FINAL")
+        .lte("period_start", att.attendance_date)
+        .gte("period_end", att.attendance_date);
+
+      if (finalRuns && finalRuns.length > 0) {
+        throw new Error(
+          `Data absensi tidak dapat dihapus karena sudah masuk payroll final (${finalRuns[0].payroll_code}).`
+        );
+      }
+
+      const { error: delErr } = await s.from("attendance_records").delete().eq("id", attId);
+      if (delErr) throw delErr;
     },
     "Data absensi berhasil dihapus."
   );
@@ -932,61 +1126,52 @@ export async function deleteBulkAttendanceAction(f: FormData) {
       const s = await createClient();
       const rawIds = t(f, "attendance_ids");
       const ids = rawIds
-        .split(",")
-        .map((x) => Number(x.trim()))
-        .filter((x) => x > 0);
+        ? rawIds
+            .split(",")
+            .map((x) => Number(x.trim()))
+            .filter((x) => x > 0)
+        : [];
+      if (!ids.length) throw new Error("Pilih data absensi yang ingin dihapus.");
 
-      if (!ids.length) {
-        throw new Error("Pilih minimal satu data untuk dihapus.");
+      // Fetch records to check dates
+      const { data: recs, error: rErr } = await s
+        .from("attendance_records")
+        .select("id, attendance_date")
+        .in("id", ids);
+      if (rErr || !recs || !recs.length) throw new Error("Data absensi tidak ditemukan.");
+
+      const dates = recs.map((r) => r.attendance_date);
+      const minDate = dates.reduce((a, b) => (a < b ? a : b));
+      const maxDate = dates.reduce((a, b) => (a > b ? a : b));
+
+      const { data: finalRuns } = await s
+        .from("payroll_runs")
+        .select("id, payroll_code, period_start, period_end")
+        .eq("status", "FINAL")
+        .lte("period_start", maxDate)
+        .gte("period_end", minDate);
+
+      const lockedDates = new Set<string>();
+      (finalRuns || []).forEach((run) => {
+        recs.forEach((r) => {
+          if (r.attendance_date >= run.period_start && r.attendance_date <= run.period_end) {
+            lockedDates.add(r.attendance_date);
+          }
+        });
+      });
+
+      const deletableIds = recs.filter((r) => !lockedDates.has(r.attendance_date)).map((r) => r.id);
+      if (deletableIds.length === 0) {
+        throw new Error("Semua data yang dipilih sudah terkunci dalam payroll yang sudah dibayar.");
       }
 
-      for (let i = 0; i < ids.length; i += 100) {
-        const chunk = ids.slice(i, i + 100);
-        const { error } = await s.from("attendance_records").delete().in("id", chunk);
-        if (error) throw error;
-      }
+      const { error: delErr } = await s.from("attendance_records").delete().in("id", deletableIds);
+      if (delErr) throw delErr;
     },
     "Data absensi terpilih berhasil dihapus."
   );
 }
 
-export async function deleteAlphaAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const targetDate = date(f, "target_date", true);
-
-      let q = s.from("attendance_records").select("id, attendance_status, actual_in, actual_out");
-      if (targetDate) {
-        q = q.eq("attendance_date", targetDate);
-      }
-      const { data, error } = await q;
-      if (error) throw error;
-
-      const alphaIds = (data || [])
-        .filter((r) => {
-          const noIn = !r.actual_in || r.actual_in === "--:--" || r.actual_in.trim() === "";
-          const noOut = !r.actual_out || r.actual_out === "--:--" || r.actual_out.trim() === "";
-          return r.attendance_status === "ALPHA" || (noIn && noOut);
-        })
-        .map((r) => r.id);
-
-      if (!alphaIds.length) {
-        throw new Error("Tidak ada data Alpha/kosong yang perlu dibersihkan.");
-      }
-
-      for (let i = 0; i < alphaIds.length; i += 100) {
-        const chunk = alphaIds.slice(i, i + 100);
-        const { error: delErr } = await s.from("attendance_records").delete().in("id", chunk);
-        if (delErr) throw delErr;
-      }
-    },
-    "Seluruh data Alpha/kosong berhasil dibersihkan."
-  );
-}
 
 export async function finalizePayrollAction(f: FormData) {
   await mutate(
@@ -1669,5 +1854,48 @@ export async function editManufacturingAction(f: FormData) {
       });
     },
     "Data transaksi manufaktur diperbarui."
+  );
+}
+
+export async function confirmTransferReceiptAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/transferBarangJadi";
+  await mutate(
+    returnPath,
+    "mr_wu.confirm",
+    async () => {
+      const transferId = id(f, "transfer_id");
+      const receivedQty = num(f, "received_qty");
+      const rejectQty = num(f, "reject_qty") || 0;
+      const damagedQty = num(f, "damaged_qty") || 0;
+      const notes = t(f, "received_notes") || null;
+      const photoUrl = t(f, "surat_jalan_photo_url") || null;
+
+      await rpc("confirm_transfer_receipt", {
+        p_transfer_id: transferId,
+        p_received_qty: receivedQty,
+        p_reject_qty: rejectQty,
+        p_damaged_qty: damagedQty,
+        p_notes: notes,
+        p_photo_url: photoUrl,
+      });
+    },
+    "Penerimaan barang dan foto surat jalan berhasil dikonfirmasi!"
+  );
+}
+
+export async function updateShipmentSuratJalanPhotoAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/pengirimanEmbarkasi";
+  await mutate(
+    returnPath,
+    "pengiriman_embarkasi.view",
+    async () => {
+      const shipmentId = id(f, "shipment_id");
+      const photoUrl = t(f, "surat_jalan_photo_url");
+      await rpc("update_shipment_surat_jalan_photo", {
+        p_shipment_id: shipmentId,
+        p_photo_url: photoUrl,
+      });
+    },
+    "Foto fisik surat jalan berhasil disimpan."
   );
 }

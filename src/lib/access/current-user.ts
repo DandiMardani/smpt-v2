@@ -56,13 +56,19 @@ export const getCurrentAccessContext = cache(
     if (permissionResult.error) accessRedirect("permission_read_error");
 
     const permissionRows = (permissionResult.data ?? []) as PermissionRow[];
-    const permissionCodes = Array.from(
+    const roleName = String(roleResult.data);
+    let permissionCodes: string[] = Array.from(
       new Set(
         permissionRows
           .map((row) => String(row.permission_code ?? "").trim())
           .filter(Boolean),
       ),
     ).sort();
+
+    // Petugas pengiriman embarkasi hanya memiliki hak akses melihat (view-only monitoring)
+    if (roleName === "ADMIN_EMBARKASI") {
+      permissionCodes = permissionCodes.filter((code) => code !== "pengiriman_embarkasi.operate");
+    }
 
     const email = user.email ?? "";
     const fallbackName = email ? email.split("@")[0] : "User";
@@ -71,7 +77,7 @@ export const getCurrentAccessContext = cache(
       userId: user.id,
       email,
       displayName: profile.display_name?.trim() || fallbackName,
-      role: String(roleResult.data),
+      role: roleName,
       permissionCodes,
       allowedMenuIds: getAllowedMenuIds(permissionCodes),
     };
