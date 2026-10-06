@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   calculateShiftOvertime,
   formatMinutesToHours,
+  timeToMinutes,
   type ShiftOvertimeResult,
 } from "@/lib/attendance/overtime-calculator";
 import {
@@ -68,6 +69,26 @@ type Props = {
   payrollRuns?: FinalizedPayrollRun[];
 };
 
+// Deteksi cerdas apakah record absensi merupakan shift setengah hari (HALF_DAY)
+function checkIsHalfDay(rec: AttendanceRecordItem): boolean {
+  if (rec.day_class === "HALF_DAY") return true;
+  if (rec.actual_in) {
+    const match = rec.actual_in.match(/^(\d{1,2}):/);
+    if (match) {
+      const h = parseInt(match[1], 10);
+      if (h >= 12 || (h >= 1 && h <= 6)) return true;
+    }
+  }
+  if (rec.actual_in && rec.actual_out) {
+    const inM = timeToMinutes(rec.actual_in);
+    const outM = timeToMinutes(rec.actual_out);
+    if (inM !== null && outM !== null && outM > inM && outM - inM <= 300) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export default function AttendanceManager({
   records,
   workers,
@@ -77,19 +98,27 @@ export default function AttendanceManager({
 }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<AttendanceStatusFilter>("DRAFT");
-  const [dateFilter, setDateFilter] = useState<string>("");
+
+  // Otomatis fokus ke tanggal terbaru yang ada di data agar layar tidak kepanjangan
+  const latestDateInRecords = useMemo(() => {
+    return records.length > 0 ? records[0].attendance_date : "";
+  }, [records]);
+
+  const [dateFilter, setDateFilter] = useState<string>(() => {
+    return records.length > 0 ? records[0].attendance_date : "";
+  });
+
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [defaultDayClass, setDefaultDayClass] = useState<"FULL_DAY" | "HALF_DAY">("FULL_DAY");
   const [useAutoOvertime, setUseAutoOvertime] = useState<boolean>(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [showGuide, setShowGuide] = useState<boolean>(false);
   const [isPending, startTransition] = useTransition();
 
   const workerMap = useMemo(() => {
     return new Map(workers.map((w) => [w.id, w]));
   }, [workers]);
 
-  // Pre-calculate shift overtimes & deteksi anomali jam bolong & status payroll
+  // Pre-calculate shift overtimes, deteksi anomali, status payroll, dan klasifikasi Half Day
   const enrichedRecords = useMemo(() => {
     return records.map((rec) => {
       const worker = workerMap.get(rec.worker_id);
@@ -109,6 +138,7 @@ export default function AttendanceManager({
       const isMissingOut = !rec.actual_out || rec.actual_out === "--:--" || rec.actual_out.trim() === "";
       const isHadir = rec.attendance_status === "HADIR";
       const isAnomaly = (isMissingIn || isMissingOut) && isHadir;
+      const isHalfDay = isHadir && checkIsHalfDay(rec);
 
       // Cek apakah tanggal absensi pekerja ini sudah masuk periode payroll yang FINAL (sudah dibayar)
       const matchingPayrollRun = (payrollRuns || []).find((run) => {
@@ -131,16 +161,21 @@ export default function AttendanceManager({
         isMissingOut,
         isHadir,
         isAnomaly,
+        isHalfDay,
+        effectiveDayClass: isHalfDay ? "HALF_DAY" : rec.day_class || "FULL_DAY",
         isPaid,
         matchingPayrollRun,
       };
     });
   }, [records, workerMap, shiftSettings, payrollRuns]);
 
-  // Hitungan metrik akurat
-  const totalCount = records.length;
-  // Draft Siap Verifikasi: HANYA yang HADIR, JAM MASUK & PULANG LENGKAP, BELUM DIVERIFIKASI, & BELUM DIBAYAR
-  const draftCount = enrichedRecords.filter(
+  // Hitungan metrik akurat (berdasarkan filter tanggal jika dipilih)
+  const currentScopedRecords = useMemo(() => {
+    return dateFilter ? enrichedRecords.filter((r) => r.attendance_date === dateFilter) : enrichedRecords;
+  }, [enrichedRecords, dateFilter]);
+
+  const totalCount = currentScopedRecords.length;
+  const draftCount = currentScopedRecords.filter(
     (r) =>
       !r.isPaid &&
       r.verification_status !== "TERVERIFIKASI" &&
@@ -148,20 +183,16 @@ export default function AttendanceManager({
       !r.isMissingIn &&
       !r.isMissingOut
   ).length;
-  // Anomali: HADIR tapi jam masuk kosong atau jam pulang kosong, belum dibayar, belum verifikasi
-  const anomalyCount = enrichedRecords.filter(
+  const anomalyCount = currentScopedRecords.filter(
     (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isAnomaly
   ).length;
-  // Terverifikasi: HADIR, sudah diverifikasi, belum dibayar
-  const verifiedCount = enrichedRecords.filter(
+  const verifiedCount = currentScopedRecords.filter(
     (r) => !r.isPaid && r.verification_status === "TERVERIFIKASI" && r.isHadir
   ).length;
-  // Sudah Dibayar
-  const paidCount = enrichedRecords.filter((r) => r.isPaid).length;
-  // Non-Hadir (Alpha, Izin, Sakit)
-  const nonHadirCount = enrichedRecords.filter((r) => !r.isHadir).length;
+  const paidCount = currentScopedRecords.filter((r) => r.isPaid).length;
+  const nonHadirCount = currentScopedRecords.filter((r) => !r.isHadir).length;
 
-  // Filter records berdasarkan status & filter anomali
+  // Filter records berdasarkan status & tanggal & pencarian
   const filteredRecords = useMemo(() => {
     return enrichedRecords.filter((rec) => {
       if (statusFilter === "DRAFT") {
@@ -211,13 +242,21 @@ export default function AttendanceManager({
     (r) => selectedIds.has(r.id) && !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
   );
 
-  // Semua draft siap sahkan di filter ini
+  // Semua draft siap sahkan di filter saat ini
   const allDraftsInFilter = filteredRecords.filter(
     (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
   );
 
   function handleTabChange(tab: AttendanceStatusFilter) {
     setStatusFilter(tab);
+    setSelectedIds(new Set());
+  }
+
+  function handleStepDate(days: number) {
+    const base = dateFilter || latestDateInRecords || new Date().toISOString().slice(0, 10);
+    const d = new Date(base + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + days);
+    setDateFilter(d.toISOString().slice(0, 10));
     setSelectedIds(new Set());
   }
 
@@ -270,13 +309,15 @@ export default function AttendanceManager({
     });
   }
 
+  // FIX: Menjaga status HALF_DAY agar tidak tertimpa Full Day secara massal
   function handleBulkVerifySelected() {
     if (selectedDrafts.length === 0) return;
     const items = selectedDrafts.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
+      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : (row.day_class || defaultDayClass);
       return {
         id: row.id,
-        day_class: defaultDayClass,
+        day_class: assignedDayClass,
         overtime_minutes: ot,
         notes: row.notes || undefined,
       };
@@ -291,13 +332,15 @@ export default function AttendanceManager({
     });
   }
 
+  // FIX: Menjaga status HALF_DAY pada verifikasi semua draft
   function handleBulkVerifyAllDrafts() {
     if (allDraftsInFilter.length === 0) return;
     const items = allDraftsInFilter.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
+      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : (row.day_class || defaultDayClass);
       return {
         id: row.id,
-        day_class: defaultDayClass,
+        day_class: assignedDayClass,
         overtime_minutes: ot,
         notes: row.notes || undefined,
       };
@@ -325,7 +368,9 @@ export default function AttendanceManager({
               : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           }`}
         >
-          <p className="text-[11px] font-medium text-slate-500">Semua Presensi</p>
+          <p className="text-[11px] font-medium text-slate-500">
+            {dateFilter ? "Total Hari Ini" : "Semua Presensi"}
+          </p>
           <p className="mt-1 text-xl sm:text-2xl font-black text-slate-900">{totalCount}</p>
         </div>
 
@@ -408,7 +453,7 @@ export default function AttendanceManager({
         </div>
       )}
 
-      {/* 3. Filter Controls & Search */}
+      {/* 3. Filter Controls & Navigasi Tanggal Per Hari */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-3.5 shadow-2xs">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
           <input
@@ -416,25 +461,57 @@ export default function AttendanceManager({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cari nama pekerja, kode, atau finger..."
-            className="w-full sm:w-64 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition"
+            className="w-full sm:w-56 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition"
           />
 
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-slate-50/50 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition"
-          />
+          {/* Quick Date Stepper (Per Hari) */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => handleStepDate(-1)}
+              className="px-2 py-1 bg-white hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-black shadow-2xs cursor-pointer"
+              title="Hari Sebelumnya"
+            >
+              ◀ H-1
+            </button>
+
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => {
+                setDateFilter(e.target.value);
+                setSelectedIds(new Set());
+              }}
+              className="rounded-lg bg-transparent px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+            />
+
+            <button
+              type="button"
+              onClick={() => handleStepDate(1)}
+              className="px-2 py-1 bg-white hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-black shadow-2xs cursor-pointer"
+              title="Hari Berikutnya"
+            >
+              H+1 ▶
+            </button>
+          </div>
 
           {dateFilter ? (
             <button
               type="button"
               onClick={() => setDateFilter("")}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline cursor-pointer px-1"
             >
-              Reset Tgl
+              Lihat Semua Tanggal
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDateFilter(latestDateInRecords)}
+              className="text-xs font-semibold text-slate-600 hover:text-slate-800 underline cursor-pointer px-1"
+            >
+              Fokus Hari Ini
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl text-xs font-semibold overflow-x-auto no-scrollbar">
@@ -543,7 +620,7 @@ export default function AttendanceManager({
                 onChange={(e) => setDefaultDayClass(e.target.value as "FULL_DAY" | "HALF_DAY")}
                 className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white outline-none cursor-pointer text-xs"
               >
-                <option value="FULL_DAY" className="text-slate-900">FULL DAY</option>
+                <option value="FULL_DAY" className="text-slate-900">FULL DAY (Default)</option>
                 <option value="HALF_DAY" className="text-slate-900">HALF DAY</option>
               </select>
 
@@ -599,6 +676,7 @@ export default function AttendanceManager({
             const isVerified = rec.verification_status === "TERVERIFIKASI";
             const calc = rec.calc;
             const worker = rec.worker;
+            const dayClass = rec.effectiveDayClass;
 
             return (
               <div
@@ -679,11 +757,17 @@ export default function AttendanceManager({
                         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
                           {rec.attendance_status}
                         </span>
-                        {rec.day_class ? (
-                          <span className="rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[11px] font-bold border border-blue-200">
-                            {rec.day_class}
+                        {rec.isHadir && (
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[11px] font-bold border ${
+                              dayClass === "HALF_DAY"
+                                ? "bg-amber-100 text-amber-900 border-amber-300"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}
+                          >
+                            {dayClass}
                           </span>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   </div>
@@ -773,7 +857,7 @@ export default function AttendanceManager({
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Klasifikasi Hari</label>
                           <select
                             name="day_class"
-                            defaultValue={rec.day_class || "FULL_DAY"}
+                            defaultValue={dayClass}
                             className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-semibold"
                           >
                             <option value="FULL_DAY">FULL DAY</option>
@@ -827,7 +911,7 @@ export default function AttendanceManager({
                     ) : (
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                         <div className="text-xs text-slate-600">
-                          Data ini sudah diverifikasi dengan klasifikasi: <b>{rec.day_class || "FULL_DAY"}</b>, lembur: <b>{formatMinutesToHours(rec.overtime_minutes)}</b> ({rec.overtime_minutes} menit).
+                          Data ini sudah diverifikasi dengan klasifikasi: <b>{dayClass}</b>, lembur: <b>{formatMinutesToHours(rec.overtime_minutes)}</b> ({rec.overtime_minutes} menit).
                         </div>
                         <div className="flex items-center gap-2">
                           <form action={unverifyAttendanceAction}>
