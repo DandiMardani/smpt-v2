@@ -211,6 +211,7 @@ export function WarungPortal({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<WarungTransaction | null>(null);
   const [formWorkerId, setFormWorkerId] = useState("");
+  const [formDate, setFormDate] = useState(new Date().toLocaleDateString("en-CA"));
   const [formAmount, setFormAmount] = useState<number | "">("");
   const [formPaidAmount, setFormPaidAmount] = useState<number | "">("");
   const [formNotes, setFormNotes] = useState("");
@@ -270,6 +271,7 @@ export function WarungPortal({
   const handleOpenCreate = (workerIdPrefill?: string) => {
     setEditingTx(null);
     setFormWorkerId(workerIdPrefill || (initialWorkers[0]?.id ? String(initialWorkers[0].id) : ""));
+    setFormDate(new Date().toLocaleDateString("en-CA"));
     setFormAmount("");
     setFormPaidAmount(0);
     setFormNotes("");
@@ -284,6 +286,11 @@ export function WarungPortal({
     }
     setEditingTx(tx);
     setFormWorkerId(String(tx.worker_id));
+    setFormDate(
+      tx.created_at
+        ? new Date(tx.created_at).toLocaleDateString("en-CA")
+        : new Date().toLocaleDateString("en-CA")
+    );
     setFormAmount(tx.amount);
     setFormPaidAmount(tx.paid_amount || 0);
     setFormNotes(tx.notes);
@@ -351,6 +358,7 @@ export function WarungPortal({
           paid_amount: Number(formPaidAmount) || 0,
           items: [],
           warung_name: formWarungName,
+          advance_date: formDate,
         } as any);
         if (!res.success) throw new Error(res.error);
 
@@ -367,6 +375,7 @@ export function WarungPortal({
                   remaining_amount: Math.max(0, Number(formAmount) - (Number(formPaidAmount) || 0)),
                   notes: formNotes || "Kasbon Warung",
                   warung_name: formWarungName,
+                  created_at: formDate,
                 }
               : t
           )
@@ -379,6 +388,7 @@ export function WarungPortal({
           direct_amount: Number(formAmount),
           items: [],
           warung_name: formWarungName,
+          advance_date: formDate,
         } as any);
         if (!res.success) throw new Error(res.error);
 
@@ -391,7 +401,7 @@ export function WarungPortal({
           paid_amount: 0,
           remaining_amount: Number(formAmount),
           notes: formNotes || "Kasbon Warung",
-          created_at: new Date().toISOString(),
+          created_at: formDate,
           status: "AKTIF",
           installments_paid: 0,
           warung_name: formWarungName,
@@ -1051,6 +1061,19 @@ export function WarungPortal({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Tanggal Transaksi / Nota
+                </label>
+                <input
+                  type="date"
+                  value={formDate}
+                  onChange={(e) => setFormDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-[#ea580c]"
+                  required
+                />
               </div>
 
               {/* Preset Cepat dengan Tombol Kelola / Ubah Harga */}

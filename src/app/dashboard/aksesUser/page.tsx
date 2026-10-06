@@ -120,11 +120,31 @@ export default async function Page({ searchParams }: Props) {
   if (err) throw new Error(err.message);
 
   const users = (usersResult.data ?? []) as UserRow[];
-  const roles = (rolesResult.data ?? []) as RoleRow[];
+  const rawRoles = (rolesResult.data ?? []) as RoleRow[];
   const workers = (workersResult.data ?? []) as WorkerRow[];
   const selected = users.find((x) => x.user_id === selectedUserId) ?? null;
-  const createRoles = roles.filter((r) => r.role_code !== "CHECKER");
-  const editRoles = roles.filter((r) => r.role_code !== "CHECKER" || selected?.role_code === "CHECKER");
+
+  // Pastikan seluruh role sistem terdaftar lengkap di dropdown pemilihan role
+  const standardRoles: RoleRow[] = [
+    { role_id: 1, role_code: "ADMIN" },
+    { role_id: 2, role_code: "MANAGER" },
+    { role_id: 3, role_code: "USER" },
+    { role_id: 4, role_code: "PEKERJA" },
+    { role_id: 5, role_code: "SUPERVISOR" },
+    { role_id: 6, role_code: "GUDANG" },
+    { role_id: 7, role_code: "CUTTING" },
+    { role_id: 8, role_code: "WARUNG" },
+    { role_id: 11, role_code: "ADMIN_MR_WU" },
+    { role_id: 12, role_code: "ADMIN_EMBARKASI" },
+  ];
+
+  const roleMap = new Map<string, RoleRow>();
+  standardRoles.forEach((r) => roleMap.set(r.role_code, r));
+  rawRoles.forEach((r) => roleMap.set(r.role_code, r));
+
+  const allRoles = Array.from(roleMap.values());
+  const createRoles = allRoles.filter((r) => r.role_code !== "CHECKER");
+  const editRoles = allRoles.filter((r) => r.role_code !== "CHECKER" || selected?.role_code === "CHECKER");
   const selectedOverrides = ((overridesResult.data ?? []) as any[]).map((x) => String(x.permission_pattern).toLowerCase());
 
   return (

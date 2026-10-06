@@ -35,6 +35,13 @@ function formatTimeAgo(isoString: string): string {
 export async function GET() {
   try {
     const access = await getCurrentAccessContext();
+    const userRole = (access.role || "").toUpperCase();
+
+    // User pekerja/warung tidak perlu menerima notifikasi aktivitas pabrik/logistik
+    if (["PEKERJA", "WARUNG", "CUTTING"].includes(userRole)) {
+      return NextResponse.json({ success: true, unreadCount: 0, notifications: [] });
+    }
+
     const supabase = await createClient();
     const currentUserId = access.userId;
 
@@ -224,10 +231,20 @@ export async function GET() {
     // Sort by timestamp desc
     items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
+    // Filter notifikasi sesuai ranah peran (role-based targeting)
+    const relevantItems = items.filter((item) => {
+      if (userRole === "ADMIN" || userRole === "MANAGER") return true; // Manajemen melihat semua
+      if (userRole === "ADMIN_EMBARKASI") return item.category === "PENGIRIMAN" || item.category === "TRANSFER";
+      if (userRole === "ADMIN_MR_WU") return item.category === "PACKING" || item.category === "TRANSFER";
+      if (userRole === "SUPERVISOR") return item.category === "ABSENSI" || item.category === "PACKING";
+      if (userRole === "GUDANG") return item.category === "TRANSFER" || item.category === "PACKING" || item.category === "PENGIRIMAN";
+      return true;
+    });
+
     return NextResponse.json({
       success: true,
-      unreadCount: items.length,
-      notifications: items.slice(0, 30),
+      unreadCount: relevantItems.length,
+      notifications: relevantItems.slice(0, 30),
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message, notifications: [] }, { status: 500 });

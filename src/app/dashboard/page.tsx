@@ -87,12 +87,14 @@ export default async function DashboardPage(props: {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard?view=manager"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 px-3.5 py-2.5 text-xs font-bold text-purple-700 shadow-xs hover:bg-purple-100 transition"
-            >
-              👔 Tampilan Manager →
-            </Link>
+            {access.role === "ADMIN" && (
+              <Link
+                href="/dashboard?view=manager"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 px-3.5 py-2.5 text-xs font-bold text-purple-700 shadow-xs hover:bg-purple-100 transition"
+              >
+                👔 Tampilan Manager →
+              </Link>
+            )}
             <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-2.5 text-right">
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Akses Akun</p>
               <p className="mt-0.5 text-xs font-extrabold text-[#0d6efd]">{access.role}</p>

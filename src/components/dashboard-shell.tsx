@@ -709,8 +709,10 @@ export function DashboardShell({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {/* Notification Bell with Tracking Flyout */}
-              <AdminNotificationBell userRole={userProfile.role} />
+              {/* Notification Bell with Tracking Flyout (Hanya untuk tim manajemen & operasional yang berkepentingan) */}
+              {!["PEKERJA", "WARUNG"].includes(userProfile.role.toUpperCase()) ? (
+                <AdminNotificationBell userRole={userProfile.role} />
+              ) : null}
 
               {/* User Avatar */}
               <Link

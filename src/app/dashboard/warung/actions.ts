@@ -21,6 +21,7 @@ export async function createWarungTransactionAction(payload: {
   direct_amount?: number;
   items?: Array<{ item_name: string; qty: number; unit_price: number; subtotal: number }>;
   warung_name?: string;
+  advance_date?: string;
 }) {
   try {
     const { supabase, warungId, warungName, isAdmin } = await getAuth();
@@ -28,6 +29,7 @@ export async function createWarungTransactionAction(payload: {
     if (totalAmount <= 0) return { success: false, error: "Nominal harus lebih dari 0." };
 
     const assignedWarungName = isAdmin && payload.warung_name ? payload.warung_name : warungName;
+    const effectiveDate = payload.advance_date || new Date().toLocaleDateString("en-CA");
 
     const { error } = await supabase.from("cash_advances").insert({
       worker_id: payload.worker_id,
@@ -41,6 +43,7 @@ export async function createWarungTransactionAction(payload: {
       installment_count: 1,
       installment_amount: totalAmount,
       installments_paid: 0,
+      advance_date: effectiveDate,
     });
 
     if (error) return { success: false, error: error.message };
@@ -61,6 +64,7 @@ export async function updateWarungTransactionAction(
     paid_amount?: number;
     items?: Array<{ item_name: string; qty: number; unit_price: number; subtotal: number }>;
     warung_name?: string;
+    advance_date?: string;
   }
 ) {
   try {
@@ -81,6 +85,7 @@ export async function updateWarungTransactionAction(
         installment_amount: totalAmount,
         notes: payload.notes || "Kasbon",
         status: newStatus,
+        ...(payload.advance_date ? { advance_date: payload.advance_date } : {}),
         ...(payload.warung_name ? { warung_name: payload.warung_name } : {}),
       })
       .eq("id", transactionId);
