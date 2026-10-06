@@ -915,6 +915,177 @@ async function upahHarianWorkbook(
   };
 }
 
+// -------------------------------------------------------------
+// FORMAT 5: MANIFEST PENGIRIMAN & REKAPITULASI KUOTA EMBARKASI
+// LENGKAP DENGAN NAMA EMBARKASI, ITEM TARGET, ARMADA, DAN DATELINE
+// -------------------------------------------------------------
+async function pengirimanEmbarkasiWorkbook(
+  supabase: any,
+  params: URLSearchParams
+): Promise<{ sheets: XlsxSheet[]; filename: string }> {
+  const from = params.get("from");
+  const to = params.get("to");
+
+  let shipQuery = supabase
+    .from("embarkation_shipments")
+    .select("*")
+    .order("shipment_date", { ascending: false });
+
+  if (from && to && from !== to) {
+    shipQuery = shipQuery.gte("shipment_date", from).lte("shipment_date", to);
+  }
+
+  const [shipRes, trRes, erRes, lrRes, fgRes, setRes] = await Promise.all([
+    shipQuery,
+    supabase.from("embarkation_targets").select("*").limit(500),
+    supabase.from("embarkations").select("id, embarkation_code, short_code, name"),
+    supabase.from("locations").select("id, name"),
+    supabase.from("finished_goods").select("id, name"),
+    supabase.from("product_sets").select("id, name"),
+  ]);
+
+  const shipments = shipRes.data ?? [];
+  const targetMap = new Map((trRes.data ?? []).map((x: any) => [x.id, x]));
+  const embMap = new Map((erRes.data ?? []).map((x: any) => [x.id, x]));
+  const locMap = new Map((lrRes.data ?? []).map((x: any) => [x.id, x.name]));
+  const fgMap = new Map((fgRes.data ?? []).map((x: any) => [x.id, x.name]));
+  const setMap = new Map((setRes.data ?? []).map((x: any) => [x.id, x.name]));
+
+  // Sheet 1: Daftar Pengiriman Armada / Surat Jalan
+  const shipColumns = [
+    { key: "no", label: "NO", width: 6 },
+    { key: "no_sj", label: "NO. SURAT JALAN", width: 22 },
+    { key: "kode_pengiriman", label: "KODE PENGIRIMAN", width: 18 },
+    { key: "tgl_kirim", label: "TANGGAL KIRIM", width: 14 },
+    { key: "embarkasi", label: "EMBARKASI TUJUAN", width: 26 },
+    { key: "item", label: "ITEM MUATAN", width: 24 },
+    { key: "qty", label: "QTY DIKIRIM (SET)", width: 16 },
+    { key: "received_qty", label: "QTY DITERIMA", width: 16 },
+    { key: "asal", label: "ASAL GUDANG / PABRIK", width: 22 },
+    { key: "driver", label: "DRIVER / EKSPEDISI", width: 20 },
+    { key: "nopol", label: "NO. POLISI", width: 14 },
+    { key: "dateline", label: "DATELINE TIBA ASRAMA", width: 18 },
+    { key: "status", label: "STATUS", width: 14 },
+    { key: "catatan", label: "CATATAN", width: 24 },
+  ];
+
+  let totalKirim = 0;
+  let totalDiterima = 0;
+
+  const shipRows = shipments.map((s: any, idx: number) => {
+    const target = targetMap.get(s.target_id);
+    const emb: any = target ? embMap.get(target.embarkation_id) : null;
+    const itemName = target
+      ? target.item_kind === "SET"
+        ? setMap.get(target.set_id) || "SET Koper"
+        : fgMap.get(target.finished_good_id) || "Item Koper"
+      : "Item Target";
+
+    const matchDeadline = (s.notes || "").match(/\[DATELINE:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\]/);
+    const deadlineVal = matchDeadline ? matchDeadline[1] : "-";
+    const cleanNotes = (s.notes || "").replace(/\[DATELINE:\s*[0-9]{4}-[0-9]{2}-[0-9]{2}\]\s*/, "");
+
+    const qtyVal = Number(s.quantity || 0);
+    const recvVal = s.received_qty !== null ? Number(s.received_qty) : 0;
+    totalKirim += qtyVal;
+    totalDiterima += recvVal;
+
+    return {
+      no: idx + 1,
+      no_sj: s.document_no || s.shipment_code,
+      kode_pengiriman: s.shipment_code,
+      tgl_kirim: s.shipment_date,
+      embarkasi: emb ? `[${emb.short_code || "-"}] ${emb.name}` : `Embarkasi #${s.target_id}`,
+      item: itemName,
+      qty: qtyVal,
+      received_qty: s.received_qty !== null ? recvVal : "-",
+      asal: locMap.get(s.source_location_id) || `Lokasi #${s.source_location_id}`,
+      driver: s.driver_name || "-",
+      nopol: s.vehicle_no || "-",
+      dateline: deadlineVal,
+      status: s.status,
+      catatan: cleanNotes || "-",
+    };
+  });
+
+  shipRows.push({
+    no: "",
+    no_sj: "",
+    kode_pengiriman: "",
+    tgl_kirim: "",
+    embarkasi: "",
+    item: "TOTAL :",
+    qty: totalKirim,
+    received_qty: totalDiterima,
+    asal: "",
+    driver: "",
+    nopol: "",
+    dateline: "",
+    status: "",
+    catatan: "",
+  });
+
+  // Sheet 2: Rangkuman Kuota Embarkasi
+  const summaryColumns = [
+    { key: "no", label: "NO", width: 6 },
+    { key: "embarkasi", label: "EMBARKASI", width: 28 },
+    { key: "item", label: "ITEM TARGET", width: 24 },
+    { key: "target_qty", label: "TARGET KUOTA (SET)", width: 18 },
+    { key: "sent_qty", label: "TERKIRIM (SET)", width: 16 },
+    { key: "received_qty", label: "TIBA DI ASRAMA (SET)", width: 18 },
+    { key: "remaining_qty", label: "SISA KURANG (SET)", width: 18 },
+    { key: "progress", label: "PROGRES (%)", width: 14 },
+    { key: "last_date", label: "TGL KIRIM TERAKHIR", width: 18 },
+    { key: "dateline", label: "DATELINE TARGET", width: 16 },
+  ];
+
+  const summaryRows = (trRes.data ?? []).map((t: any, idx: number) => {
+    const emb: any = embMap.get(t.embarkation_id);
+    const itemName = t.item_kind === "SET"
+      ? setMap.get(t.set_id) || "SET Koper"
+      : fgMap.get(t.finished_good_id) || "Item";
+
+    const targetShipments = shipments.filter((s: any) => s.target_id === t.id && s.status !== "DIBATALKAN");
+    const sentShipments = targetShipments.filter((s: any) => s.status === "DIKIRIM" || s.status === "DITERIMA");
+    const receivedShipments = targetShipments.filter((s: any) => s.status === "DITERIMA");
+
+    const sentQty = sentShipments.reduce((sum: number, s: any) => sum + (Number(s.quantity) || 0), 0);
+    const receivedQty = receivedShipments.reduce((sum: number, s: any) => sum + (Number(s.received_qty ?? s.quantity) || 0), 0);
+    const targetQty = Number(t.target_qty) || 0;
+    const remainingQty = Math.max(0, targetQty - sentQty);
+    const progressPct = targetQty > 0 ? Math.min(100, Math.round((sentQty / targetQty) * 100)) : 0;
+
+    const dates = targetShipments.map((s: any) => s.shipment_date).filter(Boolean).sort().reverse();
+    const lastDate = dates[0] || "-";
+
+    const deadlineMatch = (t.notes || "").match(/\[DATELINE:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\]/);
+    const defaultDeadline =
+      emb?.short_code === "JKS" ? "2026-05-15" : emb?.short_code === "JKG" ? "2026-05-18" : "2026-05-20";
+    const deadline = deadlineMatch ? deadlineMatch[1] : defaultDeadline;
+
+    return {
+      no: idx + 1,
+      embarkasi: emb ? `[${emb.short_code || "-"}] ${emb.name}` : `Embarkasi #${t.embarkation_id}`,
+      item: itemName,
+      target_qty: targetQty,
+      sent_qty: sentQty,
+      received_qty: receivedQty,
+      remaining_qty: remainingQty,
+      progress: `${progressPct}%`,
+      last_date: lastDate,
+      dateline: deadline,
+    };
+  });
+
+  return {
+    sheets: [
+      { name: "Manifest Pengiriman", columns: shipColumns, rows: shipRows, headerColor: "0369A1" },
+      { name: "Rangkuman Kuota", columns: summaryColumns, rows: summaryRows, headerColor: "0F766E" },
+    ],
+    filename: `Rekap-Pengiriman-Embarkasi-Haji-2026.xlsx`,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const params = request.nextUrl.searchParams;
@@ -959,6 +1130,13 @@ export async function GET(request: NextRequest) {
         sheets = result.sheets;
         customFilename = result.filename;
       }
+    } else if (rawKey === "pengiriman" || rawKey === "pengiriman_embarkasi") {
+      if (!access.permissions.has("pengiriman_embarkasi.view") && !["ADMIN", "MANAGER", "ADMIN_EMBARKASI"].includes(access.role)) {
+        return NextResponse.json({ error: "Tidak punya akses melihat pengiriman embarkasi." }, { status: 403 });
+      }
+      const result = await pengirimanEmbarkasiWorkbook(supabase, params);
+      sheets = result.sheets;
+      customFilename = result.filename;
     } else if (rawKey === "manager_dashboard" || rawKey === "manager_section") {
       if (!["MANAGER", "ADMIN"].includes(access.role)) return NextResponse.json({ error: "Export Dashboard Manager hanya untuk MANAGER/ADMIN." }, { status: 403 });
       title = rawKey === "manager_section" ? `Manager ${String(params.get("section") || "Detail")}` : "Manager Dashboard";

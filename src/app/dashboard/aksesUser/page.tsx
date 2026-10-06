@@ -50,6 +50,8 @@ type WorkerRow = {
 const roleHelp: Record<string, string> = {
   ADMIN: "Full system & administrasi",
   MANAGER: "Monitoring, laporan & export — read-only",
+  ADMIN_EMBARKASI: "Admin Pengiriman Embarkasi — Distribusi koper haji, surat jalan armada, dateline & reject",
+  ADMIN_MR_WU: "Portal Mitra Pabrik MR WU — Packing SET koper & serah terima pabrik",
   SUPERVISOR: "Operasional produksi, SPK, assignment, QC & rework",
   GUDANG: "Gudang, inventory custody, WIP & logistik",
   CUTTING: "Operator Cutting — input pemakaian bahan & hasil cutting",
@@ -60,6 +62,10 @@ const roleHelp: Record<string, string> = {
 };
 
 const CUSTOM_MODULES = [
+  { id: "pengiriman_embarkasi.*", label: "🚚 Pengiriman & Dateline Embarkasi", desc: "Menerbitkan surat jalan armada, tracking pengiriman & konfirmasi asrama haji" },
+  { id: "reject_embarkasi.*", label: "📦 Reject & Return Embarkasi", desc: "Mencatat klaim reject koper haji, perlengkapan rusak & pengiriman return pengganti" },
+  { id: "mr_wu.*", label: "🏭 Pabrik Mitra MR WU", desc: "Akses pencatatan packing SET koper dan penerimaan material di pabrik MR WU" },
+  { id: "target_embarkasi.*", label: "🎯 Target Kuota Embarkasi", desc: "Melihat dan mengelola target kuota koper haji per embarkasi" },
   { id: "pekerjaan_saya.*", label: "💰 Gaji & Slip Pekerjaan Saya", desc: "Melihat rincian upah, absensi, pinjaman & kasbon warung sendiri" },
   { id: "cutting.*", label: "✂️ Modul Cutting", desc: "Mencatat pemakaian kain/bahan dan hasil potongan" },
   { id: "sablon.*", label: "🎨 Modul Sablon", desc: "Mencatat serah terima dan pengerjaan sablon" },
