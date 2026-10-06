@@ -945,11 +945,11 @@ async function pengirimanEmbarkasiWorkbook(
   ]);
 
   const shipments = shipRes.data ?? [];
-  const targetMap = new Map((trRes.data ?? []).map((x: any) => [x.id, x]));
-  const embMap = new Map((erRes.data ?? []).map((x: any) => [x.id, x]));
-  const locMap = new Map((lrRes.data ?? []).map((x: any) => [x.id, x.name]));
-  const fgMap = new Map((fgRes.data ?? []).map((x: any) => [x.id, x.name]));
-  const setMap = new Map((setRes.data ?? []).map((x: any) => [x.id, x.name]));
+  const targetMap = new Map<any, any>((trRes.data ?? []).map((x: any) => [x.id, x]));
+  const embMap = new Map<any, any>((erRes.data ?? []).map((x: any) => [x.id, x]));
+  const locMap = new Map<any, string>((lrRes.data ?? []).map((x: any) => [x.id, x.name]));
+  const fgMap = new Map<any, string>((fgRes.data ?? []).map((x: any) => [x.id, x.name]));
+  const setMap = new Map<any, string>((setRes.data ?? []).map((x: any) => [x.id, x.name]));
 
   // Sheet 1: Daftar Pengiriman Armada / Surat Jalan
   const shipColumns = [
@@ -973,7 +973,7 @@ async function pengirimanEmbarkasiWorkbook(
   let totalDiterima = 0;
 
   const shipRows = shipments.map((s: any, idx: number) => {
-    const target = targetMap.get(s.target_id);
+    const target: any = targetMap.get(s.target_id);
     const emb: any = target ? embMap.get(target.embarkation_id) : null;
     const itemName = target
       ? target.item_kind === "SET"
