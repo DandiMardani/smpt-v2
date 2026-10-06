@@ -13,7 +13,11 @@ begin
   delete from public.attendance_import_rows;
   delete from public.attendance_import_batches;
 
-  -- 3. Clean Production test records (checks, spk items, spk, manual results, operator payroll)
+  -- 3. Clean QC reworks and inspections (must be before production_checks)
+  delete from public.qc_reworks;
+  delete from public.qc_inspections;
+
+  -- 4. Clean Production test records (checks, spk items, spk, manual results, operator payroll)
   delete from public.production_checks;
   delete from public.production_order_items;
   delete from public.production_orders;
@@ -21,13 +25,14 @@ begin
   delete from public.operator_payroll_items;
   delete from public.operator_payroll_runs;
 
-  -- 4. Clean finished goods transfers, bundling, and packing test records
+  -- 5. Clean finished goods transfers, bundling, external receipts, and packing test records
   delete from public.finished_goods_bundling_items;
   delete from public.finished_goods_bundling;
   delete from public.finished_goods_transfers;
+  delete from public.external_finished_receipts;
   delete from public.packing_runs;
 
-  -- 5. Clean cash advances, petty cash, & payroll runs
+  -- 6. Clean cash advances, petty cash, & payroll runs
   delete from public.cash_advance_payments;
   delete from public.cash_advances;
   delete from public.petty_cash_transactions;
@@ -39,7 +44,7 @@ begin
   delete from public.payroll_run_items;
   delete from public.payroll_runs;
 
-  -- 6. Reset test runs
+  -- 7. Reset test runs
   delete from public.system_test_run_entities;
   delete from public.system_test_runs;
 end;

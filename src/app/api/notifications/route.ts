@@ -4,7 +4,7 @@ import { getCurrentAccessContext } from "@/lib/access/current-user";
 
 export type NotificationItem = {
   id: string;
-  category: "ABSENSI" | "PENGIRIMAN" | "PACKING" | "TRANSFER" | "KASBON";
+  category: "ABSENSI" | "PENGIRIMAN" | "PACKING" | "TRANSFER" | "KASBON" | "PRODUKSI";
   title: string;
   description: string;
   actor: string;
@@ -46,7 +46,7 @@ export async function GET() {
     const currentUserId = access.userId;
 
     // Fetch in parallel recent inputs across modules
-    const [attRes, shipRes, packRes, transRes, qcRes, profilesRes] = await Promise.all([
+    const [attRes, shipRes, packRes, transRes, qcRes, checkRes, spkRes, profilesRes] = await Promise.all([
       // 1. Absensi terbaru
       supabase
         .from("attendance_records")
@@ -77,7 +77,19 @@ export async function GET() {
         .select("id, inspection_date, inspected_qty, good_qty, reject_qty, rework_qty, created_at, created_by, finished_goods(name)")
         .order("created_at", { ascending: false })
         .limit(15),
-      // 6. Profiles & roles map
+      // 6. Setoran Hasil Checker terbaru
+      supabase
+        .from("production_checks")
+        .select("id, check_code, check_date, good_qty, reject_qty, notes, created_at, checker_user_id, checker_email, production_order_items(work_item_name_snapshot)")
+        .order("created_at", { ascending: false })
+        .limit(15),
+      // 7. SPK Terbitan SPV terbaru
+      supabase
+        .from("production_orders")
+        .select("id, spk_code, order_date, status, created_at, created_by, workers(name)")
+        .order("created_at", { ascending: false })
+        .limit(15),
+      // 8. Profiles & roles map
       supabase.from("profiles").select("id, display_name, email, role_id, roles(name, code)"),
     ]);
 
@@ -228,16 +240,63 @@ export async function GET() {
       });
     });
 
+    // 6. Setoran Hasil Checker (Pemeriksaan Kerja Operator)
+    (checkRes.data ?? []).forEach((c: any) => {
+      if (currentUserId && c.checker_user_id === currentUserId) return;
+      const creator = c.checker_user_id ? profileMap.get(c.checker_user_id) : null;
+      const actorName = creator ? `${creator.name} (${creator.roleName})` : (c.checker_email || "Checker");
+      const itemName = (c.production_order_items as any)?.work_item_name_snapshot || "Pekerjaan";
+
+      items.push({
+        id: `chk-${c.id}`,
+        category: "PRODUKSI",
+        title: `Setoran Checker: ${itemName}`,
+        description: `Diterima ${c.good_qty} Pcs (Reject: ${c.reject_qty || 0}) dicatat oleh ${actorName}`,
+        actor: actorName,
+        timestamp: c.created_at,
+        timeAgo: formatTimeAgo(c.created_at),
+        link: `/dashboard/borongan`,
+        badge: {
+          label: "Checker",
+          color: "bg-emerald-100 text-emerald-800 border-emerald-200",
+        },
+      });
+    });
+
+    // 7. SPK Baru Diterbitkan Supervisor (SPV)
+    (spkRes.data ?? []).forEach((spk: any) => {
+      if (currentUserId && spk.created_by === currentUserId) return;
+      const creator = spk.created_by ? profileMap.get(spk.created_by) : null;
+      const actorName = creator ? `${creator.name} (${creator.roleName})` : "Supervisor";
+      const opName = (spk.workers as any)?.name || "Operator";
+
+      items.push({
+        id: `spk-${spk.id}`,
+        category: "PRODUKSI",
+        title: `SPK Terbit: ${spk.spk_code}`,
+        description: `Penugasan untuk operator ${opName} (Status: ${spk.status}) oleh ${actorName}`,
+        actor: actorName,
+        timestamp: spk.created_at,
+        timeAgo: formatTimeAgo(spk.created_at),
+        link: `/dashboard/spk`,
+        badge: {
+          label: "SPK / SPV",
+          color: "bg-indigo-100 text-indigo-800 border-indigo-200",
+        },
+      });
+    });
+
     // Sort by timestamp desc
     items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // Filter notifikasi sesuai ranah peran (role-based targeting)
     const relevantItems = items.filter((item) => {
-      if (userRole === "ADMIN" || userRole === "MANAGER") return true; // Manajemen melihat semua
+      if (userRole === "ADMIN" || userRole === "MANAGER") return true; // ADMIN & MANAGER memantau SEMUA aktivitas lengkap
       if (userRole === "ADMIN_EMBARKASI") return item.category === "PENGIRIMAN" || item.category === "TRANSFER";
       if (userRole === "ADMIN_MR_WU") return item.category === "PACKING" || item.category === "TRANSFER";
-      if (userRole === "SUPERVISOR") return item.category === "ABSENSI" || item.category === "PACKING";
+      if (userRole === "SUPERVISOR") return item.category === "ABSENSI" || item.category === "PRODUKSI" || item.category === "TRANSFER" || item.category === "PACKING";
       if (userRole === "GUDANG") return item.category === "TRANSFER" || item.category === "PACKING" || item.category === "PENGIRIMAN";
+      if (userRole === "CHECKER") return item.category === "PRODUKSI";
       return true;
     });
 

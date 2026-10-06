@@ -79,6 +79,7 @@ export function AdminNotificationBell({ userRole }: { userRole?: string }) {
   const filteredNotifications = notifications.filter((n) => {
     if (activeTab === "ALL") return true;
     if (activeTab === "ABSENSI") return n.category === "ABSENSI";
+    if (activeTab === "PRODUKSI") return n.category === "PRODUKSI";
     if (activeTab === "PENGIRIMAN") return n.category === "PENGIRIMAN";
     if (activeTab === "PABRIK") return n.category === "PACKING" || n.category === "TRANSFER";
     return true;
@@ -88,6 +89,8 @@ export function AdminNotificationBell({ userRole }: { userRole?: string }) {
     switch (cat) {
       case "ABSENSI":
         return "📝";
+      case "PRODUKSI":
+        return "⚙️";
       case "PENGIRIMAN":
         return "🚚";
       case "PACKING":
@@ -185,6 +188,7 @@ export function AdminNotificationBell({ userRole }: { userRole?: string }) {
             {[
               { id: "ALL", label: "Semua" },
               { id: "ABSENSI", label: "Presensi" },
+              { id: "PRODUKSI", label: "Checker & SPV" },
               { id: "PENGIRIMAN", label: "Logistik" },
               { id: "PABRIK", label: "MR WU & Pabrik" },
             ].map((t) => (
