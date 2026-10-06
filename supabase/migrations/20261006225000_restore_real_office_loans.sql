@@ -59,15 +59,15 @@ values
     10,
     '2026-09-01',
     2000000.00,
-    2000000.00,
-    'LUNAS',
+    666666.67,
+    'AKTIF',
     'keperluan Pribadi',
     '0d8eea71-e781-4700-b48c-52835fc8397c'::uuid,
     '2026-09-25 08:03:04.229361+00',
     'KASBON_PERUSAHAAN',
     3,
     666666.67,
-    3
+    1
   ),
   (
     17,
@@ -114,9 +114,16 @@ on conflict (id) do update set
   installment_amount = excluded.installment_amount,
   installments_paid = excluded.installments_paid;
 
--- Ensure payment history exists for Jajang (1x angsuran)
+-- Ensure payment history exists for Jajang and Suherman (1x angsuran)
 insert into public.cash_advance_payments (
   advance_id, payment_date, amount, source, reference, notes, created_by
 )
 select 3, '2026-10-06'::date, 833333.33, 'MANUAL', 'ANGSURAN-1', 'Pembayaran angsuran ke-1 (dari 3x)', '0d8eea71-e781-4700-b48c-52835fc8397c'::uuid
 where not exists (select 1 from public.cash_advance_payments where advance_id = 3);
+
+insert into public.cash_advance_payments (
+  advance_id, payment_date, amount, source, reference, notes, created_by
+)
+select 2, '2026-10-06'::date, 666666.67, 'MANUAL', 'ANGSURAN-1', 'Pembayaran angsuran ke-1 (dari 3x)', '0d8eea71-e781-4700-b48c-52835fc8397c'::uuid
+where not exists (select 1 from public.cash_advance_payments where advance_id = 2);
+
