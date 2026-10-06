@@ -117,6 +117,22 @@ export function WarungPortal({
       txCount: 0,
     });
 
+    map.set("ratno", {
+      name: "ratno",
+      totalDebt: 0,
+      workerCount: new Set(),
+      txCount: 0,
+    });
+
+    if (currentWarung.name && !map.has(currentWarung.name)) {
+      map.set(currentWarung.name, {
+        name: currentWarung.name,
+        totalDebt: 0,
+        workerCount: new Set(),
+        txCount: 0,
+      });
+    }
+
     transactions.forEach((tx) => {
       const wName = tx.warung_name && tx.warung_name.trim() !== "" ? tx.warung_name : "Dandi Store";
       let entry = map.get(wName);
