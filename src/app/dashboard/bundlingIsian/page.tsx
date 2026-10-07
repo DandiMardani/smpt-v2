@@ -40,30 +40,39 @@ export default async function BundlingIsianPage({ searchParams }: Props) {
     balancesMap.set(Number(b.finished_good_id), Number(b.quantity || 0));
   });
 
+  // Kata kunci barang yang dikecualikan agar tidak masuk ke bundling isian
+  const EXCLUDED_KEYWORDS = ["MAHJONG"];
+
   // Identify Bundle Goods (category ISIAN or name containing 'ISIAN' or 'PAKET')
   let bundleGoods = allFg.filter((f: any) => {
     const nameUpper = String(f.name || "").toUpperCase();
-    return nameUpper.includes("ISIAN") || nameUpper.includes("BUNDLE");
+    const isExcluded = EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
+    return (nameUpper.includes("ISIAN") || nameUpper.includes("BUNDLE") || nameUpper.includes("PAKET")) && !isExcluded;
   }).map((f: any) => ({
     id: Number(f.id),
     code: f.finished_good_code || `BJ-${f.id}`,
     name: f.name,
   }));
 
-  // Fallback if no specific bundle good, include all finished goods
+  // Fallback jika belum ada nama spesifik 'ISIAN', ambil barang jadi selain yang dikecualikan
   if (bundleGoods.length === 0) {
-    bundleGoods = allFg.slice(0, 5).map((f: any) => ({
+    bundleGoods = allFg.filter((f: any) => {
+      const nameUpper = String(f.name || "").toUpperCase();
+      return !EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
+    }).slice(0, 5).map((f: any) => ({
       id: Number(f.id),
       code: f.finished_good_code || `BJ-${f.id}`,
       name: f.name,
     }));
   }
 
-  // Identify Component Goods (Tas Paspor, Tas Ransel/Kabin, Cover Bagasi, Cover Kabin, Stempel/Kartu)
-  const componentKeywords = ["PASPOR", "PASPORT", "RANSEL", "KABIN", "COVER", "SARUNG", "STEMPEL", "KARTU", "TALI"];
+  // Identify Component Goods: Sarung Koper, Tas Paspor, Tas Ransel/Kabin, Cover, dsb.
+  const componentKeywords = ["PASPOR", "PASPORT", "RANSEL", "KABIN", "COVER", "SARUNG KOPER", "SARUNG", "STEMPEL", "KARTU", "TALI"];
   let availableComponents = allFg.filter((f: any) => {
     const nameUpper = String(f.name || "").toUpperCase();
-    return componentKeywords.some((kw) => nameUpper.includes(kw)) && !nameUpper.includes("ISIAN");
+    const isMatched = componentKeywords.some((kw) => nameUpper.includes(kw));
+    const isExcluded = EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
+    return isMatched && !isExcluded && !nameUpper.includes("ISIAN");
   }).map((f: any) => ({
     id: Number(f.id),
     code: f.finished_good_code || `BJ-${f.id}`,
@@ -71,9 +80,12 @@ export default async function BundlingIsianPage({ searchParams }: Props) {
     stock: balancesMap.get(Number(f.id)) || 0,
   }));
 
-  // If none matched by keyword, pick general finished goods
+  // Fallback jika tidak ada yang cocok
   if (availableComponents.length === 0) {
-    availableComponents = allFg.filter((f: any) => !bundleGoods.some((b) => b.id === Number(f.id))).slice(0, 5).map((f: any) => ({
+    availableComponents = allFg.filter((f: any) => {
+      const nameUpper = String(f.name || "").toUpperCase();
+      return !bundleGoods.some((b) => b.id === Number(f.id)) && !EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
+    }).slice(0, 5).map((f: any) => ({
       id: Number(f.id),
       code: f.finished_good_code || `BJ-${f.id}`,
       name: f.name,
