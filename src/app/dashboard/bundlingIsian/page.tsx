@@ -24,91 +24,75 @@ export default async function BundlingIsianPage({ searchParams }: Props) {
 
   const PUSAT_LOCATION_ID = 1;
 
-  // 1. Fetch finished goods, stock balances at Pusat, and bundling history
-  const [fgRes, balancesRes, bundlingRes, bundlingItemsRes] = await Promise.all([
-    s.from("finished_goods").select("id, finished_good_code, name, category, source, status").eq("status", "AKTIF").order("name"),
+  // 1. Ambil data Paket Isian, Resep, Saldo Komponen, dan Riwayat Packing
+  const [
+    packagesRes,
+    recipesRes,
+    pkgBalancesRes,
+    fgRes,
+    fgBalancesRes,
+    packingHistoryRes,
+    packingItemsRes,
+  ] = await Promise.all([
+    s.from("bundle_packages").select("*").eq("status", "AKTIF").order("name"),
+    s.from("bundle_package_recipes").select("*"),
+    s.from("bundle_package_balances").select("*").eq("location_id", PUSAT_LOCATION_ID),
+    s.from("finished_goods").select("id, finished_good_code, name, status").eq("status", "AKTIF").order("name"),
     s.from("logistics_stock_balances").select("*").eq("location_id", PUSAT_LOCATION_ID).eq("item_kind", "FINISHED_GOOD"),
-    s.from("finished_goods_bundling").select("*").order("bundling_date", { ascending: false }).limit(200),
-    s.from("finished_goods_bundling_items").select("*").limit(2000),
+    s.from("bundle_package_packings").select("*").order("packing_date", { ascending: false }).limit(200),
+    s.from("bundle_package_packing_items").select("*").limit(2000),
   ]);
 
-  const allFg = fgRes.data || [];
-  const fgMap = new Map(allFg.map((f: any) => [Number(f.id), f]));
+  const packages = (packagesRes.data || []).map((p: any) => ({
+    id: Number(p.id),
+    code: p.package_code,
+    name: p.name,
+    description: p.description,
+  }));
 
-  const balancesMap = new Map<number, number>();
-  (balancesRes.data || []).forEach((b: any) => {
-    balancesMap.set(Number(b.finished_good_id), Number(b.quantity || 0));
+  const allRecipes = (recipesRes.data || []).map((r: any) => ({
+    package_id: Number(r.package_id),
+    finished_good_id: Number(r.finished_good_id),
+    qty_per_bundle: Number(r.qty_per_bundle || 1),
+  }));
+
+  const fgBalancesMap = new Map<number, number>();
+  (fgBalancesRes.data || []).forEach((b: any) => {
+    fgBalancesMap.set(Number(b.finished_good_id), Number(b.quantity || 0));
   });
 
-  // Kata kunci barang yang dikecualikan agar tidak masuk ke bundling isian
-  const EXCLUDED_KEYWORDS = ["MAHJONG"];
-
-  // Identify Bundle Goods (category ISIAN or name containing 'ISIAN' or 'PAKET')
-  let bundleGoods = allFg.filter((f: any) => {
-    const nameUpper = String(f.name || "").toUpperCase();
-    const isExcluded = EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
-    return (nameUpper.includes("ISIAN") || nameUpper.includes("BUNDLE") || nameUpper.includes("PAKET")) && !isExcluded;
-  }).map((f: any) => ({
-    id: Number(f.id),
-    code: f.finished_good_code || `BJ-${f.id}`,
-    name: f.name,
-  }));
-
-  // Fallback jika belum ada nama spesifik 'ISIAN', ambil barang jadi selain yang dikecualikan
-  if (bundleGoods.length === 0) {
-    bundleGoods = allFg.filter((f: any) => {
+  const EXCLUDED_KEYWORDS = ["MAHJONG", "DUMMY"];
+  const allFg = (fgRes.data || [])
+    .filter((f: any) => {
       const nameUpper = String(f.name || "").toUpperCase();
       return !EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
-    }).slice(0, 5).map((f: any) => ({
+    })
+    .map((f: any) => ({
       id: Number(f.id),
       code: f.finished_good_code || `BJ-${f.id}`,
       name: f.name,
+      stock: fgBalancesMap.get(Number(f.id)) || 0,
     }));
-  }
 
-  // Identify Component Goods: Sarung Koper, Tas Paspor, Tas Ransel/Kabin, Cover, dsb.
-  const componentKeywords = ["PASPOR", "PASPORT", "RANSEL", "KABIN", "COVER", "SARUNG KOPER", "SARUNG", "STEMPEL", "KARTU", "TALI"];
-  let availableComponents = allFg.filter((f: any) => {
-    const nameUpper = String(f.name || "").toUpperCase();
-    const isMatched = componentKeywords.some((kw) => nameUpper.includes(kw));
-    const isExcluded = EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
-    return isMatched && !isExcluded && !nameUpper.includes("ISIAN");
-  }).map((f: any) => ({
-    id: Number(f.id),
-    code: f.finished_good_code || `BJ-${f.id}`,
-    name: f.name,
-    stock: balancesMap.get(Number(f.id)) || 0,
-  }));
+  const fgMap = new Map(allFg.map((f) => [f.id, f]));
+  const packageMap = new Map(packages.map((p) => [p.id, p]));
 
-  // Fallback jika tidak ada yang cocok
-  if (availableComponents.length === 0) {
-    availableComponents = allFg.filter((f: any) => {
-      const nameUpper = String(f.name || "").toUpperCase();
-      return !bundleGoods.some((b) => b.id === Number(f.id)) && !EXCLUDED_KEYWORDS.some((kw) => nameUpper.includes(kw));
-    }).slice(0, 5).map((f: any) => ({
-      id: Number(f.id),
-      code: f.finished_good_code || `BJ-${f.id}`,
-      name: f.name,
-      stock: balancesMap.get(Number(f.id)) || 0,
-    }));
-  }
+  const packingList = packingHistoryRes.data || [];
+  const packingItems = packingItemsRes.data || [];
 
-  const bundlingList = bundlingRes.data || [];
-  const bundlingItems = bundlingItemsRes.data || [];
-
-  // Metrics
-  const totalBundledQty = bundlingList.reduce((sum: number, b: any) => sum + (Number(b.bundle_qty) || 0), 0);
-  const currentBundleStock = bundleGoods.reduce((sum: number, b) => sum + (balancesMap.get(b.id) || 0), 0);
+  // Hitung Metrik Operasional
+  const totalPacked = packingList.reduce((sum: number, p: any) => sum + (Number(p.quantity) || 0), 0);
+  const totalReadyStock = (pkgBalancesRes.data || []).reduce((sum: number, b: any) => sum + (Number(b.quantity) || 0), 0);
 
   return (
     <PageShell
       eyebrow="QC & Logistik Pusat"
       title="Bundling Isian Koper (Pabrik Pusat)"
-      description="Pengemasan & bundling komponen satuan (Tas Paspor, Tas Ransel, Sarung Koper, Kartu/Stempel) menjadi 1 Paket Isian Koper di Pabrik Pusat sebelum ditransfer ke Pabrik Mitra MR WU."
+      description="Pengemasan & bundling komponen satuan menjadi Paket Isian Koper (JKS, JKG, dll) sebelum ditransfer ke Pabrik Mitra MR WU."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
 
-      {/* Top Action & Metrics Bar */}
+      {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-xs">
         <div>
           <span className="inline-block rounded-md bg-blue-600 px-2.5 py-0.5 text-[10px] font-black tracking-wider text-white uppercase">
@@ -118,7 +102,7 @@ export default async function BundlingIsianPage({ searchParams }: Props) {
             Kemas Paket Isian Sebelum Dikirim ke Mitra MR WU
           </h3>
           <p className="text-xs text-slate-600">
-            Setelah dibundle, paket isian koper siap dikirim melalui Surat Jalan Transfer ke Pabrik Mitra MR WU.
+            Pilih paket (JKS / JKG) sesuai kloter pengerjaan hari ini. Komponen satuan akan otomatis terpotong dari gudang.
           </p>
         </div>
         <Link
@@ -130,61 +114,64 @@ export default async function BundlingIsianPage({ searchParams }: Props) {
         </Link>
       </div>
 
+      {/* Metrik Stok */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Total Bundle Selesai Dipacking" value={`${qty(totalBundledQty)} Paket`} />
-        <Metric label="Stok Isian Ready di Pusat" value={`${qty(currentBundleStock)} Paket`} />
-        <Metric label="Riwayat Transaksi Bundling" value={`${bundlingList.length} Transaksi`} />
+        <Metric label="📦 Total Selesai Dipacking" value={`${qty(totalPacked)} Pcs`} />
+        <Metric label="🏢 Sisa Stok Ready di Pusat" value={`${qty(totalReadyStock)} Pcs`} />
+        <Metric label="📋 Riwayat Transaksi Packing" value={`${packingList.length} Transaksi`} />
       </div>
 
-      {/* Form Input Bundling */}
+      {/* Formulir 2 Tab (Input Harian & Atur Resep) */}
       {canWrite ? (
-        <Card title="📦 Formulir Pengerjaan Bundling Isian Koper (Pusat)">
+        <Card title="📦 Manajemen Bundling & Resep Paket Isian">
           <BundlingIsianForm
-            bundleGoods={bundleGoods}
-            availableComponents={availableComponents}
+            packages={packages}
+            allRecipes={allRecipes}
+            availableComponents={allFg}
           />
         </Card>
       ) : null}
 
-      {/* Riwayat Bundling */}
-      <Card title={`Riwayat Pengerjaan Bundling Isian (${bundlingList.length} Transaksi)`}>
-        {bundlingList.length === 0 ? (
-          <Empty>Belum ada riwayat pengerjaan bundling isian koper tercatat.</Empty>
+      {/* Riwayat Pengerjaan Packing Harian */}
+      <Card title={`Riwayat Pengerjaan Packing Isian (${packingList.length} Transaksi)`}>
+        {packingList.length === 0 ? (
+          <Empty>Belum ada riwayat pengerjaan packing isian koper tercatat.</Empty>
         ) : (
           <TableWrap>
             <thead>
               <tr>
                 <Th>Tanggal</Th>
-                <Th>Kode Bundling</Th>
+                <Th>Kode Transaksi</Th>
                 <Th>Nama Paket Isian</Th>
-                <Th className="text-right">Jumlah Paket</Th>
+                <Th className="text-right">Jumlah Selesai</Th>
                 <Th>Rincian Komponen Terpotong</Th>
                 <Th>Catatan</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {bundlingList.map((b: any) => {
-                const items = bundlingItems.filter((it: any) => it.bundling_id === b.id);
+              {packingList.map((p: any) => {
+                const items = packingItems.filter((it: any) => it.packing_id === p.id);
+                const pkg = packageMap.get(Number(p.package_id));
                 return (
-                  <tr key={b.id} className="hover:bg-slate-50/70 transition">
-                    <Td className="font-semibold text-slate-800">{b.bundling_date}</Td>
-                    <Td className="font-mono text-xs font-bold text-blue-700">{b.bundling_code}</Td>
-                    <Td className="font-extrabold text-slate-900">{b.bundle_name}</Td>
+                  <tr key={p.id} className="hover:bg-slate-50/70 transition">
+                    <Td className="font-semibold text-slate-800">{p.packing_date}</Td>
+                    <Td className="font-mono text-xs font-bold text-blue-700">{p.packing_code}</Td>
+                    <Td className="font-extrabold text-slate-900">{pkg?.name || `Paket #${p.package_id}`}</Td>
                     <Td className="text-right font-black text-emerald-700">
-                      {qty(b.bundle_qty)} Paket
+                      {qty(p.quantity)} Pcs
                     </Td>
                     <Td>
                       {items.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5">
                           {items.map((it: any) => {
-                            const fg = fgMap.get(Number(it.component_finished_good_id));
+                            const fg = fgMap.get(Number(it.finished_good_id));
                             return (
                               <span
                                 key={it.id}
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700"
                               >
                                 <span className="font-medium text-slate-600">{fg?.name || "Item"}:</span>
-                                <span className="font-black text-slate-900">{qty(it.total_qty)}</span>
+                                <span className="font-black text-slate-900">{qty(it.total_qty)} Pcs</span>
                               </span>
                             );
                           })}
@@ -193,7 +180,7 @@ export default async function BundlingIsianPage({ searchParams }: Props) {
                         <span className="text-xs text-slate-400 italic">-</span>
                       )}
                     </Td>
-                    <Td className="text-xs text-slate-500 italic">{b.notes || "-"}</Td>
+                    <Td className="text-xs text-slate-500 italic">{p.notes || "-"}</Td>
                   </tr>
                 );
               })}
