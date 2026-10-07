@@ -2078,3 +2078,61 @@ export async function createBundlePackageAction(f: FormData) {
 }
 
 
+export async function updateBundlePackageAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const s = await createClient();
+      const targetId = id(f, "package_id");
+      const code = t(f, "package_code").toUpperCase();
+      const name = t(f, "name");
+      const description = t(f, "description") || null;
+
+      if (!code || !name) throw new Error("Kode dan nama paket wajib diisi.");
+
+      const { error } = await s
+        .from("bundle_packages")
+        .update({
+          package_code: code,
+          name: name,
+          description: description,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", targetId);
+      if (error) throw error;
+    },
+    "Nama dan data paket berhasil diperbarui!"
+  );
+}
+
+export async function deleteBundlePackageAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const s = await createClient();
+      const targetId = id(f, "package_id");
+
+      // Cegah hapus jika sudah ada transaksi packing harian yang tercatat
+      const { data: packings } = await s
+        .from("bundle_package_packings")
+        .select("id")
+        .eq("package_id", targetId)
+        .limit(1);
+
+      if (packings && packings.length > 0) {
+        throw new Error("Paket tidak bisa dihapus karena sudah ada riwayat transaksi packing harian yang menggunakan paket ini.");
+      }
+
+      const { error } = await s.from("bundle_packages").delete().eq("id", targetId);
+      if (error) throw error;
+    },
+    "Paket isian berhasil dihapus."
+  );
+}
+
+
+
