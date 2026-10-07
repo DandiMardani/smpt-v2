@@ -3,8 +3,46 @@ import { requirePermission } from "@/lib/access/current-user";
 import { param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { createTargetAction } from "@/lib/final/actions";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 type Props = { searchParams: Promise<SearchParams> };
+
+// Server Action untuk menghapus Target Embarkasi beserta relasinya
+async function deleteTargetAction(formData: FormData) {
+  "use server";
+  const a = await requirePermission("target_embarkasi.view");
+  if (!a.permissionCodes.includes("target_embarkasi.write")) {
+    redirect("/dashboard/targetEmbarkasi?error=Akses+ditolak");
+  }
+
+  const id = formData.get("id");
+  if (!id) return;
+
+  const s = await createClient();
+
+  // 1. Bersihkan pengiriman & issues terkait terlebih dahulu agar tidak terganjal foreign key
+  const { data: shipments } = await s
+    .from("embarkation_shipments")
+    .select("id")
+    .eq("target_id", id);
+
+  if (shipments && shipments.length > 0) {
+    const shipmentIds = shipments.map((x: any) => x.id);
+    await s.from("embarkation_issues").delete().in("shipment_id", shipmentIds);
+    await s.from("embarkation_shipments").delete().eq("target_id", id);
+  }
+
+  // 2. Hapus target kuota
+  const { error } = await s.from("embarkation_targets").delete().eq("id", id);
+
+  if (error) {
+    redirect(`/dashboard/targetEmbarkasi?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/dashboard/targetEmbarkasi");
+  redirect("/dashboard/targetEmbarkasi?success=Target+embarkasi+berhasil+dihapus");
+}
 
 export default async function Page({ searchParams }: Props) {
   const a = await requirePermission("target_embarkasi.view");
@@ -107,6 +145,7 @@ export default async function Page({ searchParams }: Props) {
                 <Th>Target Kuota</Th>
                 <Th>Catatan</Th>
                 <Th>Status</Th>
+                {can ? <Th className="text-right">Aksi</Th> : null}
               </tr>
             </thead>
             <tbody>
@@ -144,6 +183,19 @@ export default async function Page({ searchParams }: Props) {
                     <Td>
                       <Badge>{x.status}</Badge>
                     </Td>
+                    {can ? (
+                      <Td className="text-right">
+                        <form action={deleteTargetAction}>
+                          <input type="hidden" name="id" value={x.id} />
+                          <button
+                            type="submit"
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition cursor-pointer shadow-2xs"
+                          >
+                            🗑️ Hapus
+                          </button>
+                        </form>
+                      </Td>
+                    ) : null}
                   </tr>
                 );
               })}
