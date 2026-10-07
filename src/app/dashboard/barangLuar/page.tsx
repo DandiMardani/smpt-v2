@@ -13,36 +13,15 @@ export default async function Page({ searchParams }: Props) {
   const q = await searchParams;
   const s = await createClient();
 
-  const [pr, fr, vr, lr, rr] = await Promise.all([
-    s
-      .from("projects")
-      .select("id,name,status")
-      .order("name")
-      .limit(300),
-    s
-      .from("finished_goods")
-      .select("id,finished_good_code,name,unit,project_id,status")
-      .eq("status", "AKTIF")
-      .order("name")
-      .limit(1000),
-    s
-      .from("vendors")
-      .select("id,vendor_code,name,status")
-      .eq("status", "AKTIF")
-      .order("name")
-      .limit(500),
-    s
-      .from("locations")
-      .select("id,name,status")
-      .eq("status", "AKTIF")
-      .order("name")
-      .limit(200),
-    s
-      .from("external_finished_receipts")
-      .select("*")
-      .order("receipt_date", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(500),
+  const [pr, fr, vr, lr, rr, dpRes, poRes, logsRes] = await Promise.all([
+    s.from("projects").select("id,name,status").order("name").limit(300),
+    s.from("finished_goods").select("id,finished_good_code,name,unit,project_id,status").eq("status", "AKTIF").order("name").limit(1000),
+    s.from("vendors").select("id,vendor_code,name,status").eq("status", "AKTIF").order("name").limit(500),
+    s.from("locations").select("id,name,status").eq("status", "AKTIF").order("name").limit(200),
+    s.from("external_finished_receipts").select("*").order("receipt_date", { ascending: false }).order("id", { ascending: false }).limit(500),
+    s.from("vendor_down_payments").select("*").order("payment_date", { ascending: false }),
+    s.from("vendor_po_targets").select("*").order("id", { ascending: true }),
+    s.from("vendor_delivery_logs").select("*").order("delivery_date", { ascending: false }).order("id", { ascending: false }),
   ]);
 
   const e = [pr.error, fr.error, vr.error, lr.error, rr.error].find(Boolean);
@@ -61,9 +40,15 @@ export default async function Page({ searchParams }: Props) {
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canReceive ? <ReadOnly /> : null}
 
-      {/* DASHBOARD MONITORING SUPPLIER SARUNG KOPER (IBU MITA) */}
+      {/* DASHBOARD MONITORING SUPPLIER & POTONGAN DP REAL-DATABASE */}
       <div className="mb-6">
-        <SarungKoperMonitoring />
+        <SarungKoperMonitoring
+          vendors={(vr.data ?? []) as any[]}
+          downPayments={(dpRes.data ?? []) as any[]}
+          poTargets={(poRes.data ?? []) as any[]}
+          deliveryLogs={(logsRes.data ?? []) as any[]}
+          canEdit={canReceive}
+        />
       </div>
 
       <BarangLuarManager
