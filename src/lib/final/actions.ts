@@ -494,9 +494,17 @@ export async function transferFinishedGoodAction(f: FormData) {
       }
 
       const transferDate = date(f, "transfer_date");
+      if (!transferDate) throw new Error("Tanggal transfer tidak valid.");
+
       const srcLoc = id(f, "source_location_id");
+      if (!srcLoc) throw new Error("Lokasi asal tidak valid.");
+
       const destLoc = id(f, "destination_location_id");
+      if (!destLoc) throw new Error("Lokasi tujuan tidak valid.");
+
       const quantity = num(f, "quantity");
+      if (quantity === null || quantity <= 0) throw new Error("Jumlah quantity tidak valid.");
+
       const notes = t(f, "notes") || null;
       const transferCode = `TRF-${transferDate.replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
 
