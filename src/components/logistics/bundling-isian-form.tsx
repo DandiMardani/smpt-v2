@@ -23,13 +23,13 @@ export function BundlingIsianForm({
   defaultBundleId,
 }: Props) {
   const [bundleFgId, setBundleFgId] = useState<number>(defaultBundleId || bundleGoods[0]?.id || 0);
-  const [bundleQty, setBundleQty] = useState<number>(100);
+  const [bundleQty, setBundleQty] = useState<number | "">("");
   const [notes, setNotes] = useState<string>("");
   const [bundlingDate, setBundlingDate] = useState<string>(
     new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date())
   );
 
-  // Komponen yang terpilih masuk bundle
+  // Komponen yang terpilih masuk ke dalam bundle
   const [components, setComponents] = useState<ComponentItem[]>(() => {
     return availableComponents.map((c) => ({
       id: c.id,
@@ -40,20 +40,17 @@ export function BundlingIsianForm({
     }));
   });
 
-  // State untuk dropdown tambah barang baru ke bundle
+  // Pilihan dropdown untuk menambah item ke bundle
   const [selectedToAdd, setSelectedToAdd] = useState<number | "">("");
 
-  // Daftar barang yang belum dimasukkan ke bundle
   const unselectedComponents = useMemo(() => {
     return availableComponents.filter((ac) => !components.some((c) => c.id === ac.id));
   }, [availableComponents, components]);
 
-  // Handler keluarkan barang dari bundle
   const handleRemoveComponent = (id: number) => {
     setComponents((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // Handler tambah barang ke bundle
   const handleAddComponent = () => {
     if (!selectedToAdd) return;
     const target = availableComponents.find((c) => c.id === Number(selectedToAdd));
@@ -72,11 +69,13 @@ export function BundlingIsianForm({
     setSelectedToAdd("");
   };
 
-  // Validasi stok
+  const numericQty = Number(bundleQty) || 0;
+
+  // Cek kecukupan stok secara real-time
   const stockCheck = useMemo(() => {
     let allSufficient = true;
     const items = components.map((c) => {
-      const needed = c.qtyPerBundle * bundleQty;
+      const needed = c.qtyPerBundle * numericQty;
       const isOk = c.stock >= needed;
       if (!isOk) allSufficient = false;
       return {
@@ -87,7 +86,7 @@ export function BundlingIsianForm({
       };
     });
     return { allSufficient, items };
-  }, [components, bundleQty]);
+  }, [components, numericQty]);
 
   const componentsJson = useMemo(() => {
     return JSON.stringify(
@@ -114,7 +113,7 @@ export function BundlingIsianForm({
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-            Tanggal Bundling
+            Tanggal Bundling / Packing
           </label>
           <input
             name="bundling_date"
@@ -128,7 +127,7 @@ export function BundlingIsianForm({
 
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-            Paket Isian Koper yang Dihasilkan
+            Paket Isian yang Dihasilkan
           </label>
           <select
             value={bundleFgId}
@@ -145,7 +144,7 @@ export function BundlingIsianForm({
 
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-            Jumlah Bundle yang Dipacking
+            Jumlah yang Dipacking Hari Ini
           </label>
           <div className="relative">
             <input
@@ -154,12 +153,13 @@ export function BundlingIsianForm({
               min="1"
               step="1"
               required
-              value={bundleQty || ""}
-              onChange={(e) => setBundleQty(Math.max(1, Number(e.target.value) || 1))}
+              placeholder="Contoh: 50"
+              value={bundleQty}
+              onChange={(e) => setBundleQty(e.target.value === "" ? "" : Number(e.target.value))}
               className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm font-black text-blue-700 shadow-2xs focus:border-blue-500 focus:outline-none"
             />
             <span className="absolute right-3.5 top-2 text-xs font-bold text-gray-400">
-              Bundle / Kantong
+              Pcs / Paket
             </span>
           </div>
         </div>
@@ -167,30 +167,30 @@ export function BundlingIsianForm({
 
       <div>
         <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-          Catatan Bundling (Opsional)
+          Catatan Packing / Keterangan (Opsional)
         </label>
         <input
           name="notes"
           type="text"
-          placeholder="Misal: Batch 1 Isian Koper Kloter JKS untuk ditransfer ke Dadap"
+          placeholder="Misal: 1 Karung isi 50 paket kloter JKS / transfer Dadap"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm text-gray-800 shadow-2xs focus:border-blue-500 focus:outline-none"
         />
       </div>
 
-      {/* Rincian Komponen & Validasi Stok Real-Time */}
+      {/* Rincian Komponen & Validasi Stok */}
       <div className="rounded-2xl border border-blue-200/80 bg-blue-50/40 p-4 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 className="text-xs font-black uppercase tracking-wider text-blue-950">
-              Komponen yang Dimasukkan ke dalam 1 Bundle Isian ({components.length} Item):
+              Komponen yang Dimasukkan ke dalam 1 Paket ({components.length} Item):
             </h4>
             <p className="text-[11px] text-blue-800">
-              Setiap 1 Bundle otomatis memotong komponen di bawah ini. Anda bisa mengeluarkan atau menambahkan barang secara bebas.
+              Setiap 1 paket otomatis memotong stok barang jadi di bawah ini. Anda bebas mengeluarkan atau menambah barang.
             </p>
           </div>
-          {components.length > 0 && (
+          {components.length > 0 && numericQty > 0 && (
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
                 stockCheck.allSufficient
@@ -203,10 +203,10 @@ export function BundlingIsianForm({
           )}
         </div>
 
-        {/* Daftar Komponen Terpilih */}
+        {/* Daftar Komponen */}
         {components.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-xs text-slate-500">
-            Semua barang telah dikeluarkan. Gunakan menu di bawah untuk memilih barang yang akan dimasukkan ke dalam paket.
+            Semua item dikeluarkan. Silakan pilih barang di bawah untuk dimasukkan ke dalam paket.
           </div>
         ) : (
           <div className="divide-y divide-blue-100/80 rounded-xl border border-blue-200/60 bg-white overflow-hidden shadow-2xs">
@@ -219,7 +219,7 @@ export function BundlingIsianForm({
                   <button
                     type="button"
                     onClick={() => handleRemoveComponent(c.id)}
-                    title="Keluarkan barang ini dari paket"
+                    title="Keluarkan dari paket"
                     className="mt-0.5 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 transition cursor-pointer shadow-2xs"
                   >
                     ✕ Keluarkan
@@ -240,7 +240,7 @@ export function BundlingIsianForm({
 
                 <div className="flex items-center gap-4 shrink-0 justify-end">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-slate-500">Isi / Bundle:</span>
+                    <span className="text-[11px] text-slate-500">Isi / Paket:</span>
                     <input
                       type="number"
                       min="0.1"
@@ -261,7 +261,7 @@ export function BundlingIsianForm({
                     >
                       {c.needed.toLocaleString("id-ID")} Pcs
                     </span>
-                    {!c.isOk && (
+                    {numericQty > 0 && !c.isOk && (
                       <span className="block text-[10px] font-bold text-rose-600">
                         (Kurang {c.shortage.toLocaleString("id-ID")} Pcs)
                       </span>
@@ -273,7 +273,7 @@ export function BundlingIsianForm({
           </div>
         )}
 
-        {/* Input Tambah Barang Baru ke Bundle */}
+        {/* Input Tambah Barang Baru */}
         {unselectedComponents.length > 0 && (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-blue-200/60">
             <select
@@ -299,9 +299,9 @@ export function BundlingIsianForm({
           </div>
         )}
 
-        {components.length > 0 && !stockCheck.allSufficient && (
+        {components.length > 0 && numericQty > 0 && !stockCheck.allSufficient && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">
-            ⚠️ <b>Perhatian:</b> Ada komponen satuan yang stoknya kurang di Gudang Pusat. Anda tetap bisa memprosesnya jika ingin mencatat stok riil atau pastikan stok barang jadi di Gudang Pusat sudah terinput dari checker/QC.
+            ⚠️ <b>Perhatian:</b> Ada stok komponen satuan yang kurang di Gudang Pusat.
           </div>
         )}
       </div>
@@ -309,11 +309,15 @@ export function BundlingIsianForm({
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
           type="submit"
-          disabled={components.length === 0}
+          disabled={!bundleQty || numericQty <= 0 || components.length === 0}
           className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-extrabold text-white shadow-xs transition hover:bg-blue-700 active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <span>📦</span>
-          <span>Proses Bundling {bundleQty.toLocaleString("id-ID")} Paket Isian</span>
+          <span>
+            {numericQty > 0
+              ? `Simpan Packing ${numericQty.toLocaleString("id-ID")} Pcs Paket Isian`
+              : "Masukkan Jumlah Pcs yang Dipacking"}
+          </span>
         </button>
       </div>
     </form>
