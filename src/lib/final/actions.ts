@@ -484,36 +484,101 @@ export async function transferFinishedGoodAction(f: FormData) {
     "/dashboard/transferBarangJadi",
     "transfer_barang_jadi.write",
     async () => {
-      const transferId = await rpc("transfer_finished_good", {
-        p_date: date(f, "transfer_date"),
-        p_finished_good_id: id(f, "finished_good_id"),
-        p_source_location_id: id(f, "source_location_id"),
-        p_destination_location_id: id(f, "destination_location_id"),
-        p_quantity: num(f, "quantity"),
-        p_notes: t(f, "notes") || null,
-      });
+      const s = await createClient();
+      const ref = t(f, "item_ref") || (f.get("finished_good_id") ? `FINISHED_GOOD:${t(f, "finished_good_id")}` : "");
+      const [kind, rawId] = ref.split(":");
+      const itemId = Number(rawId);
 
-      const documentNo = t(f, "document_no") || null;
-      const driverName = t(f, "driver_name") || null;
-      const vehicleNo = t(f, "vehicle_no") || null;
+      if (!["FINISHED_GOOD", "PACKAGE"].includes(kind) || !Number.isSafeInteger(itemId) || itemId <= 0) {
+        throw new Error("Pilih barang satuan atau paket isian yang akan ditransfer.");
+      }
 
-      if (transferId && (documentNo || driverName || vehicleNo)) {
-        const s = await createClient();
+      const transferDate = date(f, "transfer_date");
+      const srcLoc = id(f, "source_location_id");
+      const destLoc = id(f, "destination_location_id");
+      const quantity = num(f, "quantity");
+      const notes = t(f, "notes") || null;
+      const transferCode = `TRF-${transferDate.replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      if (kind === "PACKAGE") {
+        // 1. Kurangi stok paket di lokasi asal (Pabrik Pusat)
+        const { data: curBal } = await s
+          .from("bundle_package_balances")
+          .select("quantity")
+          .eq("package_id", itemId)
+          .eq("location_id", srcLoc)
+          .maybeSingle();
+
+        const currentQty = Number(curBal?.quantity || 0);
         await s
+          .from("bundle_package_balances")
+          .upsert({
+            package_id: itemId,
+            location_id: srcLoc,
+            quantity: Math.max(0, currentQty - quantity),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "package_id,location_id" });
+
+        // 2. Simpan catatan transfer paket isian
+        const { error: insErr } = await s
           .from("finished_goods_transfers")
-          .update({
-            document_no: documentNo,
-            driver_name: driverName,
-            vehicle_no: vehicleNo,
+          .insert({
+            transfer_code: transferCode,
+            transfer_date: transferDate,
+            item_kind: "PACKAGE",
+            package_id: itemId,
+            source_location_id: srcLoc,
+            destination_location_id: destLoc,
+            quantity: quantity,
+            notes: notes,
+            status: "DIKIRIM",
             delivery_status: "DIKIRIM",
+          });
+
+        if (insErr) throw insErr;
+      } else {
+        // 1. Kurangi stok barang jadi satuan di lokasi asal (Pabrik Pusat)
+        const { data: curBal } = await s
+          .from("logistics_stock_balances")
+          .select("quantity")
+          .eq("finished_good_id", itemId)
+          .eq("location_id", srcLoc)
+          .eq("item_kind", "FINISHED_GOOD")
+          .maybeSingle();
+
+        const currentQty = Number(curBal?.quantity || 0);
+        await s
+          .from("logistics_stock_balances")
+          .update({
+            quantity: Math.max(0, currentQty - quantity),
+            updated_at: new Date().toISOString(),
           })
-          .eq("id", transferId);
+          .eq("finished_good_id", itemId)
+          .eq("location_id", srcLoc)
+          .eq("item_kind", "FINISHED_GOOD");
+
+        // 2. Simpan catatan transfer barang satuan
+        const { error: insErr } = await s
+          .from("finished_goods_transfers")
+          .insert({
+            transfer_code: transferCode,
+            transfer_date: transferDate,
+            item_kind: "FINISHED_GOOD",
+            finished_good_id: itemId,
+            source_location_id: srcLoc,
+            destination_location_id: destLoc,
+            quantity: quantity,
+            notes: notes,
+            status: "DIKIRIM",
+            delivery_status: "DIKIRIM",
+          });
+
+        if (insErr) throw insErr;
       }
     },
-    "Transfer Barang Jadi tersimpan."
+    "Transfer barang berhasil disimpan dan stok gudang asal telah dipotong."
   );
 }
-
 export async function receiveExternalAction(f: FormData) {
   await mutate(
     "/dashboard/barangLuar",
