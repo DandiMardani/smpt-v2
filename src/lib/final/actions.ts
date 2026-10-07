@@ -1985,3 +1985,96 @@ export async function updateShipmentSuratJalanPhotoAction(f: FormData) {
     "Foto fisik surat jalan berhasil disimpan."
   );
 }
+
+export async function processBundlePackagePackingAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const componentsRaw = t(f, "components_json");
+      let components = [];
+      try {
+        components = JSON.parse(componentsRaw || "[]");
+      } catch {
+        throw new Error("Data komponen packing tidak valid.");
+      }
+
+      await rpc("process_bundle_package_packing", {
+        p_date: date(f, "packing_date"),
+        p_package_id: id(f, "package_id"),
+        p_location_id: id(f, "location_id") || 1, // Gudang Pusat
+        p_quantity: num(f, "quantity"),
+        p_notes: t(f, "notes") || null,
+        p_components: components,
+      });
+    },
+    "Hasil packing harian berhasil disimpan! Stok komponen satuan terpotong dan stok Paket Isian bertambah di Gudang Pusat."
+  );
+}
+
+export async function savePackageRecipeAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const s = await createClient();
+      const packageId = id(f, "package_id");
+      const itemsRaw = t(f, "recipe_items_json");
+      let items: Array<{ finished_good_id: number; qty_per_bundle: number }> = [];
+      try {
+        items = JSON.parse(itemsRaw || "[]");
+      } catch {
+        throw new Error("Format data resep tidak valid.");
+      }
+
+      if (!items.length) {
+        throw new Error("Pilih minimal satu barang untuk dimasukkan ke resep paket.");
+      }
+
+      const { error: delErr } = await s
+        .from("bundle_package_recipes")
+        .delete()
+        .eq("package_id", packageId);
+      if (delErr) throw delErr;
+
+      const payload = items.map((it) => ({
+        package_id: packageId,
+        finished_good_id: it.finished_good_id,
+        qty_per_bundle: it.qty_per_bundle,
+      }));
+
+      const { error: insErr } = await s.from("bundle_package_recipes").insert(payload);
+      if (insErr) throw insErr;
+    },
+    "Resep paket isian berhasil disimpan!"
+  );
+}
+
+export async function createBundlePackageAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const s = await createClient();
+      const code = t(f, "package_code").toUpperCase();
+      const name = t(f, "name");
+      const description = t(f, "description") || null;
+
+      if (!code || !name) throw new Error("Kode dan nama paket wajib diisi.");
+
+      const { error } = await s.from("bundle_packages").insert({
+        package_code: code,
+        name: name,
+        description: description,
+        status: "AKTIF",
+      });
+      if (error) throw error;
+    },
+    "Jenis paket baru berhasil dibuat."
+  );
+}
+
+
