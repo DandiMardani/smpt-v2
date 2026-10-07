@@ -128,6 +128,8 @@ export function WorkerFinancialSummary({
 }) {
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [showRulesInfo, setShowRulesInfo] = useState(false);
+  const [showWarungDetail, setShowWarungDetail] = useState(false);
+  const [showLoanDetail, setShowLoanDetail] = useState(false);
 
   const isBorongan = worker.pay_system === "BORONGAN";
   const isBulanan = worker.pay_system === "BULANAN";
@@ -317,7 +319,7 @@ export function WorkerFinancialSummary({
         )}
 
         {/* 4 Kartu Metrik Keuangan Utama */}
-        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4 items-start">
           {/* Card 1: Upah Bruto */}
           <div className="rounded-xl bg-white border border-gray-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
@@ -366,30 +368,91 @@ export function WorkerFinancialSummary({
             </div>
           </div>
 
-          {/* Card 2: Tagihan Warung */}
+          {/* Card 2: Tagihan Warung Luar (Dengan Detail Buka/Tutup) */}
           <div className="rounded-xl bg-amber-50/70 border border-amber-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-amber-900 flex items-center justify-between">
                 <span>🍜 Tagihan Warung Luar:</span>
-                <span className="font-bold bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded text-[10px]">
-                  {warungDebts.length} nota
-                </span>
+                {warungDebts.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowWarungDetail((prev) => !prev)}
+                    className="font-bold bg-amber-200/80 hover:bg-amber-300 text-amber-900 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 cursor-pointer transition"
+                    title="Klik untuk melihat rincian nota"
+                  >
+                    <span>{warungDebts.length} nota</span>
+                    <span>{showWarungDetail ? "▲" : "▼"}</span>
+                  </button>
+                ) : (
+                  <span className="font-bold bg-amber-200/50 text-amber-900 px-2 py-0.5 rounded text-[10px]">
+                    0 nota
+                  </span>
+                )}
               </div>
               <div className="mt-1 text-2xl font-black text-amber-800">{money(displayedKasbonWarung)}</div>
               <div className="mt-1 text-[11px] text-amber-900">
                 {displayedKasbonWarung > 0 ? "Otomatis dipotong saat gajian" : "Lunas (0 tagihan)"}
               </div>
             </div>
+
+            {/* Rincian Nota Warung */}
+            {showWarungDetail && warungDebts.length > 0 && (
+              <div className="mt-3 pt-2.5 border-t border-amber-200/80 space-y-2 text-[11px]">
+                <div className="font-bold text-amber-950 text-[10px] uppercase tracking-wider flex justify-between items-center">
+                  <span>Rincian Nota Warung:</span>
+                  <span className="text-[9px] font-normal text-amber-800">{warungDebts.length} transaksi</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
+                  {warungDebts.map((item) => {
+                    const rem = n(item.amount) - n(item.paid_amount);
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-lg bg-white/95 border border-amber-200/90 p-2 text-stone-800 shadow-2xs space-y-1"
+                      >
+                        <div className="flex justify-between items-start gap-1">
+                          <span className="font-bold text-amber-950 truncate">
+                            {item.warung_name || "Warung Luar"}
+                          </span>
+                          <span className="font-black text-amber-900 whitespace-nowrap">
+                            {money(rem)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-stone-500">
+                          <span>📅 {formatDateId(item.advance_date)}</span>
+                          <span className="font-mono text-[9px] text-stone-400">{item.advance_code}</span>
+                        </div>
+                        {item.notes ? (
+                          <div className="text-[10px] text-stone-600 bg-amber-50/70 rounded px-1.5 py-0.5">
+                            Ket: {item.notes}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Card 3: Kasbon Perusahaan */}
+          {/* Card 3: Kasbon Perusahaan (Dengan Detail Buka/Tutup) */}
           <div className="rounded-xl bg-rose-50/40 border border-rose-200 p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-semibold text-rose-800 flex items-center justify-between">
                 <span>🏢 Angsuran Kasbon Kantor:</span>
-                {companyLoans.length > 0 && (
-                  <span className="font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded text-[10px]">
-                    {companyLoans.length} pinjaman
+                {companyLoans.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowLoanDetail((prev) => !prev)}
+                    className="font-bold bg-rose-100 hover:bg-rose-200 text-rose-800 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 cursor-pointer transition"
+                    title="Klik untuk melihat rincian pinjaman"
+                  >
+                    <span>{companyLoans.length} pinjaman</span>
+                    <span>{showLoanDetail ? "▲" : "▼"}</span>
+                  </button>
+                ) : (
+                  <span className="font-bold bg-rose-100/60 text-rose-800 px-2 py-0.5 rounded text-[10px]">
+                    0 pinjaman
                   </span>
                 )}
               </div>
@@ -400,6 +463,68 @@ export function WorkerFinancialSummary({
                   : "Lunas / Tidak ada cicilan"}
               </div>
             </div>
+
+            {/* Rincian Kasbon & Angsuran Kantor */}
+            {showLoanDetail && companyLoans.length > 0 && (
+              <div className="mt-3 pt-2.5 border-t border-rose-200/80 space-y-2 text-[11px]">
+                <div className="font-bold text-rose-950 text-[10px] uppercase tracking-wider flex justify-between items-center">
+                  <span>Rincian Pinjaman:</span>
+                  <span className="text-[9px] font-normal text-rose-800">{companyLoans.length} record</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-0.5">
+                  {companyLoans.map((item) => {
+                    const totalAmt = n(item.amount);
+                    const paidAmt = n(item.paid_amount);
+                    const rem = totalAmt - paidAmt;
+                    const instCount = Number(item.installment_count) || 1;
+                    const instPaid = Number(item.installments_paid) || 0;
+                    const instAmt = n(item.installment_amount) || (instCount > 1 ? Math.round(totalAmt / instCount) : rem);
+                    const activeThisMonth = Math.min(rem, instAmt);
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-lg bg-white/95 border border-rose-200 p-2.5 text-stone-800 shadow-2xs space-y-1.5"
+                      >
+                        <div className="flex justify-between items-center text-[10px] text-stone-500 border-b border-rose-100 pb-1">
+                          <span className="font-mono font-bold text-rose-800">{item.advance_code}</span>
+                          <span>Tgl: {formatDateId(item.advance_date)}</span>
+                        </div>
+
+                        <div className="space-y-1 text-[10.5px]">
+                          <div className="flex justify-between">
+                            <span className="text-stone-500">Pinjaman Pokok:</span>
+                            <span className="font-semibold text-stone-800">{money(totalAmt)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-stone-500">Skema Angsuran:</span>
+                            <span className="font-semibold text-rose-700">
+                              {instCount > 1
+                                ? `Bulan ke-${Math.min(instPaid + 1, instCount)} dari ${instCount} bln`
+                                : "1x Pelunasan Penuh"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-stone-500">Cicilan Bln Ini:</span>
+                            <span className="font-black text-rose-600">{money(activeThisMonth)}</span>
+                          </div>
+                          <div className="flex justify-between pt-0.5 border-t border-dashed border-rose-100">
+                            <span className="text-stone-500">Sisa Saldo Pokok:</span>
+                            <span className="font-bold text-stone-900">{money(rem)}</span>
+                          </div>
+                        </div>
+
+                        {item.notes ? (
+                          <div className="text-[10px] text-stone-600 bg-rose-50/70 rounded px-1.5 py-0.5">
+                            Ket: {item.notes}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Card 4: Gaji Bersih */}
