@@ -71,9 +71,8 @@ export function SarungKoperMonitoring({
   deliveryLogs,
   canEdit = true,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<"REKAP_PO" | "LOG_KEDATANGAN" | "KEUANGAN_DP">("LOG_KEDATANGAN");
+  const [activeTab, setActiveTab] = useState<"REKAP_PO" | "LOG_KEDATANGAN" | "KEUANGAN_DP">("REKAP_PO");
 
-  // Cari vendor default (Ibu Mita) atau vendor pertama
   const defaultVendor = useMemo(() => {
     return vendors.find((v) => v.name.toLowerCase().includes("mita")) || vendors[0];
   }, [vendors]);
@@ -84,7 +83,7 @@ export function SarungKoperMonitoring({
     return vendors.find((v) => v.id === selectedVendorId) || defaultVendor;
   }, [vendors, selectedVendorId, defaultVendor]);
 
-  // Filter Data Berdasarkan Vendor Terpilih
+  // Filter per Vendor
   const currentLogs = useMemo(() => {
     return deliveryLogs.filter((l) => l.vendor_id === selectedVendorId);
   }, [deliveryLogs, selectedVendorId]);
@@ -97,18 +96,18 @@ export function SarungKoperMonitoring({
     return downPayments.filter((d) => d.vendor_id === selectedVendorId);
   }, [downPayments, selectedVendorId]);
 
-  // Modal State Edit/Add Log
+  // State Modal Log Harian
   const [editingLog, setEditingLog] = useState<DeliveryLogItem | null>(null);
   const [showAddLogModal, setShowAddLogModal] = useState<boolean>(false);
 
-  // Modal State Add DP
+  // State Modal DP
   const [showAddDpModal, setShowAddDpModal] = useState<boolean>(false);
 
-  // Modal State Edit/Add PO Target
+  // State Modal PO Target (Edit & Tambah)
   const [editingPo, setEditingPo] = useState<PoTargetItem | null>(null);
   const [showAddPoModal, setShowAddPoModal] = useState<boolean>(false);
 
-  // Kalkulasi Keuangan Vendor Terpilih
+  // Ringkasan Keuangan
   const totalQty18 = useMemo(
     () => currentLogs.reduce((acc, x) => acc + (Number(x.qty_18) || 0), 0),
     [currentLogs]
@@ -156,7 +155,7 @@ export function SarungKoperMonitoring({
               </h3>
             </div>
             <p className="text-slate-600 mt-0.5">
-              Pantau realisasi kiriman barang, pemotongan DP bertahap, dan sisa pelunasan tagihan per supplier secara real-time.
+              Pantau target pengadaan PO, realisasi kiriman barang, pemotongan DP bertahap, dan sisa pelunasan tagihan supplier.
             </p>
           </div>
 
@@ -260,10 +259,19 @@ export function SarungKoperMonitoring({
 
         {canEdit && (
           <div className="flex items-center gap-2">
+            {activeTab === "REKAP_PO" && (
+              <button
+                type="button"
+                onClick={() => { setEditingPo(null); setShowAddPoModal(true); }}
+                className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-700 transition cursor-pointer"
+              >
+                + Tambah Target PO
+              </button>
+            )}
             {activeTab === "LOG_KEDATANGAN" && (
               <button
                 type="button"
-                onClick={() => setShowAddLogModal(true)}
+                onClick={() => { setEditingLog(null); setShowAddLogModal(true); }}
                 className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-emerald-700 transition cursor-pointer"
               >
                 + Tambah Log Kiriman
@@ -363,7 +371,7 @@ export function SarungKoperMonitoring({
                             <form
                               action={deleteVendorDeliveryLogAction}
                               onSubmit={(e) => {
-                                if (!confirm(`Hapus catatan kedatangan [${l.log_code || l.id}] secara permanen dari database?`)) {
+                                if (!confirm(`Hapus catatan kedatangan [${l.log_code || l.id}] secara permanen?`)) {
                                   e.preventDefault();
                                 }
                               }}
@@ -443,7 +451,7 @@ export function SarungKoperMonitoring({
         </div>
       )}
 
-      {/* TAB 3: REKAP PO */}
+      {/* TAB 3: REKAP PO (DENGAN TOMBOL EDIT) */}
       {activeTab === "REKAP_PO" && (
         <div className="space-y-3">
           <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-2xs">
@@ -453,8 +461,8 @@ export function SarungKoperMonitoring({
                 {canEdit && (
                   <button
                     type="button"
-                    onClick={() => setShowAddPoModal(true)}
-                    className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs"
+                    onClick={() => { setEditingPo(null); setShowAddPoModal(true); }}
+                    className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-700"
                   >
                     + Buat Target PO Baru
                   </button>
@@ -477,15 +485,39 @@ export function SarungKoperMonitoring({
                     <tr key={r.id} className="hover:bg-slate-50 transition">
                       <td className="p-3 font-bold text-blue-900">{r.category}</td>
                       <td className="p-3 font-semibold text-slate-900">{r.item_name}</td>
-                      <td className="p-3 text-center">{r.size}</td>
-                      <td className="p-3 text-right font-mono">{formatNumber(r.target_po)} pcs</td>
-                      <td className="p-3 text-right font-mono">{formatRp(r.price_per_unit)}</td>
+                      <td className="p-3 text-center">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 border border-slate-200">
+                          {r.size}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-slate-900">{formatNumber(r.target_po)} pcs</td>
+                      <td className="p-3 text-right font-mono text-slate-700">{formatRp(r.price_per_unit)}</td>
                       {canEdit && (
-                        <td className="p-3 text-right">
-                          <form action={deleteVendorPoTargetAction} onSubmit={(e) => { if (!confirm("Hapus target PO ini?")) e.preventDefault(); }}>
-                            <input type="hidden" name="target_id" value={r.id} />
-                            <button type="submit" className="text-rose-600 hover:text-rose-800 font-bold text-xs">🗑️ Hapus</button>
-                          </form>
+                        <td className="p-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => { setEditingPo(r); setShowAddPoModal(true); }}
+                              className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 shadow-2xs transition cursor-pointer"
+                            >
+                              ✏️ Edit
+                            </button>
+                            <form
+                              action={deleteVendorPoTargetAction}
+                              onSubmit={(e) => {
+                                if (!confirm(`Hapus target PO "${r.item_name}"?`)) e.preventDefault();
+                              }}
+                            >
+                              <input type="hidden" name="return_path" value="/dashboard/barangLuar" />
+                              <input type="hidden" name="target_id" value={r.id} />
+                              <button
+                                type="submit"
+                                className="rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100 shadow-2xs transition cursor-pointer"
+                              >
+                                🗑️ Hapus
+                              </button>
+                            </form>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -493,6 +525,109 @@ export function SarungKoperMonitoring({
                 </tbody>
               </table>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT & TAMBAH TARGET PO */}
+      {showAddPoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-black text-slate-900 text-sm">
+                {editingPo ? `Edit Target PO (${editingPo.item_name})` : `Tambah Target PO - ${activeVendor?.name}`}
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setShowAddPoModal(false); setEditingPo(null); }}
+                className="text-slate-400 font-bold hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+            <form action={saveVendorPoTargetAction} className="space-y-3 text-xs">
+              <input type="hidden" name="vendor_id" value={selectedVendorId} />
+              {editingPo && <input type="hidden" name="target_id" value={editingPo.id} />}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Kategori / Kloter</label>
+                  <input
+                    name="category"
+                    type="text"
+                    required
+                    defaultValue={editingPo?.category || "JKS (SUB)"}
+                    placeholder="Contoh: JKS (SUB), JKG (BTH)"
+                    className="w-full rounded-xl border border-slate-300 p-2 font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Ukuran</label>
+                  <input
+                    name="size"
+                    type="text"
+                    defaultValue={editingPo?.size || "18 INCH"}
+                    placeholder="Contoh: 18 INCH, 26 INCH"
+                    className="w-full rounded-xl border border-slate-300 p-2 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Nama Barang / Spesifikasi</label>
+                <input
+                  name="item_name"
+                  type="text"
+                  required
+                  defaultValue={editingPo?.item_name || ""}
+                  placeholder="Contoh: 18 INCH SUB (KECIL)"
+                  className="w-full rounded-xl border border-slate-300 p-2 font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Jumlah Target PO (Pcs)</label>
+                  <input
+                    name="target_po"
+                    type="number"
+                    min="1"
+                    required
+                    defaultValue={editingPo?.target_po || 0}
+                    placeholder="Contoh: 12300"
+                    className="w-full rounded-xl border border-slate-300 p-2 font-mono font-bold text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Harga Satuan (Rp)</label>
+                  <input
+                    name="price_per_unit"
+                    type="number"
+                    min="0"
+                    required
+                    defaultValue={editingPo?.price_per_unit || 0}
+                    placeholder="Contoh: 10000"
+                    className="w-full rounded-xl border border-slate-300 p-2 font-mono font-bold text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddPoModal(false); setEditingPo(null); }}
+                  className="rounded-xl border border-slate-300 px-3 py-1.5 font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-4 py-1.5 font-bold text-white shadow-xs hover:bg-blue-700"
+                >
+                  💾 Simpan Target PO
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
