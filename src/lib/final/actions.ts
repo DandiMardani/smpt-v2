@@ -2209,3 +2209,165 @@ export async function deleteBundlePackageAction(f: FormData) {
 
 
 
+export async function addVendorDownPaymentAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/barangLuar";
+  await mutate(
+    returnPath,
+    "barang_luar.receive",
+    async () => {
+      const s = await createClient();
+      const vendorId = id(f, "vendor_id");
+      const payDate = date(f, "payment_date");
+      const amount = num(f, "amount");
+      const notes = t(f, "notes") || null;
+
+      if (!amount || amount <= 0) throw new Error("Nominal DP harus lebih dari 0.");
+
+      const { error } = await s.from("vendor_down_payments").insert({
+        vendor_id: vendorId,
+        payment_date: payDate,
+        amount: amount,
+        notes: notes,
+      });
+      if (error) throw error;
+    },
+    "Uang muka (DP) vendor berhasil dicatat!"
+  );
+}
+
+export async function deleteVendorDownPaymentAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/barangLuar";
+  await mutate(
+    returnPath,
+    "barang_luar.receive",
+    async () => {
+      const s = await createClient();
+      const dpId = id(f, "dp_id");
+      const { error } = await s.from("vendor_down_payments").delete().eq("id", dpId);
+      if (error) throw error;
+    },
+    "Catatan uang muka (DP) berhasil dihapus."
+  );
+}
+
+export async function saveVendorDeliveryLogAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/barangLuar";
+  await mutate(
+    returnPath,
+    "barang_luar.receive",
+    async () => {
+      const s = await createClient();
+      const targetId = id(f, "log_id", true);
+      const vendorId = id(f, "vendor_id");
+      const delivDate = date(f, "delivery_date");
+      const category = t(f, "category") || "UMUM";
+      const itemDesc = t(f, "item_description") || "Kiriman Barang";
+      const q18 = num(f, "qty_18", true) || 0;
+      const q26 = num(f, "qty_26", true) || 0;
+      const totalQty = num(f, "total_qty", true) || (q18 + q26);
+      const totalBill = num(f, "total_bill") || 0;
+      const dpCut = num(f, "dp_cut", true) || 0;
+      const cashPaid = num(f, "cash_paid", true) || 0;
+      const payDate = t(f, "payment_date") || null;
+      const notes = t(f, "notes") || null;
+
+      const payload = {
+        vendor_id: vendorId,
+        delivery_date: delivDate,
+        category: category,
+        item_description: itemDesc,
+        qty_18: q18,
+        qty_26: q26,
+        total_qty: totalQty,
+        total_bill: totalBill,
+        dp_cut: dpCut,
+        cash_paid: cashPaid,
+        payment_date: payDate,
+        notes: notes,
+      };
+
+      if (targetId) {
+        const { error } = await s.from("vendor_delivery_logs").update(payload).eq("id", targetId);
+        if (error) throw error;
+      } else {
+        const { count } = await s.from("vendor_delivery_logs").select("id", { count: "exact", head: true });
+        const nextCode = `LOG-${String((count || 0) + 1).padStart(2, "0")}`;
+        const { error } = await s.from("vendor_delivery_logs").insert({
+          ...payload,
+          log_code: nextCode,
+        });
+        if (error) throw error;
+      }
+    },
+    "Catatan kedatangan barang berhasil disimpan ke database!"
+  );
+}
+
+export async function deleteVendorDeliveryLogAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/barangLuar";
+  await mutate(
+    returnPath,
+    "barang_luar.receive",
+    async () => {
+      const s = await createClient();
+      const logId = id(f, "log_id");
+      const { error } = await s.from("vendor_delivery_logs").delete().eq("id", logId);
+      if (error) throw error;
+    },
+    "Catatan transaksi kedatangan berhasil dihapus secara permanen dari database."
+  );
+}
+
+export async function saveVendorPoTargetAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/barangLuar";
+  await mutate(
+    returnPath,
+    "barang_luar.receive",
+    async () => {
+      const s = await createClient();
+      const targetId = id(f, "target_id", true);
+      const vendorId = id(f, "vendor_id");
+      const category = t(f, "category") || "-";
+      const itemName = t(f, "item_name");
+      const size = t(f, "size") || "-";
+      const targetPo = num(f, "target_po") || 0;
+      const price = num(f, "price_per_unit") || 0;
+
+      const payload = {
+        vendor_id: vendorId,
+        category: category,
+        item_name: itemName,
+        size: size,
+        target_po: targetPo,
+        price_per_unit: price,
+      };
+
+      if (targetId) {
+        const { error } = await s.from("vendor_po_targets").update(payload).eq("id", targetId);
+        if (error) throw error;
+      } else {
+        const { error } = await s.from("vendor_po_targets").insert(payload);
+        if (error) throw error;
+      }
+    },
+    "Target PO berhasil disimpan!"
+  );
+}
+
+export async function deleteVendorPoTargetAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/barangLuar";
+  await mutate(
+    returnPath,
+    "barang_luar.receive",
+    async () => {
+      const s = await createClient();
+      const targetId = id(f, "target_id");
+      const { error } = await s.from("vendor_po_targets").delete().eq("id", targetId);
+      if (error) throw error;
+    },
+    "Target PO berhasil dihapus."
+  );
+}
+
+
+
