@@ -577,6 +577,64 @@ export async function processBundlingIsianAction(f: FormData) {
   );
 }
 
+export async function saveBundleRecipeAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const s = await createClient();
+      const bundleFgId = id(f, "bundle_finished_good_id");
+      const itemsRaw = t(f, "recipe_items_json");
+      let items: Array<{ component_finished_good_id: number; qty_per_bundle: number }> = [];
+      try {
+        items = JSON.parse(itemsRaw || "[]");
+      } catch {
+        throw new Error("Format data komponen resep tidak valid.");
+      }
+
+      if (!items.length) {
+        throw new Error("Pilih minimal satu barang komponen untuk dimasukkan ke resep paket.");
+      }
+
+      // Bersihkan susunan lama paket ini, lalu simpan susunan yang baru
+      const { error: delErr } = await s
+        .from("bundle_recipes")
+        .delete()
+        .eq("bundle_finished_good_id", bundleFgId);
+      if (delErr) throw delErr;
+
+      const payload = items.map((it) => ({
+        bundle_finished_good_id: bundleFgId,
+        component_finished_good_id: it.component_finished_good_id,
+        qty_per_bundle: it.qty_per_bundle,
+      }));
+
+      const { error: insErr } = await s.from("bundle_recipes").insert(payload);
+      if (insErr) throw insErr;
+    },
+    "Resep susunan paket isian berhasil disimpan!"
+  );
+}
+
+export async function deleteBundleRecipeAction(f: FormData) {
+  const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
+  await mutate(
+    returnPath,
+    "bundling_isian.write",
+    async () => {
+      const s = await createClient();
+      const bundleFgId = id(f, "bundle_finished_good_id");
+      const { error } = await s
+        .from("bundle_recipes")
+        .delete()
+        .eq("bundle_finished_good_id", bundleFgId);
+      if (error) throw error;
+    },
+    "Resep paket isian berhasil dihapus."
+  );
+}
+
 export async function recordMrWuDailyPackingAction(f: FormData) {
   const returnPath = t(f, "return_path") || "/dashboard/mitraMrWu";
   await mutate(
@@ -705,11 +763,9 @@ export async function createEmbarkationIssueAction(f: FormData) {
       const statusInput = t(f, "status") || "PROSES";
       const resolution = t(f, "resolution") || (statusInput === "SELESAI" ? "Sudah Terkirim" : "Menunggu Pengganti");
 
-      // Generate next sequence number
       const { count } = await s.from("embarkation_issues").select("id", { count: "exact", head: true });
       const nextNo = (count || 0) + 1;
 
-      // Construct item quantities map
       const itemQuantities: Record<string, number> = {
         tambahan_set: 0,
         koper_bagasi: 0,
@@ -748,7 +804,6 @@ export async function createEmbarkationIssueAction(f: FormData) {
         keterangan,
       });
 
-      // Find a shipment_id fallback if not chosen
       let shipmentId = id(f, "shipment_id", true);
       if (!shipmentId) {
         const { data: latestShipment } = await s
@@ -860,7 +915,6 @@ export async function addAttendanceAction(f: FormData) {
         overtime_minutes: otMin,
         source: "MANUAL",
         notes: t(f, "notes") || null,
-        // Jika Alpha / Izin / Sakit, otomatis tercatat statusnya dan tidak perlu menunggu antrean verifikasi hadir
         verification_status: attStatus === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
       };
       const { error } = await s.from("attendance_records").upsert(payload, { onConflict: "worker_id,attendance_date" });
@@ -1126,7 +1180,6 @@ export async function deleteAttendanceAction(f: FormData) {
       const s = await createClient();
       const attId = id(f, "attendance_id");
 
-      // Verify attendance record exists
       const { data: att, error: fetchErr } = await s
         .from("attendance_records")
         .select("id, attendance_date")
@@ -1134,7 +1187,6 @@ export async function deleteAttendanceAction(f: FormData) {
         .single();
       if (fetchErr || !att) throw new Error("Data absensi tidak ditemukan.");
 
-      // Check if it belongs to a finalized payroll run
       const { data: finalRuns } = await s
         .from("payroll_runs")
         .select("id, payroll_code, period_start, period_end")
@@ -1171,7 +1223,6 @@ export async function deleteBulkAttendanceAction(f: FormData) {
         : [];
       if (!ids.length) throw new Error("Pilih data absensi yang ingin dihapus.");
 
-      // Fetch records to check dates
       const { data: recs, error: rErr } = await s
         .from("attendance_records")
         .select("id, attendance_date")
@@ -1209,7 +1260,6 @@ export async function deleteBulkAttendanceAction(f: FormData) {
     "Data absensi terpilih berhasil dihapus."
   );
 }
-
 
 export async function finalizePayrollAction(f: FormData) {
   await mutate(
@@ -1684,7 +1734,6 @@ export async function addPettyCashAction(f: FormData) {
       const base64Data = t(f, "receipt_base64");
       let receiptUrl: string | null = null;
 
-      // 1. Dukungan Base64 Galeri Terkompresi (Mobile Safe)
       if (base64Data && base64Data.startsWith("data:image")) {
         const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         if (matches && matches.length === 3) {
@@ -1709,7 +1758,6 @@ export async function addPettyCashAction(f: FormData) {
         }
       }
 
-      // 2. Fallback File Biasa
       if (!receiptUrl && file && typeof file === "object" && file.size > 0 && file.name) {
         const ext = file.name.split(".").pop() || "jpg";
         const filePath = `nota_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
