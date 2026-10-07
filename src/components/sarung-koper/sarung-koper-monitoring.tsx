@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { formatNumber } from "@/lib/master/page-utils";
 
 function formatRp(val: number) {
@@ -34,7 +34,7 @@ type DailyArrivalRow = {
   notes?: string;
 };
 
-const SUMMARY_PO: SummaryPoRow[] = [
+const INITIAL_SUMMARY_PO: SummaryPoRow[] = [
   {
     category: "JKS (SUB)",
     name: "18 INCH SUB (KECIL)",
@@ -77,7 +77,7 @@ const SUMMARY_PO: SummaryPoRow[] = [
   },
 ];
 
-const DAILY_LOGS: DailyArrivalRow[] = [
+const INITIAL_DAILY_LOGS: DailyArrivalRow[] = [
   {
     id: "LOG-01",
     date: "2026-02-24",
@@ -436,20 +436,151 @@ const DAILY_LOGS: DailyArrivalRow[] = [
   },
 ];
 
+const STORAGE_KEY_PO = "smpt_sarung_koper_summary_po_v1";
+const STORAGE_KEY_LOGS = "smpt_sarung_koper_daily_logs_v1";
+
 export function SarungKoperMonitoring() {
   const [activeTab, setActiveTab] = useState<"REKAP_PO" | "LOG_KEDATANGAN" | "KEUANGAN_DP">("REKAP_PO");
 
-  // Summary Metrics
-  const totalQty18 = 22590; // 12,280 + 10,310
-  const totalQty26 = 22734; // 12,334 + 10,400
-  const grandTotalQty = totalQty18 + totalQty26; // 45,324
+  const [summaryPo, setSummaryPo] = useState<SummaryPoRow[]>(INITIAL_SUMMARY_PO);
+  const [dailyLogs, setDailyLogs] = useState<DailyArrivalRow[]>(INITIAL_DAILY_LOGS);
 
-  const totalBillGross = 748782000;
-  const totalDpGiven = 372900000 + 5000000; // 377,900,000
-  const totalDpDeducted = 566510600;
-  const totalCashPaid = 218681400;
-  const totalPayment = totalDpDeducted + totalCashPaid; // 785,192,000 / 744,899,600
-  const remainingBill = 900400; // Sisa belum dibayar Rp 900.400
+  // Modal State Edit Rekap PO
+  const [editingPoIndex, setEditingPoIndex] = useState<number | null>(null);
+  const [poFormData, setPoFormData] = useState<SummaryPoRow | null>(null);
+
+  // Modal State Edit Log Harian
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [logFormData, setLogFormData] = useState<DailyArrivalRow | null>(null);
+
+  // Inisialisasi dari LocalStorage
+  useEffect(() => {
+    try {
+      const savedPo = localStorage.getItem(STORAGE_KEY_PO);
+      if (savedPo) setSummaryPo(JSON.parse(savedPo));
+
+      const savedLogs = localStorage.getItem(STORAGE_KEY_LOGS);
+      if (savedLogs) setDailyLogs(JSON.parse(savedLogs));
+    } catch {
+      // Lewati jika error parsing
+    }
+  }, []);
+
+  const savePoToStorage = (data: SummaryPoRow[]) => {
+    setSummaryPo(data);
+    try {
+      localStorage.setItem(STORAGE_KEY_PO, JSON.stringify(data));
+    } catch {}
+  };
+
+  const saveLogsToStorage = (data: DailyArrivalRow[]) => {
+    setDailyLogs(data);
+    try {
+      localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(data));
+    } catch {}
+  };
+
+  // Handler Hapus & Edit PO
+  const handleDeletePo = (index: number) => {
+    const item = summaryPo[index];
+    if (confirm(`Hapus baris target PO "${item.name}"?`)) {
+      const updated = summaryPo.filter((_, i) => i !== index);
+      savePoToStorage(updated);
+    }
+  };
+
+  const handleOpenEditPo = (index: number) => {
+    setEditingPoIndex(index);
+    setPoFormData({ ...summaryPo[index] });
+  };
+
+  const handleSaveEditPo = () => {
+    if (editingPoIndex === null || !poFormData) return;
+    const targetPo = Number(poFormData.targetPo) || 0;
+    const pricePerUnit = Number(poFormData.pricePerUnit) || 0;
+    const totalReceived = Number(poFormData.totalReceived) || 0;
+    const variance = totalReceived - targetPo;
+    const totalBill = totalReceived * pricePerUnit;
+
+    const updated = [...summaryPo];
+    updated[editingPoIndex] = {
+      ...poFormData,
+      targetPo,
+      pricePerUnit,
+      totalReceived,
+      variance,
+      totalBill,
+    };
+
+    savePoToStorage(updated);
+    setEditingPoIndex(null);
+    setPoFormData(null);
+  };
+
+  // Handler Hapus & Edit Log Harian
+  const handleDeleteLog = (id: string) => {
+    if (confirm(`Hapus catatan kedatangan [${id}]?`)) {
+      const updated = dailyLogs.filter((x) => x.id !== id);
+      saveLogsToStorage(updated);
+    }
+  };
+
+  const handleOpenEditLog = (item: DailyArrivalRow) => {
+    setEditingLogId(item.id);
+    setLogFormData({ ...item });
+  };
+
+  const handleSaveEditLog = () => {
+    if (!editingLogId || !logFormData) return;
+    const qty18 = Number(logFormData.qty18) || 0;
+    const qty26 = Number(logFormData.qty26) || 0;
+    const totalBill = Number(logFormData.totalBill) || 0;
+    const dpCut = Number(logFormData.dpCut) || 0;
+    const cashPaid = Number(logFormData.cashPaid) || 0;
+
+    const updated = dailyLogs.map((item) =>
+      item.id === editingLogId
+        ? {
+            ...logFormData,
+            qty18,
+            qty26,
+            totalBill,
+            dpCut,
+            cashPaid,
+          }
+        : item
+    );
+
+    saveLogsToStorage(updated);
+    setEditingLogId(null);
+    setLogFormData(null);
+  };
+
+  const handleResetData = () => {
+    if (confirm("Kembalikan data tabel ke pengaturan bawaan awal?")) {
+      savePoToStorage(INITIAL_SUMMARY_PO);
+      saveLogsToStorage(INITIAL_DAILY_LOGS);
+    }
+  };
+
+  // Summary Metrics Kalkulasi Dinamis
+  const totalQty18 = useMemo(
+    () => summaryPo.filter((x) => x.size === "18 INCH").reduce((acc, x) => acc + (x.totalReceived || 0), 0),
+    [summaryPo]
+  );
+  const totalQty26 = useMemo(
+    () => summaryPo.filter((x) => x.size === "26 INCH").reduce((acc, x) => acc + (x.totalReceived || 0), 0),
+    [summaryPo]
+  );
+  const grandTotalQty = useMemo(() => summaryPo.reduce((acc, x) => acc + (x.totalReceived || 0), 0), [summaryPo]);
+  const totalTargetPo = useMemo(() => summaryPo.reduce((acc, x) => acc + (x.targetPo || 0), 0), [summaryPo]);
+  const totalBillGross = useMemo(() => summaryPo.reduce((acc, x) => acc + (x.totalBill || 0), 0), [summaryPo]);
+
+  const totalDpGiven = 377900000;
+  const totalDpDeducted = useMemo(() => dailyLogs.reduce((acc, x) => acc + (x.dpCut || 0), 0), [dailyLogs]);
+  const totalCashPaid = useMemo(() => dailyLogs.reduce((acc, x) => acc + (x.cashPaid || 0), 0), [dailyLogs]);
+  const totalPayment = totalDpDeducted + totalCashPaid;
+  const remainingBill = Math.max(0, totalBillGross - totalPayment);
 
   return (
     <div className="space-y-4">
@@ -467,9 +598,19 @@ export function SarungKoperMonitoring() {
               Pantau pengadaan sarung koper 18 inch & 26 inch (JKS & JKG), pemotongan uang muka (DP), dan pencatatan pelunasan tagihan.
             </p>
           </div>
-          <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-2xs">
-            Supplier: Ibu Mita
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResetData}
+              className="rounded-full border border-slate-300 bg-white hover:bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-700 shadow-2xs transition"
+              title="Reset data ke default"
+            >
+              🔄 Reset Default
+            </button>
+            <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-2xs">
+              Supplier: Ibu Mita
+            </span>
+          </div>
         </div>
 
         {/* 4 KPI CARDS */}
@@ -489,16 +630,16 @@ export function SarungKoperMonitoring() {
             <p className="mt-1 text-base font-black text-slate-900 font-mono">
               {formatRp(totalBillGross)}
             </p>
-            <span className="text-[10px] text-slate-500 block mt-0.5">45.324 Pcs Sesuai PO</span>
+            <span className="text-[10px] text-slate-500 block mt-0.5">{formatNumber(grandTotalQty)} Pcs Realisasi</span>
           </div>
 
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 shadow-2xs">
             <span className="text-[11px] font-semibold text-emerald-900 block">Total Terbayar (DP + Kas)</span>
             <p className="mt-1 text-base font-black text-emerald-700 font-mono">
-              {formatRp(744899600)}
+              {formatRp(totalPayment)}
             </p>
             <span className="text-[10px] text-emerald-700 font-medium block mt-0.5">
-              DP: {formatRp(totalDpGiven)} + Kas
+              DP: {formatRp(totalDpDeducted)} + Kas: {formatRp(totalCashPaid)}
             </span>
           </div>
 
@@ -508,7 +649,7 @@ export function SarungKoperMonitoring() {
               {formatRp(remainingBill)}
             </p>
             <span className="text-[10px] text-amber-800 font-semibold block mt-0.5">
-              Sisa Rp 900.400 Belum Lunas
+              {remainingBill === 0 ? "Lunas Sepenuhnya" : "Sisa Belum Dibayar"}
             </span>
           </div>
         </div>
@@ -519,31 +660,31 @@ export function SarungKoperMonitoring() {
         <button
           type="button"
           onClick={() => setActiveTab("REKAP_PO")}
-          className={`rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs ${
+          className={`rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs cursor-pointer ${
             activeTab === "REKAP_PO"
               ? "bg-blue-600 text-white shadow-xs"
               : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
           }`}
         >
-          📊 Rekap PO & Fisik Barang ({SUMMARY_PO.length})
+          📊 Rekap PO & Fisik Barang ({summaryPo.length})
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("LOG_KEDATANGAN")}
-          className={`rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs ${
+          className={`rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs cursor-pointer ${
             activeTab === "LOG_KEDATANGAN"
               ? "bg-emerald-600 text-white shadow-xs"
               : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
           }`}
         >
-          📥 Log Harian Barang Masuk ({DAILY_LOGS.length})
+          📥 Log Harian Barang Masuk ({dailyLogs.length})
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("KEUANGAN_DP")}
-          className={`rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs ${
+          className={`rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs cursor-pointer ${
             activeTab === "KEUANGAN_DP"
               ? "bg-purple-600 text-white shadow-xs"
               : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -569,10 +710,11 @@ export function SarungKoperMonitoring() {
                   <th className="p-3 text-right">Selisih PO</th>
                   <th className="p-3 text-right">Total Tagihan</th>
                   <th className="p-3 text-center">Status</th>
+                  <th className="p-3 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {SUMMARY_PO.map((r, idx) => {
+                {summaryPo.map((r, idx) => {
                   const isMatch = r.variance === 0;
                   const isSurplus = r.variance > 0;
 
@@ -631,6 +773,24 @@ export function SarungKoperMonitoring() {
                           </span>
                         )}
                       </td>
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditPo(idx)}
+                            className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 shadow-2xs transition cursor-pointer"
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePo(idx)}
+                            className="rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100 shadow-2xs transition cursor-pointer"
+                          >
+                            🗑️ Hapus
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -638,20 +798,23 @@ export function SarungKoperMonitoring() {
               <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-bold text-slate-900">
                 <tr>
                   <td colSpan={3} className="p-3">TOTAL KESELURUHAN</td>
-                  <td className="p-3 text-right font-mono">45.200 pcs</td>
+                  <td className="p-3 text-right font-mono">{formatNumber(totalTargetPo)} pcs</td>
                   <td className="p-3"></td>
                   <td className="p-3 text-right font-mono text-blue-700 font-black">
                     {formatNumber(grandTotalQty)} pcs
                   </td>
-                  <td className="p-3 text-right font-mono text-emerald-700 font-bold">+124 pcs</td>
+                  <td className="p-3 text-right font-mono text-emerald-700 font-bold">
+                    {grandTotalQty - totalTargetPo >= 0 ? `+${grandTotalQty - totalTargetPo}` : grandTotalQty - totalTargetPo} pcs
+                  </td>
                   <td className="p-3 text-right font-mono text-blue-950 font-black">
                     {formatRp(totalBillGross)}
                   </td>
                   <td className="p-3 text-center">
                     <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                      TERPENUHI 100.27%
+                      TERPENUHI
                     </span>
                   </td>
+                  <td className="p-3"></td>
                 </tr>
               </tfoot>
             </table>
@@ -663,7 +826,7 @@ export function SarungKoperMonitoring() {
       {activeTab === "LOG_KEDATANGAN" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>Menampilkan <b>{DAILY_LOGS.length}</b> transaksi kedatangan barang dari Ibu Mita</span>
+            <span>Menampilkan <b>{dailyLogs.length}</b> transaksi kedatangan barang dari Ibu Mita</span>
             <span>Total: <b>{formatNumber(grandTotalQty)} pcs</b></span>
           </div>
 
@@ -681,10 +844,11 @@ export function SarungKoperMonitoring() {
                   <th className="p-2.5 text-right">Bayar Kas</th>
                   <th className="p-2.5">Tanggal Bayar</th>
                   <th className="p-2.5">Keterangan</th>
+                  <th className="p-2.5 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {DAILY_LOGS.map((l, idx) => (
+                {dailyLogs.map((l, idx) => (
                   <tr key={l.id} className="hover:bg-slate-50 transition">
                     <td className="p-2.5 text-slate-400 font-mono">{idx + 1}</td>
                     <td className="p-2.5 whitespace-nowrap font-medium text-slate-800">
@@ -730,6 +894,24 @@ export function SarungKoperMonitoring() {
                     <td className="p-2.5 text-[11px] text-slate-500">
                       {l.notes || "-"}
                     </td>
+                    <td className="p-2.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditLog(l)}
+                          className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100 shadow-2xs transition cursor-pointer"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteLog(l.id)}
+                          className="rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 shadow-2xs transition cursor-pointer"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -774,7 +956,7 @@ export function SarungKoperMonitoring() {
               </p>
               <div className="mt-2 text-[11px] text-slate-600 space-y-0.5">
                 <p>Total Tagihan: {formatRp(totalBillGross)}</p>
-                <p>Total Terbayar: {formatRp(744899600)}</p>
+                <p>Total Terbayar: {formatRp(totalPayment)}</p>
                 <b className="block border-t border-emerald-200 pt-1 mt-1 text-amber-700">
                   Sisa Tagihan: {formatRp(remainingBill)}
                 </b>
@@ -790,6 +972,218 @@ export function SarungKoperMonitoring() {
             <p className="leading-relaxed text-slate-600">
               Sarung koper 18 inch & 26 inch yang diterima dari <b>Ibu Mita</b> ini merupakan bagian dari kelengkapan <b>SET ISIAN KOPER HAJI</b>. Saat proses packing dan transfer ke <b>Pabrik Mitra MR WU (Dadap)</b> atau langsung ke <b>Embarkasi (JKS & JKG)</b>, stok sarung koper ini akan dirangkai bersama Tas Paspor, Tas Ransel, dan aksesoris lainnya.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT REKAP PO */}
+      {editingPoIndex !== null && poFormData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-black text-slate-900 text-sm">Edit Rekap PO Barang</h3>
+              <button
+                type="button"
+                onClick={() => setEditingPoIndex(null)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Nama Barang / Spesifikasi</label>
+                <input
+                  type="text"
+                  value={poFormData.name}
+                  onChange={(e) => setPoFormData({ ...poFormData, name: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 p-2 text-xs font-semibold focus:outline-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Target PO (Pcs)</label>
+                  <input
+                    type="number"
+                    value={poFormData.targetPo}
+                    onChange={(e) => setPoFormData({ ...poFormData, targetPo: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Harga Satuan (Rp)</label>
+                  <input
+                    type="number"
+                    value={poFormData.pricePerUnit}
+                    onChange={(e) => setPoFormData({ ...poFormData, pricePerUnit: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Realisasi Masuk (Pcs)</label>
+                <input
+                  type="number"
+                  value={poFormData.totalReceived}
+                  onChange={(e) => setPoFormData({ ...poFormData, totalReceived: Number(e.target.value) })}
+                  className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingPoIndex(null)}
+                className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditPo}
+                className="rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-xs"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT LOG HARIAN */}
+      {editingLogId !== null && logFormData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-black text-slate-900 text-sm">Edit Log Kedatangan ({logFormData.id})</h3>
+              <button
+                type="button"
+                onClick={() => setEditingLogId(null)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Label Tanggal</label>
+                  <input
+                    type="text"
+                    value={logFormData.arrivalDateStr}
+                    onChange={(e) => setLogFormData({ ...logFormData, arrivalDateStr: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Tipe Sarung</label>
+                  <select
+                    value={logFormData.category}
+                    onChange={(e) => setLogFormData({ ...logFormData, category: e.target.value as any })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-blue-500"
+                  >
+                    <option value="JKS_SUB">JKS (SUB)</option>
+                    <option value="JKG_BTH">JKG (BTH)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Qty 18 Inch</label>
+                  <input
+                    type="number"
+                    value={logFormData.qty18}
+                    onChange={(e) => setLogFormData({ ...logFormData, qty18: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Qty 26 Inch</label>
+                  <input
+                    type="number"
+                    value={logFormData.qty26}
+                    onChange={(e) => setLogFormData({ ...logFormData, qty26: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Tagihan (Rp)</label>
+                  <input
+                    type="number"
+                    value={logFormData.totalBill}
+                    onChange={(e) => setLogFormData({ ...logFormData, totalBill: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Potong DP (Rp)</label>
+                  <input
+                    type="number"
+                    value={logFormData.dpCut}
+                    onChange={(e) => setLogFormData({ ...logFormData, dpCut: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Bayar Kas (Rp)</label>
+                  <input
+                    type="number"
+                    value={logFormData.cashPaid}
+                    onChange={(e) => setLogFormData({ ...logFormData, cashPaid: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs font-mono focus:outline-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Tanggal Bayar</label>
+                  <input
+                    type="text"
+                    value={logFormData.paymentDate || ""}
+                    onChange={(e) => setLogFormData({ ...logFormData, paymentDate: e.target.value })}
+                    placeholder="Contoh: Jumat, 27 Feb 2026"
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Keterangan</label>
+                  <input
+                    type="text"
+                    value={logFormData.notes || ""}
+                    onChange={(e) => setLogFormData({ ...logFormData, notes: e.target.value })}
+                    placeholder="Catatan tambahan"
+                    className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingLogId(null)}
+                className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditLog}
+                className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
           </div>
         </div>
       )}
