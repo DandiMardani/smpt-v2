@@ -26,29 +26,32 @@ export default async function Page({ searchParams }: Props) {
     createClient(),
   ]);
 
-  const canWrite = access.permissionCodes.includes("master_pekerja.write");
+  // Cek Admin & Hak Akses Gaji
+  const isAdmin =
+    access.role === "ADMIN" ||
+    access.role === "SUPERADMIN" ||
+    access.permissionCodes.includes("admin") ||
+    access.permissionCodes.includes("access_control.write");
 
-  // Izin melihat gaji: hanya untuk yang punya akses Modul Payroll atau Admin
+  const canWrite = isAdmin || access.permissionCodes.includes("master_pekerja.write");
+
   const canViewSalary =
+    isAdmin ||
     access.permissionCodes.includes("payroll.view") ||
-    access.permissionCodes.includes("payroll.write") ||
-    access.permissionCodes.includes("admin");
+    access.permissionCodes.includes("payroll.write");
 
   const { data, error } = await s.from("workers").select("*").order("name");
   if (error) throw new Error(error.message);
 
   const rawRows = (data ?? []) as any[];
 
-  // Sensor data gaji di tingkat server jika user tidak memiliki akses payroll
+  // Sensor data gaji di server jika staf tidak memiliki hak akses Payroll
   const rows: WorkerItem[] = rawRows.map((w) => {
     if (canViewSalary) return w;
     return {
       ...w,
-      daily_salary: null,
-      monthly_salary: null,
-      base_salary: null,
-      daily_rate: null,
-      rate_per_day: null,
+      daily_wage: 0,
+      monthly_salary: 0,
     };
   });
 
@@ -82,10 +85,10 @@ export default async function Page({ searchParams }: Props) {
         <SectionCard title="Tambah Pekerja">
           <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 p-3.5 text-xs text-slate-600 leading-relaxed">
             <span className="font-bold text-slate-900 block mb-0.5">ℹ️ Informasi Pekerja & Akun Borongan:</span>
-            Berlaku untuk semua pekerja (<b className="text-slate-800">HARIAN, BORONGAN, dan BULANAN</b>). Lampirkan <b className="text-slate-800">Foto KTP</b> dan <b className="text-slate-800">Jumlah Anak</b> untuk data kependudukan & tanggungan. Khusus pekerja <b className="text-blue-700">BORONGAN</b>, akun login aplikasi otomatis dibuatkan di sistem dengan password nama depan + 123 (contoh: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-blue-700 font-semibold">budi123</code>).
+            Berlaku untuk semua pekerja (<b className="text-slate-800">HARIAN, BORONGAN, dan BULANAN</b>). Lampirkan <b className="text-slate-800">Foto KTP</b> dan <b className="text-slate-800">Jumlah Anak</b> untuk data kependudukan & tanggungan. Khusus pekerja <b className="text-blue-700">BORONGAN</b>, akun login aplikasi otomatis dibuatkan di sistem dengan password nama depan + 123.
           </div>
           <form action={createWorker} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <WorkerFormFields />
+            <WorkerFormFields canViewSalary={canViewSalary} />
             <div className="md:col-span-2 xl:col-span-3">
               <button className={primaryButtonClass}>Simpan Pekerja</button>
             </div>
@@ -93,12 +96,12 @@ export default async function Page({ searchParams }: Props) {
         </SectionCard>
       ) : null}
 
-      {/* Baris Tombol Export Excel & PDF */}
+      {/* Baris Tombol Export Excel & PDF (Hanya kirim workers) */}
       <div className="flex justify-end my-3">
-        <ExportWorkerButton workers={rows} canViewSalary={canViewSalary} />
+        <ExportWorkerButton workers={rows} />
       </div>
 
-      {/* Tampilan Direktori Pekerja dengan 4 Kartu Metrik & Fitur Pencarian / Filter */}
+      {/* Tampilan Direktori Pekerja */}
       <WorkerDirectoryClient workers={rows} canWrite={canWrite} canViewSalary={canViewSalary} />
     </MasterPageShell>
   );
