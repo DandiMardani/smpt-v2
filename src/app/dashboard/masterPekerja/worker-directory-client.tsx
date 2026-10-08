@@ -22,8 +22,8 @@ export type WorkerItem = {
   department: string | null;
   position: string | null;
   pay_system: string | null;
-  daily_wage: number | string;
-  monthly_salary: number | string;
+  daily_wage: number | string | null;
+  monthly_salary: number | string | null;
   phone: string | null;
   address: string | null;
   entry_date: string | null;
@@ -44,7 +44,13 @@ function optionList(values: readonly string[], current?: string | null) {
   return list;
 }
 
-export function WorkerFormFields({ w }: { w?: WorkerItem }) {
+export function WorkerFormFields({
+  w,
+  canViewSalary = true,
+}: {
+  w?: WorkerItem;
+  canViewSalary?: boolean;
+}) {
   return (
     <>
       <Field label="Nama Pekerja">
@@ -79,12 +85,19 @@ export function WorkerFormFields({ w }: { w?: WorkerItem }) {
           {optionList(PAY_SYSTEMS, w?.pay_system).map((x) => <option key={x} value={x}>{x}</option>)}
         </select>
       </Field>
-      <Field label="Upah Harian">
-        <input name="daily_wage" type="number" min="0" defaultValue={String(w?.daily_wage ?? 0)} className={inputClass} />
-      </Field>
-      <Field label="Gaji Bulanan">
-        <input name="monthly_salary" type="number" min="0" defaultValue={String(w?.monthly_salary ?? 0)} className={inputClass} />
-      </Field>
+
+      {/* Kontrol Akses Input Gaji */}
+      {canViewSalary ? (
+        <>
+          <Field label="Upah Harian">
+            <input name="daily_wage" type="number" min="0" defaultValue={String(w?.daily_wage ?? 0)} className={inputClass} />
+          </Field>
+          <Field label="Gaji Bulanan">
+            <input name="monthly_salary" type="number" min="0" defaultValue={String(w?.monthly_salary ?? 0)} className={inputClass} />
+          </Field>
+        </>
+      ) : null}
+
       <Field label="No HP / WhatsApp">
         <input name="phone" defaultValue={w?.phone ?? ""} className={inputClass} placeholder="Contoh: 08123456789" />
       </Field>
@@ -127,9 +140,11 @@ export function WorkerFormFields({ w }: { w?: WorkerItem }) {
 export function WorkerDirectoryClient({
   workers,
   canWrite,
+  canViewSalary = true,
 }: {
   workers: WorkerItem[];
   canWrite: boolean;
+  canViewSalary?: boolean;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [paySystemFilter, setPaySystemFilter] = useState<string>("ALL");
@@ -195,8 +210,7 @@ export function WorkerDirectoryClient({
       "Bagian",
       "Jabatan",
       "Sistem Upah",
-      "Upah Harian",
-      "Gaji Bulanan",
+      ...(canViewSalary ? ["Upah Harian", "Gaji Bulanan"] : []),
       "Tanggungan Anak",
       "Alamat",
       "Bank",
@@ -216,8 +230,9 @@ export function WorkerDirectoryClient({
       escape(w.department || "-"),
       escape(w.position || "-"),
       escape(w.pay_system || "-"),
-      escape(w.daily_wage || 0),
-      escape(w.monthly_salary || 0),
+      ...(canViewSalary
+        ? [escape(w.daily_wage || 0), escape(w.monthly_salary || 0)]
+        : []),
       escape(w.children_count || 0),
       escape(w.address || "-"),
       escape(w.bank_name || "-"),
@@ -464,7 +479,7 @@ export function WorkerDirectoryClient({
                 </div>
               </summary>
 
-              {/* TAMPILAN JIKA WRITE (ADMIN 1) */}
+              {/* TAMPILAN JIKA WRITE (ADMIN DENGAN AKSES UBAH) */}
               {canWrite ? (
                 <form
                   action={updateWorker}
@@ -472,7 +487,7 @@ export function WorkerDirectoryClient({
                   className="mt-4 grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-2 xl:grid-cols-3"
                 >
                   <input type="hidden" name="id" value={w.id} />
-                  <WorkerFormFields w={w} />
+                  <WorkerFormFields w={w} canViewSalary={canViewSalary} />
                   <div className="md:col-span-2 xl:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-2">
                     <button className={primaryButtonClass}>Simpan Perubahan</button>
                     <button
@@ -486,7 +501,7 @@ export function WorkerDirectoryClient({
                   </div>
                 </form>
               ) : (
-                /* TAMPILAN DETAIL LENGKAP JIKA READ-ONLY (ADMIN 2) */
+                /* TAMPILAN DETAIL LENGKAP JIKA READ-ONLY */
                 <div className="mt-4 border-t border-slate-100 pt-4 space-y-4">
                   <div className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-200">
                     👁️ Detail Pekerja (Mode Baca Saja)
@@ -518,14 +533,31 @@ export function WorkerDirectoryClient({
                       <span className="text-slate-400 block text-[11px]">Jabatan</span>
                       <span className="font-bold text-slate-800">{w.position || "-"}</span>
                     </div>
-                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                      <span className="text-slate-400 block text-[11px]">Upah Harian</span>
-                      <span className="font-bold text-emerald-700">Rp {Number(w.daily_wage || 0).toLocaleString("id-ID")}</span>
-                    </div>
-                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                      <span className="text-slate-400 block text-[11px]">Gaji Bulanan</span>
-                      <span className="font-bold text-emerald-700">Rp {Number(w.monthly_salary || 0).toLocaleString("id-ID")}</span>
-                    </div>
+
+                    {/* Sensor Kolom Upah / Gaji */}
+                    {canViewSalary ? (
+                      <>
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
+                          <span className="text-slate-400 block text-[11px]">Upah Harian</span>
+                          <span className="font-bold text-emerald-700">
+                            Rp {Number(w.daily_wage || 0).toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
+                          <span className="text-slate-400 block text-[11px]">Gaji Bulanan</span>
+                          <span className="font-bold text-emerald-700">
+                            Rp {Number(w.monthly_salary || 0).toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 col-span-2 sm:col-span-2">
+                        <span className="text-slate-400 block text-[11px]">Upah & Gaji</span>
+                        <span className="font-bold text-slate-400 tracking-wider">
+                          Rp •••••••• <span className="text-[10px] font-normal text-slate-400">(Terkunci)</span>
+                        </span>
+                      </div>
+                    )}
 
                     <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
                       <span className="text-slate-400 block text-[11px]">Rekening Bank</span>
@@ -543,7 +575,7 @@ export function WorkerDirectoryClient({
                     </div>
                   </div>
 
-                  {/* Pratinjau Foto KTP untuk Admin 2 */}
+                  {/* Pratinjau Foto KTP */}
                   {w.ktp_photo_url ? (
                     <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                       <span className="text-xs font-bold text-slate-700 block mb-2">🪪 Pratinjau Foto KTP</span>
@@ -571,7 +603,7 @@ export function WorkerDirectoryClient({
           ))}
         </div>
 
-        {/* AREA PRINT / CETAK PDF LENGKAP FOTO KTP */}
+        {/* AREA PRINT / CETAK PDF */}
         <div className="hidden print:block fixed inset-0 bg-white z-[9999] p-6 text-slate-900">
           <div className="border-b-2 border-slate-400 pb-2 mb-4">
             <h1 className="text-xl font-bold">DAFTAR MASTER PEKERJA & IDENTITAS KTP</h1>
