@@ -63,12 +63,16 @@ export function ManufakturManager({
   // Form State
   const defaultFlow = canTitipan ? "TITIPAN" : canBarangLuar ? "BARANG_LUAR" : canPengiriman ? "PENGIRIMAN" : "TITIPAN";
   const [flowType, setFlowType] = useState<string>(defaultFlow);
+  const [opnameDirection, setOpnameDirection] = useState<"MASUK" | "KELUAR">("MASUK");
   const [itemKind, setItemKind] = useState<"BAHAN" | "BARANG_JADI">("BAHAN");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>("");
   const [selectedFinishedGoodId, setSelectedFinishedGoodId] = useState<string>("");
+  const [selectedVendorId, setSelectedVendorId] = useState<string>("");
   const [unit, setUnit] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("");
+  const [documentNo, setDocumentNo] = useState<string>("");
+  const [description, setDescription] = useState<string>("");
   const [showAllFinishedGoods, setShowAllFinishedGoods] = useState<boolean>(false);
 
   // Table Filter & Search State
@@ -113,7 +117,8 @@ export function ManufakturManager({
     const titipan = transactions.filter((t) => t.flow_type === "TITIPAN").length;
     const barangLuar = transactions.filter((t) => t.flow_type === "BARANG_LUAR").length;
     const pengiriman = transactions.filter((t) => t.flow_type === "PENGIRIMAN").length;
-    return { total, titipan, barangLuar, pengiriman };
+    const opname = transactions.filter((t) => t.flow_type.includes("OPNAME")).length;
+    return { total, titipan, barangLuar, pengiriman, opname };
   }, [transactions]);
 
   // ==========================================
@@ -123,6 +128,7 @@ export function ManufakturManager({
     type StockItem = {
       key: string;
       itemKind: "BAHAN" | "BARANG_JADI";
+      itemId: number;
       code: string;
       name: string;
       unit: string;
@@ -139,7 +145,6 @@ export function ManufakturManager({
     const map = new Map<string, StockItem>();
 
     transactions.forEach((tx) => {
-      // Abaikan transaksi yang berstatus BATAL / NONAKTIF
       if (tx.status !== "AKTIF") return;
 
       const isMaterial = Boolean(tx.material_id);
@@ -147,11 +152,10 @@ export function ManufakturManager({
       if (!isMaterial && !isFg) return;
 
       const kind: "BAHAN" | "BARANG_JADI" = isMaterial ? "BAHAN" : "BARANG_JADI";
-      const itemId = isMaterial ? tx.material_id : tx.finished_good_id;
+      const itemId = isMaterial ? tx.material_id! : tx.finished_good_id!;
       const projId = tx.project_id || null;
       const vendId = tx.vendor_id || null;
 
-      // Kunci unik: Jenis + Item ID + Proyek ID + Vendor ID
       const groupKey = `${kind}_${itemId}_proj:${projId || "none"}_vend:${vendId || "none"}`;
 
       let record = map.get(groupKey);
@@ -178,6 +182,7 @@ export function ManufakturManager({
         record = {
           key: groupKey,
           itemKind: kind,
+          itemId,
           code,
           name,
           unit: defaultUnit,
@@ -194,17 +199,25 @@ export function ManufakturManager({
       }
 
       const qty = Number(tx.quantity) || 0;
-      if (tx.flow_type === "TITIPAN" || tx.flow_type === "BARANG_LUAR") {
+      // Perhitungan alur masuk & keluar (termasuk OPNAME)
+      if (
+        tx.flow_type === "TITIPAN" ||
+        tx.flow_type === "BARANG_LUAR" ||
+        tx.flow_type === "OPNAME_MASUK" ||
+        tx.flow_type === "OPNAME"
+      ) {
         record.totalIn += qty;
         record.remainingStock += qty;
-      } else if (tx.flow_type === "PENGIRIMAN") {
+      } else if (
+        tx.flow_type === "PENGIRIMAN" ||
+        tx.flow_type === "OPNAME_KELUAR"
+      ) {
         record.totalOut += qty;
         record.remainingStock -= qty;
       }
       record.txCount += 1;
     });
 
-    // Saring sesuai filter pencarian
     const q = search.trim().toLowerCase();
     return Array.from(map.values()).filter((item) => {
       if (filterKind === "BAHAN" && item.itemKind !== "BAHAN") return false;
@@ -226,7 +239,8 @@ export function ManufakturManager({
   const filteredTransactions = useMemo(() => {
     const q = search.trim().toLowerCase();
     return transactions.filter((item) => {
-      if (filterFlow !== "ALL" && item.flow_type !== filterFlow) return false;
+      if (filterFlow === "OPNAME" && !item.flow_type.includes("OPNAME")) return false;
+      if (filterFlow !== "ALL" && filterFlow !== "OPNAME" && item.flow_type !== filterFlow) return false;
 
       const isMaterial = item.material_id !== null;
       const isFg = item.finished_good_id !== null;
@@ -257,6 +271,31 @@ export function ManufakturManager({
     });
   }, [transactions, search, filterFlow, filterKind, filterProject, projectMap, materialMap, fgMap, vendorMap]);
 
+  // Tombol aksi cepat Opname dari baris stok
+  const handleQuickOpname = (item: any) => {
+    setFlowType("OPNAME");
+    setOpnameDirection("MASUK");
+    setItemKind(item.itemKind);
+    if (item.itemKind === "BAHAN") {
+      setSelectedMaterialId(String(item.itemId));
+      setSelectedFinishedGoodId("");
+    } else {
+      setSelectedFinishedGoodId(String(item.itemId));
+      setSelectedMaterialId("");
+    }
+    setSelectedProjectId(item.projectId ? String(item.projectId) : "");
+    setSelectedVendorId(item.vendorId ? String(item.vendorId) : "");
+    setUnit(item.unit);
+    setQuantity("");
+    setDocumentNo(`BA-OPNAME/${new Date().toISOString().slice(0, 7)}/01`);
+    setDescription(`Penyesuaian stok fisik (Stok tercatat: ${item.remainingStock} ${item.unit})`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const finalFlowValue = flowType === "OPNAME" 
+    ? (opnameDirection === "MASUK" ? "OPNAME_MASUK" : "OPNAME_KELUAR") 
+    : flowType;
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
@@ -271,15 +310,15 @@ export function ManufakturManager({
           <div className="mt-1 text-2xl font-bold text-amber-900">{stats.titipan}</div>
           <div className="mt-1 text-xs text-amber-600">Non-Aset (Masuk)</div>
         </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-xs">
-          <div className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Barang Luar</div>
-          <div className="mt-1 text-2xl font-bold text-emerald-900">{stats.barangLuar}</div>
-          <div className="mt-1 text-xs text-emerald-600">Penerimaan Rekanan</div>
-        </div>
         <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 shadow-xs">
           <div className="text-xs font-semibold uppercase tracking-wider text-blue-700">Pengiriman</div>
           <div className="mt-1 text-2xl font-bold text-blue-900">{stats.pengiriman}</div>
           <div className="mt-1 text-xs text-blue-600">Total Keluar Gudang</div>
+        </div>
+        <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-4 shadow-xs">
+          <div className="text-xs font-semibold uppercase tracking-wider text-purple-700">Opname / Penyesuaian</div>
+          <div className="mt-1 text-2xl font-bold text-purple-900">{stats.opname}</div>
+          <div className="mt-1 text-xs text-purple-600">Selisih Stok Fisik</div>
         </div>
       </div>
 
@@ -288,8 +327,14 @@ export function ManufakturManager({
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div>
-              <h3 className="text-base font-bold text-slate-900">Catat Transaksi Manufaktur & Titipan</h3>
-              <p className="text-xs text-slate-500">Mendukung Bahan Baku maupun Barang Jadi, fleksibel dengan atau tanpa proyek.</p>
+              <h3 className="text-base font-bold text-slate-900">
+                {flowType === "OPNAME" ? "⚖️ Penyesuaian Stok Fisik (Stock Opname)" : "Catat Transaksi Manufaktur & Titipan"}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {flowType === "OPNAME" 
+                  ? "Sesuaikan selisih lebih/kurang stok fisik tanpa mengganggu mutasi asal." 
+                  : "Mendukung Bahan Baku maupun Barang Jadi, fleksibel dengan atau tanpa proyek."}
+              </p>
             </div>
             <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-medium">
               {canTitipan && (
@@ -328,11 +373,55 @@ export function ManufakturManager({
                   PENGIRIMAN
                 </button>
               )}
+              {canTitipan && (
+                <button
+                  type="button"
+                  onClick={() => setFlowType("OPNAME")}
+                  className={`rounded-md px-3 py-1.5 transition ${
+                    flowType === "OPNAME" ? "bg-purple-600 font-bold text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  ⚖️ OPNAME
+                </button>
+              )}
             </div>
           </div>
 
           <form action={addManufacturingAction} className="mt-4 space-y-4">
-            <input type="hidden" name="flow_type" value={flowType} />
+            <input type="hidden" name="flow_type" value={finalFlowValue} />
+
+            {/* Sub-pilihan khusus OPNAME */}
+            {flowType === "OPNAME" && (
+              <div className="rounded-lg border border-purple-200 bg-purple-50/60 p-3">
+                <label className="block text-xs font-bold text-purple-950 mb-1.5">
+                  Arah Penyesuaian Selisih Fisik:
+                </label>
+                <div className="grid grid-cols-2 gap-2 max-w-md">
+                  <button
+                    type="button"
+                    onClick={() => setOpnameDirection("MASUK")}
+                    className={`rounded-lg py-2 px-3 text-xs font-bold transition border ${
+                      opnameDirection === "MASUK"
+                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                        : "bg-white text-purple-900 border-purple-200 hover:bg-purple-100"
+                    }`}
+                  >
+                    ➕ Surplus / Stok Bertambah (Fisik Lebih)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOpnameDirection("KELUAR")}
+                    className={`rounded-lg py-2 px-3 text-xs font-bold transition border ${
+                      opnameDirection === "KELUAR"
+                        ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                        : "bg-white text-rose-900 border-rose-200 hover:bg-rose-100"
+                    }`}
+                  >
+                    ➖ Defisit / Stok Berkurang (Hilang/Rusak)
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="grid gap-4 md:grid-cols-3">
               <div>
@@ -467,6 +556,8 @@ export function ManufakturManager({
                 </label>
                 <select
                   name="vendor_id"
+                  value={selectedVendorId}
+                  onChange={(e) => setSelectedVendorId(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="">-- Pilih Vendor / Rekanan --</option>
@@ -482,7 +573,7 @@ export function ManufakturManager({
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700">
-                  Qty <span className="text-rose-500">*</span>
+                  Qty {flowType === "OPNAME" ? "Selisih" : ""} <span className="text-rose-500">*</span>
                 </label>
                 <input
                   name="quantity"
@@ -491,7 +582,7 @@ export function ManufakturManager({
                   step="0.0001"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="0.00"
+                  placeholder={flowType === "OPNAME" ? "Contoh: 1 (Nilai Selisih)" : "0.00"}
                   required
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:outline-none"
                 />
@@ -509,10 +600,12 @@ export function ManufakturManager({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700">No. Dokumen / Surat Jalan</label>
+                <label className="block text-xs font-bold text-slate-700">No. Dokumen / Berita Acara</label>
                 <input
                   name="document_no"
-                  placeholder="Contoh: SJ-2026/09/01"
+                  value={documentNo}
+                  onChange={(e) => setDocumentNo(e.target.value)}
+                  placeholder={flowType === "OPNAME" ? "BA-OPNAME/2026/10/01" : "SJ-2026/09/01"}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
                 />
               </div>
@@ -524,7 +617,9 @@ export function ManufakturManager({
                 <input
                   name="description"
                   required
-                  placeholder="Deskripsi transaksi / pihak penitip"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={flowType === "OPNAME" ? "Alasan penyesuaian fisik..." : "Deskripsi transaksi"}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
                 />
               </div>
@@ -533,9 +628,11 @@ export function ManufakturManager({
             <div className="flex justify-end pt-2">
               <button
                 type="submit"
-                className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-bold text-white shadow-xs transition hover:bg-slate-800"
+                className={`rounded-lg px-6 py-2.5 text-sm font-bold text-white shadow-xs transition ${
+                  flowType === "OPNAME" ? "bg-purple-700 hover:bg-purple-800" : "bg-slate-900 hover:bg-slate-800"
+                }`}
               >
-                Simpan Transaksi {flowType}
+                {flowType === "OPNAME" ? "Simpan Hasil Opname Fisik" : `Simpan Transaksi ${flowType}`}
               </button>
             </div>
           </form>
@@ -545,7 +642,6 @@ export function ManufakturManager({
       {/* KONTROL TAB & FILTER GLOBAL */}
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          {/* Tab Switcher Fleksibel */}
           <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl max-w-md w-full">
             <button
               type="button"
@@ -571,7 +667,6 @@ export function ManufakturManager({
             </button>
           </div>
 
-          {/* Quick Filters */}
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="text"
@@ -591,6 +686,7 @@ export function ManufakturManager({
                 <option value="TITIPAN">Titipan</option>
                 <option value="BARANG_LUAR">Barang Luar</option>
                 <option value="PENGIRIMAN">Pengiriman</option>
+                <option value="OPNAME">Opname / Penyesuaian</option>
               </select>
             )}
 
@@ -634,12 +730,13 @@ export function ManufakturManager({
                   <th className="px-3 py-3 text-right">Terkirim / Keluar</th>
                   <th className="px-3 py-3 text-right bg-emerald-50/50 text-emerald-950">Sisa Stok Fisik</th>
                   <th className="px-3 py-3 text-center">Status</th>
+                  <th className="px-3 py-3 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800">
                 {stockBalances.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
                       Belum ada data barang titipan yang aktif.
                     </td>
                   </tr>
@@ -705,6 +802,18 @@ export function ManufakturManager({
                             </span>
                           )}
                         </td>
+                        <td className="px-3 py-3 text-center">
+                          {canWrite && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickOpname(item)}
+                              className="rounded-md border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-700 hover:bg-purple-100 transition whitespace-nowrap shadow-2xs"
+                              title="Sesuaikan stok fisik dengan hasil opname"
+                            >
+                              ⚖️ Opname
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })
@@ -757,14 +866,24 @@ export function ManufakturManager({
                       ? `${fg?.finished_good_code || ""} · ${fg?.name || tx.fg_name || "Barang Jadi"}`
                       : tx.description || "-";
 
-                    const flowColor =
-                      tx.flow_type === "TITIPAN"
-                        ? "bg-amber-100 text-amber-800 border-amber-300"
-                        : tx.flow_type === "BARANG_LUAR"
-                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                        : "bg-blue-100 text-blue-800 border-blue-300";
+                    let flowLabel = tx.flow_type;
+                    let flowColor = "bg-slate-100 text-slate-800 border-slate-300";
 
-                    const isOut = tx.flow_type === "PENGIRIMAN";
+                    if (tx.flow_type === "TITIPAN") {
+                      flowColor = "bg-amber-100 text-amber-800 border-amber-300";
+                    } else if (tx.flow_type === "BARANG_LUAR") {
+                      flowColor = "bg-emerald-100 text-emerald-800 border-emerald-300";
+                    } else if (tx.flow_type === "PENGIRIMAN") {
+                      flowColor = "bg-blue-100 text-blue-800 border-blue-300";
+                    } else if (tx.flow_type === "OPNAME_MASUK" || tx.flow_type === "OPNAME") {
+                      flowLabel = "OPNAME (+)";
+                      flowColor = "bg-purple-100 text-purple-800 border-purple-300";
+                    } else if (tx.flow_type === "OPNAME_KELUAR") {
+                      flowLabel = "OPNAME (-)";
+                      flowColor = "bg-rose-100 text-rose-800 border-rose-300";
+                    }
+
+                    const isOut = tx.flow_type === "PENGIRIMAN" || tx.flow_type === "OPNAME_KELUAR";
 
                     return (
                       <tr key={tx.id} className="hover:bg-slate-50/80 transition">
@@ -772,7 +891,7 @@ export function ManufakturManager({
                         <td className="px-3 py-2.5 whitespace-nowrap text-slate-600">{tx.transaction_date}</td>
                         <td className="px-3 py-2.5">
                           <span className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-bold ${flowColor}`}>
-                            {tx.flow_type}
+                            {flowLabel}
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
@@ -799,7 +918,7 @@ export function ManufakturManager({
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold whitespace-nowrap">
-                          <span className={isOut ? "text-blue-700" : "text-emerald-700"}>
+                          <span className={isOut ? "text-rose-700" : "text-emerald-700"}>
                             {isOut ? "- " : "+ "}
                             {Number(tx.quantity).toLocaleString("id-ID", { maximumFractionDigits: 4 })} {tx.unit || ""}
                           </span>
