@@ -14,6 +14,7 @@ import { formatNumber, param, type SearchParams } from "@/lib/master/page-utils"
 import { createClient } from "@/lib/supabase/server";
 import { MonitoringMaterialTable, type MonitoringRow } from "./monitoring-table";
 import { WipListClient } from "./wip-list-client";
+import { adjustMaterialStock } from "./actions";
 
 type Props = { searchParams: Promise<SearchParams> };
 type L = { id: number; code: string; name: string; physical_group: string };
@@ -173,11 +174,58 @@ export default async function Page({ searchParams }: Props) {
               {raw.map((b) => {
                 const m = b.material_id ? mm.get(b.material_id) : undefined;
                 return (
-                  <div key={b.id} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
-                    <b className="font-bold text-slate-900">{m?.material_code} · {m?.name}</b>
-                    <p className="mt-2 text-2xl font-bold text-blue-600">
-                      {formatNumber(b.quantity)} <span className="text-sm font-normal text-slate-500">{m?.standard_unit}</span>
-                    </p>
+                  <div key={b.id} className="flex flex-col justify-between rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
+                    <div>
+                      <b className="font-bold text-slate-900">{m?.material_code} · {m?.name}</b>
+                      <p className="mt-2 text-2xl font-bold text-blue-600">
+                        {formatNumber(b.quantity)} <span className="text-sm font-normal text-slate-500">{m?.standard_unit}</span>
+                      </p>
+                    </div>
+
+                    {canWrite ? (
+                      <details className="mt-3 border-t border-slate-100 pt-2 text-xs group">
+                        <summary className="cursor-pointer font-semibold text-blue-600 hover:text-blue-700 select-none py-1 flex items-center justify-between">
+                          <span>⚙️ Opname / Koreksi Stok</span>
+                          <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <form action={adjustMaterialStock} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-2.5 border border-slate-100">
+                          <input type="hidden" name="balance_id" value={b.id} />
+                          <input type="hidden" name="material_id" value={b.material_id || ""} />
+                          <input type="hidden" name="location_id" value={b.location_id} />
+                          <input type="hidden" name="current_quantity" value={b.quantity} />
+                          <input type="hidden" name="unit" value={m?.standard_unit || ""} />
+
+                          <div>
+                            <label className="block font-medium text-slate-600 mb-0.5">Stok Fisik Aktual ({m?.standard_unit}):</label>
+                            <input
+                              type="number"
+                              step="any"
+                              name="actual_quantity"
+                              required
+                              defaultValue={Number(b.quantity)}
+                              className={inputClass}
+                              placeholder="Masukkan hitungan fisik..."
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-medium text-slate-600 mb-0.5">Alasan / Catatan:</label>
+                            <input
+                              type="text"
+                              name="notes"
+                              placeholder="Contoh: Selisih timbang / susut kain"
+                              className={inputClass}
+                            />
+                          </div>
+
+                          <div className="pt-1 flex justify-end">
+                            <button type="submit" className={primaryButtonClass}>
+                              Simpan Koreksi
+                            </button>
+                          </div>
+                        </form>
+                      </details>
+                    ) : null}
                   </div>
                 );
               })}
