@@ -1889,13 +1889,14 @@ export async function addFinanceAction(f: FormData) {
 export async function addManufacturingAction(f: FormData) {
   const flow = t(f, "flow_type").toUpperCase();
   const permission =
-    flow === "TITIPAN"
+    flow === "TITIPAN" || flow.startsWith("OPNAME")
       ? "manufaktur.titipan.write"
       : flow === "BARANG_LUAR"
       ? "manufaktur.barang_luar.write"
       : flow === "PENGIRIMAN"
       ? "manufaktur.pengiriman.write"
       : "manufaktur.view";
+
 
   await mutate(
     "/dashboard/manufaktur",
