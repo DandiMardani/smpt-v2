@@ -25,10 +25,32 @@ export default async function Page({ searchParams }: Props) {
     searchParams,
     createClient(),
   ]);
+
   const canWrite = access.permissionCodes.includes("master_pekerja.write");
+
+  // Izin melihat gaji: hanya untuk yang punya akses Modul Payroll atau Admin
+  const canViewSalary =
+    access.permissionCodes.includes("payroll.view") ||
+    access.permissionCodes.includes("payroll.write") ||
+    access.permissionCodes.includes("admin");
+
   const { data, error } = await s.from("workers").select("*").order("name");
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as WorkerItem[];
+
+  const rawRows = (data ?? []) as any[];
+
+  // Sensor data gaji di tingkat server jika user tidak memiliki akses payroll
+  const rows: WorkerItem[] = rawRows.map((w) => {
+    if (canViewSalary) return w;
+    return {
+      ...w,
+      daily_salary: null,
+      monthly_salary: null,
+      base_salary: null,
+      daily_rate: null,
+      rate_per_day: null,
+    };
+  });
 
   const accUser = param(params, "acc_user");
   const accPass = param(params, "acc_pass");
@@ -73,11 +95,11 @@ export default async function Page({ searchParams }: Props) {
 
       {/* Baris Tombol Export Excel & PDF */}
       <div className="flex justify-end my-3">
-        <ExportWorkerButton workers={rows} />
+        <ExportWorkerButton workers={rows} canViewSalary={canViewSalary} />
       </div>
 
       {/* Tampilan Direktori Pekerja dengan 4 Kartu Metrik & Fitur Pencarian / Filter */}
-      <WorkerDirectoryClient workers={rows} canWrite={canWrite} />
+      <WorkerDirectoryClient workers={rows} canWrite={canWrite} canViewSalary={canViewSalary} />
     </MasterPageShell>
   );
 }
