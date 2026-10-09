@@ -257,18 +257,39 @@ export default async function Page({ searchParams }: Props) {
 
   const isBulanan = activeRun?.payroll_type === "BULANAN";
 
-  // Hitung Total Keseluruhan Footer
-  const totBase = activeItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
-  const totMeal = activeItems.reduce((acc, i) => acc + Number(i.meal_amount || 0), 0);
-  const totOvertime = activeItems.reduce(
+  // PEMISAHAN KATEGORI DATA: HARIAN VS BULANAN (UANG MAKAN)
+  const uangMakanItems = activeItems.filter((item) => {
+    const w = workerMap.get(item.worker_id);
+    const sys = String(w?.pay_system || item.pay_system_snapshot || "").toUpperCase();
+    return sys.includes("BULANAN");
+  });
+
+  const harianItems = activeItems.filter((item) => !uangMakanItems.includes(item));
+
+  // Hitung Total Uang Makan Staf Bulanan
+  const totMealBase = uangMakanItems.reduce((acc, i) => acc + Number(i.meal_amount || 0), 0);
+  const totMealOt = uangMakanItems.reduce(
     (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0),
     0
   );
-  const totGross = totBase + totMeal + totOvertime;
-  const totKasbonP = activeItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0);
-  const totKasbonW = activeItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0);
-  const totDed = totKasbonP + totKasbonW;
-  const totNet = Math.max(0, totGross - totDed);
+  const totMealNet = totMealBase + totMealOt;
+
+  // Hitung Total Upah Pekerja Harian
+  const totHarianBase = harianItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
+  const totHarianOt = harianItems.reduce(
+    (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0),
+    0
+  );
+  const totHarianGross = totHarianBase + totHarianOt;
+  const totHarianKp = harianItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0);
+  const totHarianKw = harianItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0);
+  const totHarianDed = totHarianKp + totHarianKw;
+  const totHarianNet = Math.max(0, totHarianGross - totHarianDed);
+
+  // Total Gabungan Keseluruhan
+  const totNet = isBulanan
+    ? activeItems.reduce((acc, i) => acc + Number(i.net_amount || 0), 0)
+    : totHarianNet + totMealNet;
 
   return (
     <PageShell
@@ -335,6 +356,7 @@ export default async function Page({ searchParams }: Props) {
         workerCount={activeItems.length}
         slipsNode={
           <div className="space-y-6 min-w-0 max-w-full">
+            {/* 3 KARTU STATISTIK METRIK */}
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center sm:text-left min-w-0">
               <div className="rounded-2xl border border-slate-200/90 bg-white p-2.5 sm:p-3 shadow-2xs min-w-0">
                 <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Total Run</span>
@@ -350,31 +372,59 @@ export default async function Page({ searchParams }: Props) {
               </div>
             </div>
 
-            {/* TABEL REKAPITULASI AKTIF (DINAMIS MINGGUAN / BULANAN) */}
-            {activeRun ? (
-              <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm space-y-3.5">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-lg bg-blue-600 px-2 py-0.5 text-xs font-black text-white">
-                        {activeRun.payroll_code}
-                      </span>
-                      <h2 className="text-base font-extrabold text-slate-900">
-                        {isBulanan
-                          ? "Rekapitulasi Gaji Karyawan Bulanan"
-                          : "Rekapitulasi Payroll Mingguan (Upah Harian & Uang Makan Staf)"}
-                      </h2>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Periode: <b>{activeRun.period_start} s/d {activeRun.period_end}</b> —{" "}
-                      {isBulanan
-                        ? "Total Bruto = Gaji Pokok + Lembur."
-                        : "Upah kehadiran harian + Pencairan uang makan mingguan staf bulanan."}
-                    </p>
+            {/* HEADER INFORMASI RUN AKTIF */}
+            {activeRun && !isBulanan && (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-lg bg-blue-600 px-2 py-0.5 text-xs font-black text-white">
+                      {activeRun.payroll_code}
+                    </span>
+                    <h2 className="text-base font-extrabold text-slate-900">
+                      Payroll Mingguan (Upah Harian & Uang Makan Staf)
+                    </h2>
                   </div>
-                  <div className="text-right">
-                    <div className="text-[10px] uppercase font-bold text-slate-400">Total Cair Bersih</div>
-                    <div className="text-lg font-black text-emerald-600">{money(totNet)}</div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Periode: <b>{activeRun.period_start} s/d {activeRun.period_end}</b> — Total pencairan kas minggu berjalan.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-left md:text-right">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Upah Harian ({harianItems.length})</div>
+                    <div className="text-sm font-extrabold text-emerald-700">{money(totHarianNet)}</div>
+                  </div>
+                  <div className="h-7 w-px bg-slate-300 hidden sm:block" />
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Uang Makan ({uangMakanItems.length})</div>
+                    <div className="text-sm font-extrabold text-amber-700">{money(totMealNet)}</div>
+                  </div>
+                  <div className="h-7 w-px bg-slate-300 hidden sm:block" />
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-blue-600">Total Cair Bersih</div>
+                    <div className="text-lg font-black text-blue-900">{money(totNet)}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TABEL 1: REKAPITULASI UPAH PEKERJA HARIAN (TERPISAH & BERSIH) */}
+            {activeRun && !isBulanan && (
+              <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-lg bg-emerald-600 px-2.5 py-0.5 text-xs font-black text-white">
+                      HARIAN
+                    </span>
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900">
+                        ⏱️ Rekapitulasi Upah Pekerja Harian ({harianItems.length} Pekerja)
+                      </h3>
+                      <p className="text-xs text-slate-500">Upah pokok kehadiran harian + lembur, otomatis dipotong kasbon.</p>
+                    </div>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <div className="text-[10px] uppercase font-bold text-slate-400">Total Upah Harian</div>
+                    <div className="text-base font-black text-emerald-700">{money(totHarianNet)}</div>
                   </div>
                 </div>
 
@@ -384,9 +434,8 @@ export default async function Page({ searchParams }: Props) {
                       <tr>
                         <th className="px-3 py-2.5">Pekerja</th>
                         <th className="px-3 py-2.5 text-center">Hari Kerja</th>
-                        <th className="px-3 py-2.5 text-right">{isBulanan ? "Gaji Pokok" : "Upah Harian"}</th>
-                        {!isBulanan && <th className="px-3 py-2.5 text-right text-amber-700">Uang Makan</th>}
-                        <th className="px-3 py-2.5 text-right">Lembur (Jam & Rp)</th>
+                        <th className="px-3 py-2.5 text-right">Upah Pokok</th>
+                        <th className="px-3 py-2.5 text-right">Lembur</th>
                         <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
                         <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
                         <th className="px-3 py-2.5 text-right text-amber-600">Kasbon Warung</th>
@@ -397,15 +446,14 @@ export default async function Page({ searchParams }: Props) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {activeItems.map((item) => {
+                      {harianItems.map((item) => {
                         const w = workerMap.get(item.worker_id);
                         const base = Number(item.base_amount || 0);
-                        const meal = Number(item.meal_amount || 0);
                         const overtime =
                           Number(item.overtime_amount || 0) +
                           Number(item.manual_overtime_amount || 0) +
                           Number(item.overtime_bonus || 0);
-                        const gross = base + meal + overtime;
+                        const gross = base + overtime;
                         const kp = Number(item.kasbon_perusahaan_amount || 0);
                         const kw = Number(item.kasbon_warung_amount || 0);
                         const ded = kp + kw;
@@ -414,6 +462,8 @@ export default async function Page({ searchParams }: Props) {
 
                         const fullDays = Number(item.full_days || 0);
                         const halfDays = Number(item.half_days || 0);
+                        const totalDays = fullDays + halfDays * 0.5;
+
                         const otMinutes = Number(item.overtime_minutes || 0);
                         const otHours = Math.round((otMinutes / 60) * 10) / 10;
 
@@ -422,30 +472,18 @@ export default async function Page({ searchParams }: Props) {
                             <td className="px-3 py-2.5 font-bold text-slate-900">
                               <div>{item.worker_name_snapshot || w?.name || `Worker #${item.worker_id}`}</div>
                               <div className="text-[10px] font-normal text-slate-400">
-                                {w?.worker_code || "-"} · {w?.pay_system || (isBulanan ? "BULANAN" : "HARIAN")}
+                                {w?.worker_code || "-"} · HARIAN
                               </div>
                             </td>
 
-                            {/* Kolom Hari Kerja / Kehadiran */}
                             <td className="px-3 py-2.5 text-center whitespace-nowrap">
                               <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-800 border border-slate-200">
-                                📅 {fullDays} Hari
+                                📅 {totalDays} Hari
                               </span>
-                              {halfDays > 0 && (
-                                <span className="ml-1 text-[10px] font-medium text-amber-700">
-                                  (+{halfDays} stgh hari)
-                                </span>
-                              )}
                             </td>
 
                             <td className="px-3 py-2.5 text-right font-medium">{money(base)}</td>
-                            {!isBulanan && (
-                              <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
-                                {meal > 0 ? money(meal) : "-"}
-                              </td>
-                            )}
 
-                            {/* Kolom Lembur (Jam & Rupiah) */}
                             <td className="px-3 py-2.5 text-right whitespace-nowrap">
                               <div className={`font-semibold ${overtime > 0 ? "text-blue-700" : "text-slate-500"}`}>
                                 {money(overtime)}
@@ -490,16 +528,11 @@ export default async function Page({ searchParams }: Props) {
                                           <form action={editBulananItem} className="space-y-2">
                                             <input type="hidden" name="item_id" value={item.id} />
                                             <input type="hidden" name="run_id" value={activeRun.id} />
+                                            <input type="hidden" name="meal_amount" value={0} />
                                             <div>
-                                              <label className="text-[10px] font-bold text-slate-600">{isBulanan ? "Gaji Pokok" : "Upah Harian"}</label>
+                                              <label className="text-[10px] font-bold text-slate-600">Upah Pokok Harian</label>
                                               <input name="base_amount" type="number" defaultValue={base} className="w-full rounded border px-2 py-1 text-xs" required />
                                             </div>
-                                            {!isBulanan && (
-                                              <div>
-                                                <label className="text-[10px] font-bold text-amber-700">Uang Makan</label>
-                                                <input name="meal_amount" type="number" defaultValue={meal} className="w-full rounded border border-amber-200 px-2 py-1 text-xs" />
-                                              </div>
-                                            )}
                                             <div>
                                               <label className="text-[10px] font-bold text-slate-600">Lembur</label>
                                               <input name="overtime_amount" type="number" defaultValue={overtime} className="w-full rounded border px-2 py-1 text-xs" required />
@@ -543,20 +576,355 @@ export default async function Page({ searchParams }: Props) {
                         );
                       })}
                     </tbody>
+                    <tfoot className="bg-slate-100/90 font-black text-slate-900 border-t-2 border-slate-300">
+                      <tr>
+                        <td className="px-3 py-3 uppercase text-[11px] tracking-wider text-slate-600">
+                          TOTAL ({harianItems.length} Pekerja)
+                        </td>
+                        <td className="px-3 py-3 text-center text-xs text-slate-500">-</td>
+                        <td className="px-3 py-3 text-right">{money(totHarianBase)}</td>
+                        <td className="px-3 py-3 text-right text-slate-700">{money(totHarianOt)}</td>
+                        <td className="px-3 py-3 text-right bg-blue-100/60 text-blue-900">{money(totHarianGross)}</td>
+                        <td className="px-3 py-3 text-right text-rose-700">{money(totHarianKp)}</td>
+                        <td className="px-3 py-3 text-right text-amber-700">{money(totHarianKw)}</td>
+                        <td className="px-3 py-3 text-right text-rose-800 bg-rose-100/60">{money(totHarianDed)}</td>
+                        <td className="px-3 py-3 text-right bg-emerald-100 text-emerald-800 text-sm">
+                          {money(totHarianNet)}
+                        </td>
+                        <td className="px-3 py-3 text-center">-</td>
+                        {canWrite && <td></td>}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
 
+            {/* TABEL 2: REKAPITULASI UANG MAKAN STAF BULANAN (TERPISAH & BERSIH) */}
+            {activeRun && !isBulanan && (
+              <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-lg bg-amber-600 px-2.5 py-0.5 text-xs font-black text-white">
+                      UANG MAKAN
+                    </span>
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900">
+                        🍱 Rekapitulasi Uang Makan Staf Bulanan ({uangMakanItems.length} Pekerja)
+                      </h3>
+                      <p className="text-xs text-slate-500">Pencairan mingguan murni dari kehadiran aktif staf (Rp 50.000 / hari), tanpa potongan kasbon.</p>
+                    </div>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <div className="text-[10px] uppercase font-bold text-slate-400">Total Uang Makan</div>
+                    <div className="text-base font-black text-amber-700">{money(totMealNet)}</div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-600 border-b border-slate-200">
+                      <tr>
+                        <th className="px-3 py-2.5">Staf / Karyawan</th>
+                        <th className="px-3 py-2.5 text-center">Hari Hadir</th>
+                        <th className="px-3 py-2.5 text-right text-amber-700">Uang Makan</th>
+                        <th className="px-3 py-2.5 text-right">Lembur / Tambahan</th>
+                        <th className="px-3 py-2.5 text-right bg-emerald-50 text-emerald-700 font-black">Total Cair Uang Makan</th>
+                        <th className="px-3 py-2.5 text-center">Status</th>
+                        {canWrite && <th className="px-3 py-2.5 text-center">Aksi / Verifikasi</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {uangMakanItems.map((item) => {
+                        const w = workerMap.get(item.worker_id);
+                        const meal = Number(item.meal_amount || 0);
+                        const overtime =
+                          Number(item.overtime_amount || 0) +
+                          Number(item.manual_overtime_amount || 0) +
+                          Number(item.overtime_bonus || 0);
+                        const net = meal + overtime;
+                        const isPaid = (item as any).payment_status === "PAID";
+
+                        const fullDays = Number(item.full_days || 0);
+                        const halfDays = Number(item.half_days || 0);
+                        const totalDays = fullDays + halfDays * 0.5;
+
+                        return (
+                          <tr key={item.id} className={`transition ${isPaid ? "bg-emerald-50/20" : "hover:bg-slate-50/80"}`}>
+                            <td className="px-3 py-2.5 font-bold text-slate-900">
+                              <div>{item.worker_name_snapshot || w?.name || `Worker #${item.worker_id}`}</div>
+                              <div className="text-[10px] font-normal text-slate-400">
+                                {w?.worker_code || "-"} · {w?.position || "Staf Bulanan"}
+                              </div>
+                            </td>
+
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
+                                📅 {totalDays} Hari
+                              </span>
+                            </td>
+
+                            <td className="px-3 py-2.5 text-right font-bold text-amber-700 text-sm">
+                              {money(meal)}
+                            </td>
+
+                            <td className="px-3 py-2.5 text-right text-slate-600 font-medium">
+                              {overtime > 0 ? money(overtime) : "-"}
+                            </td>
+
+                            <td className="px-3 py-2.5 text-right font-black text-emerald-700 bg-emerald-50/60 text-sm">
+                              {money(net)}
+                            </td>
+
+                            <td className="px-3 py-2.5 text-center">
+                              {isPaid ? (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">
+                                  LUNAS
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                  BELUM DIBAYAR
+                                </span>
+                              )}
+                            </td>
+
+                            {canWrite && (
+                              <td className="px-3 py-2.5 text-center">
+                                <div className="inline-flex items-center gap-1.5">
+                                  {!isPaid ? (
+                                    <>
+                                      <details className="relative">
+                                        <summary className="cursor-pointer list-none rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100">
+                                          ✏️ Edit
+                                        </summary>
+                                        <div className="absolute right-0 z-50 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-xl text-left">
+                                          <form action={editBulananItem} className="space-y-2">
+                                            <input type="hidden" name="item_id" value={item.id} />
+                                            <input type="hidden" name="run_id" value={activeRun.id} />
+                                            <input type="hidden" name="base_amount" value={0} />
+                                            <input type="hidden" name="kasbon_perusahaan_amount" value={0} />
+                                            <input type="hidden" name="kasbon_warung_amount" value={0} />
+                                            <div>
+                                              <label className="text-[10px] font-bold text-amber-700">Nominal Uang Makan</label>
+                                              <input name="meal_amount" type="number" defaultValue={meal} className="w-full rounded border border-amber-200 px-2 py-1 text-xs font-semibold" required />
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-slate-600">Lembur / Bonus</label>
+                                              <input name="overtime_amount" type="number" defaultValue={overtime} className="w-full rounded border px-2 py-1 text-xs" />
+                                            </div>
+                                            <button className="w-full rounded bg-blue-600 py-1 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer">Simpan</button>
+                                          </form>
+                                        </div>
+                                      </details>
+
+                                      <form action={markBulananPaid}>
+                                        <input type="hidden" name="item_id" value={item.id} />
+                                        <input type="hidden" name="run_id" value={activeRun.id} />
+                                        <input type="hidden" name="worker_id" value={item.worker_id} />
+                                        <input type="hidden" name="kasbon_perusahaan_amount" value={0} />
+                                        <input type="hidden" name="kasbon_warung_amount" value={0} />
+                                        <button type="submit" className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95 cursor-pointer">
+                                          Bayar
+                                        </button>
+                                      </form>
+                                    </>
+                                  ) : (
+                                    <form action={revertBulananPaid}>
+                                      <input type="hidden" name="item_id" value={item.id} />
+                                      <button type="submit" className="rounded-lg border border-rose-300 bg-white px-2 py-1 text-[10px] font-bold text-rose-700 hover:bg-rose-50 cursor-pointer">
+                                        Batal Lunas
+                                      </button>
+                                    </form>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-100/90 font-black text-slate-900 border-t-2 border-slate-300">
+                      <tr>
+                        <td className="px-3 py-3 uppercase text-[11px] tracking-wider text-slate-600">
+                          TOTAL ({uangMakanItems.length} Staf)
+                        </td>
+                        <td className="px-3 py-3 text-center text-xs text-slate-500">-</td>
+                        <td className="px-3 py-3 text-right text-amber-800 text-sm">{money(totMealBase)}</td>
+                        <td className="px-3 py-3 text-right text-slate-700">{money(totMealOt)}</td>
+                        <td className="px-3 py-3 text-right bg-emerald-100 text-emerald-800 text-sm">
+                          {money(totMealNet)}
+                        </td>
+                        <td className="px-3 py-3 text-center">-</td>
+                        {canWrite && <td></td>}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* TABEL GAJI BULANAN (JIKA RUN ADALAH BULANAN AKHIR BULAN) */}
+            {activeRun && isBulanan && (
+              <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-lg bg-blue-600 px-2 py-0.5 text-xs font-black text-white">
+                        {activeRun.payroll_code}
+                      </span>
+                      <h2 className="text-base font-extrabold text-slate-900">
+                        Rekapitulasi Gaji Karyawan Bulanan
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Periode: <b>{activeRun.period_start} s/d {activeRun.period_end}</b> — Total Bruto = Gaji Pokok + Lembur.
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase font-bold text-slate-400">Total Cair Bersih</div>
+                    <div className="text-lg font-black text-emerald-600">{money(totNet)}</div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-600 border-b border-slate-200">
+                      <tr>
+                        <th className="px-3 py-2.5">Pekerja</th>
+                        <th className="px-3 py-2.5 text-center">Hari Kerja</th>
+                        <th className="px-3 py-2.5 text-right">Gaji Pokok</th>
+                        <th className="px-3 py-2.5 text-right">Lembur</th>
+                        <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
+                        <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
+                        <th className="px-3 py-2.5 text-right text-amber-600">Kasbon Warung</th>
+                        <th className="px-3 py-2.5 text-right text-rose-700 bg-rose-50/50">Tot. Potongan</th>
+                        <th className="px-3 py-2.5 text-right bg-emerald-50 text-emerald-700 font-black">Gaji Bersih (THP)</th>
+                        <th className="px-3 py-2.5 text-center">Status</th>
+                        {canWrite && <th className="px-3 py-2.5 text-center">Aksi / Verifikasi</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {activeItems.map((item) => {
+                        const w = workerMap.get(item.worker_id);
+                        const base = Number(item.base_amount || 0);
+                        const overtime =
+                          Number(item.overtime_amount || 0) +
+                          Number(item.manual_overtime_amount || 0) +
+                          Number(item.overtime_bonus || 0);
+                        const gross = base + overtime;
+                        const kp = Number(item.kasbon_perusahaan_amount || 0);
+                        const kw = Number(item.kasbon_warung_amount || 0);
+                        const ded = kp + kw;
+                        const net = Math.max(0, gross - ded);
+                        const isPaid = (item as any).payment_status === "PAID";
+
+                        const fullDays = Number(item.full_days || 0);
+                        const halfDays = Number(item.half_days || 0);
+                        const totalDays = fullDays + halfDays * 0.5;
+
+                        return (
+                          <tr key={item.id} className={`transition ${isPaid ? "bg-emerald-50/20" : "hover:bg-slate-50/80"}`}>
+                            <td className="px-3 py-2.5 font-bold text-slate-900">
+                              <div>{item.worker_name_snapshot || w?.name || `Worker #${item.worker_id}`}</div>
+                              <div className="text-[10px] font-normal text-slate-400">{w?.worker_code || "Staf Bulanan"}</div>
+                            </td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-800 border border-slate-200">
+                                📅 {totalDays} Hari
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-medium">{money(base)}</td>
+                            <td className="px-3 py-2.5 text-right font-medium text-slate-600">{money(overtime)}</td>
+                            <td className="px-3 py-2.5 text-right font-bold text-slate-900 bg-blue-50/30">{money(gross)}</td>
+                            <td className="px-3 py-2.5 text-right text-rose-600 font-medium">{money(kp)}</td>
+                            <td className="px-3 py-2.5 text-right text-amber-600 font-medium">{money(kw)}</td>
+                            <td className="px-3 py-2.5 text-right text-rose-700 font-bold bg-rose-50/30">{money(ded)}</td>
+                            <td className="px-3 py-2.5 text-right font-black text-emerald-700 bg-emerald-50/60 text-sm">
+                              {money(net)}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              {isPaid ? (
+                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">
+                                  LUNAS
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                  BELUM DIBAYAR
+                                </span>
+                              )}
+                            </td>
+                            {canWrite && (
+                              <td className="px-3 py-2.5 text-center">
+                                <div className="inline-flex items-center gap-1.5">
+                                  {!isPaid ? (
+                                    <>
+                                      <details className="relative">
+                                        <summary className="cursor-pointer list-none rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100">
+                                          ✏️ Edit
+                                        </summary>
+                                        <div className="absolute right-0 z-50 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl text-left">
+                                          <form action={editBulananItem} className="space-y-2">
+                                            <input type="hidden" name="item_id" value={item.id} />
+                                            <input type="hidden" name="run_id" value={activeRun.id} />
+                                            <div>
+                                              <label className="text-[10px] font-bold text-slate-600">Gaji Pokok</label>
+                                              <input name="base_amount" type="number" defaultValue={base} className="w-full rounded border px-2 py-1 text-xs" required />
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-slate-600">Lembur</label>
+                                              <input name="overtime_amount" type="number" defaultValue={overtime} className="w-full rounded border px-2 py-1 text-xs" required />
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-rose-600">Kasbon Kantor</label>
+                                              <input name="kasbon_perusahaan_amount" type="number" defaultValue={kp} className="w-full rounded border border-rose-200 px-2 py-1 text-xs" required />
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-amber-600">Kasbon Warung</label>
+                                              <input name="kasbon_warung_amount" type="number" defaultValue={kw} className="w-full rounded border border-amber-200 px-2 py-1 text-xs" required />
+                                            </div>
+                                            <button className="w-full rounded bg-blue-600 py-1 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer">Simpan</button>
+                                          </form>
+                                        </div>
+                                      </details>
+
+                                      <form action={markBulananPaid}>
+                                        <input type="hidden" name="item_id" value={item.id} />
+                                        <input type="hidden" name="run_id" value={activeRun.id} />
+                                        <input type="hidden" name="worker_id" value={item.worker_id} />
+                                        <input type="hidden" name="kasbon_perusahaan_amount" value={kp} />
+                                        <input type="hidden" name="kasbon_warung_amount" value={kw} />
+                                        <button type="submit" className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95 cursor-pointer">
+                                          Bayar
+                                        </button>
+                                      </form>
+                                    </>
+                                  ) : (
+                                    <form action={revertBulananPaid}>
+                                      <input type="hidden" name="item_id" value={item.id} />
+                                      <button type="submit" className="rounded-lg border border-rose-300 bg-white px-2 py-1 text-[10px] font-bold text-rose-700 hover:bg-rose-50 cursor-pointer">
+                                        Batal Lunas
+                                      </button>
+                                    </form>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
                     <tfoot className="bg-slate-100/90 font-black text-slate-900 border-t-2 border-slate-300">
                       <tr>
                         <td className="px-3 py-3 uppercase text-[11px] tracking-wider text-slate-600">
                           TOTAL ({activeItems.length} Pekerja)
                         </td>
                         <td className="px-3 py-3 text-center text-xs text-slate-500">-</td>
-                        <td className="px-3 py-3 text-right">{money(totBase)}</td>
-                        {!isBulanan && <td className="px-3 py-3 text-right text-amber-800">{money(totMeal)}</td>}
-                        <td className="px-3 py-3 text-right text-slate-700">{money(totOvertime)}</td>
-                        <td className="px-3 py-3 text-right bg-blue-100/60 text-blue-900">{money(totGross)}</td>
-                        <td className="px-3 py-3 text-right text-rose-700">{money(totKasbonP)}</td>
-                        <td className="px-3 py-3 text-right text-amber-700">{money(totKasbonW)}</td>
-                        <td className="px-3 py-3 text-right text-rose-800 bg-rose-100/60">{money(totDed)}</td>
+                        <td className="px-3 py-3 text-right">{money(activeItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0))}</td>
+                        <td className="px-3 py-3 text-right text-slate-700">{money(activeItems.reduce((acc, i) => acc + Number(i.overtime_amount || 0), 0))}</td>
+                        <td className="px-3 py-3 text-right bg-blue-100/60 text-blue-900">{money(activeItems.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.overtime_amount || 0), 0))}</td>
+                        <td className="px-3 py-3 text-right text-rose-700">{money(activeItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0))}</td>
+                        <td className="px-3 py-3 text-right text-amber-700">{money(activeItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0))}</td>
+                        <td className="px-3 py-3 text-right text-rose-800 bg-rose-100/60">{money(activeItems.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0))}</td>
                         <td className="px-3 py-3 text-right bg-emerald-100 text-emerald-800 text-sm">
                           {money(totNet)}
                         </td>
@@ -567,7 +935,7 @@ export default async function Page({ searchParams }: Props) {
                   </table>
                 </div>
               </div>
-            ) : null}
+            )}
 
             {/* Slip Gaji & WhatsApp Manager */}
             <PayrollSlipManager
