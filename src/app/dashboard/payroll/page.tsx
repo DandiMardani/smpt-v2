@@ -249,7 +249,7 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Ambil Run Aktif Terbaru (tanpa dipaksa bulanan)
+  // Ambil Run Aktif Terbaru
   const activeRun = payrollRuns[0];
   const activeItems = activeRun
     ? payrollItems.filter((it) => it.payroll_run_id === activeRun.id)
@@ -383,9 +383,10 @@ export default async function Page({ searchParams }: Props) {
                     <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-600 border-b border-slate-200">
                       <tr>
                         <th className="px-3 py-2.5">Pekerja</th>
+                        <th className="px-3 py-2.5 text-center">Hari Kerja</th>
                         <th className="px-3 py-2.5 text-right">{isBulanan ? "Gaji Pokok" : "Upah Harian"}</th>
                         {!isBulanan && <th className="px-3 py-2.5 text-right text-amber-700">Uang Makan</th>}
-                        <th className="px-3 py-2.5 text-right">Lembur</th>
+                        <th className="px-3 py-2.5 text-right">Lembur (Jam & Rp)</th>
                         <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
                         <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
                         <th className="px-3 py-2.5 text-right text-amber-600">Kasbon Warung</th>
@@ -411,6 +412,11 @@ export default async function Page({ searchParams }: Props) {
                         const net = Math.max(0, gross - ded);
                         const isPaid = (item as any).payment_status === "PAID";
 
+                        const fullDays = Number(item.full_days || 0);
+                        const halfDays = Number(item.half_days || 0);
+                        const otMinutes = Number(item.overtime_minutes || 0);
+                        const otHours = Math.round((otMinutes / 60) * 10) / 10;
+
                         return (
                           <tr key={item.id} className={`transition ${isPaid ? "bg-emerald-50/20" : "hover:bg-slate-50/80"}`}>
                             <td className="px-3 py-2.5 font-bold text-slate-900">
@@ -419,13 +425,40 @@ export default async function Page({ searchParams }: Props) {
                                 {w?.worker_code || "-"} · {w?.pay_system || (isBulanan ? "BULANAN" : "HARIAN")}
                               </div>
                             </td>
+
+                            {/* Kolom Hari Kerja / Kehadiran */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-800 border border-slate-200">
+                                📅 {fullDays} Hari
+                              </span>
+                              {halfDays > 0 && (
+                                <span className="ml-1 text-[10px] font-medium text-amber-700">
+                                  (+{halfDays} stgh hari)
+                                </span>
+                              )}
+                            </td>
+
                             <td className="px-3 py-2.5 text-right font-medium">{money(base)}</td>
                             {!isBulanan && (
                               <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
                                 {meal > 0 ? money(meal) : "-"}
                               </td>
                             )}
-                            <td className="px-3 py-2.5 text-right font-medium text-slate-600">{money(overtime)}</td>
+
+                            {/* Kolom Lembur (Jam & Rupiah) */}
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                              <div className={`font-semibold ${overtime > 0 ? "text-blue-700" : "text-slate-500"}`}>
+                                {money(overtime)}
+                              </div>
+                              {otMinutes > 0 ? (
+                                <div className="text-[10px] font-bold text-blue-600">
+                                  ⏱️ {otHours} Jam ({otMinutes} mnt)
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-slate-400">Tanpa lembur</div>
+                              )}
+                            </td>
+
                             <td className="px-3 py-2.5 text-right font-bold text-slate-900 bg-blue-50/30">{money(gross)}</td>
                             <td className="px-3 py-2.5 text-right text-rose-600 font-medium">{money(kp)}</td>
                             <td className="px-3 py-2.5 text-right text-amber-600 font-medium">{money(kw)}</td>
@@ -516,6 +549,7 @@ export default async function Page({ searchParams }: Props) {
                         <td className="px-3 py-3 uppercase text-[11px] tracking-wider text-slate-600">
                           TOTAL ({activeItems.length} Pekerja)
                         </td>
+                        <td className="px-3 py-3 text-center text-xs text-slate-500">-</td>
                         <td className="px-3 py-3 text-right">{money(totBase)}</td>
                         {!isBulanan && <td className="px-3 py-3 text-right text-amber-800">{money(totMeal)}</td>}
                         <td className="px-3 py-3 text-right text-slate-700">{money(totOvertime)}</td>
