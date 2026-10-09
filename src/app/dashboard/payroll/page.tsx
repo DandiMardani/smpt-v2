@@ -54,17 +54,18 @@ export default async function Page({ searchParams }: Props) {
   const q = await searchParams;
   const supabase = await createClient();
 
-  // --- SERVER ACTION: EDIT KOREKSI GAJI BULANAN ---
+  // --- SERVER ACTION: EDIT KOREKSI ITEM ---
   async function editBulananItem(formData: FormData) {
     "use server";
     const itemId = Number(formData.get("item_id"));
     const runId = Number(formData.get("run_id"));
     const base = Number(formData.get("base_amount") || 0);
+    const meal = Number(formData.get("meal_amount") || 0);
     const overtime = Number(formData.get("overtime_amount") || 0);
     const kasbonP = Number(formData.get("kasbon_perusahaan_amount") || 0);
     const kasbonW = Number(formData.get("kasbon_warung_amount") || 0);
 
-    const gross = base + overtime;
+    const gross = base + meal + overtime;
     const ded = kasbonP + kasbonW;
     const net = Math.max(0, gross - ded);
 
@@ -74,8 +75,8 @@ export default async function Page({ searchParams }: Props) {
         .from("payroll_run_items")
         .update({
           base_amount: base,
+          meal_amount: meal,
           overtime_amount: overtime,
-          meal_amount: 0,
           kasbon_perusahaan_amount: kasbonP,
           kasbon_warung_amount: kasbonW,
           deduction_amount: ded,
@@ -85,11 +86,11 @@ export default async function Page({ searchParams }: Props) {
 
       const { data: all } = await client
         .from("payroll_run_items")
-        .select("base_amount, overtime_amount, deduction_amount, net_amount")
+        .select("base_amount, meal_amount, overtime_amount, deduction_amount, net_amount")
         .eq("payroll_run_id", runId);
 
       if (all) {
-        const tG = all.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.overtime_amount || 0), 0);
+        const tG = all.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.meal_amount || 0) + Number(i.overtime_amount || 0), 0);
         const tD = all.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0);
         const tN = all.reduce((acc, i) => acc + Number(i.net_amount || 0), 0);
         await client.from("payroll_runs").update({ total_gross: tG, total_deduction: tD, total_net: tN }).eq("id", runId);
@@ -112,7 +113,6 @@ export default async function Page({ searchParams }: Props) {
     const client = await createClient();
 
     try {
-      // 1. Lunaskan kasbon warung dan set paid_amount penuh agar sisa Rp 0
       if (cutW > 0) {
         const { data: activeWarung } = await client
           .from("cash_advances")
@@ -128,14 +128,13 @@ export default async function Page({ searchParams }: Props) {
               .update({
                 paid_amount: w.amount,
                 status: "LUNAS",
-                notes: `Lunas via Payroll Bulanan #${runId}`,
+                notes: `Lunas via Payroll #${runId}`,
               })
               .eq("id", w.id);
           }
         }
       }
 
-      // 2. Pemotongan kasbon kantor (prioritaskan SEKALI LUNAS, baru ANGSURAN)
       if (cutP > 0) {
         const { data: advancesP } = await client
           .from("cash_advances")
@@ -158,7 +157,6 @@ export default async function Page({ searchParams }: Props) {
             if (sisa <= 0) continue;
 
             const instAmt = Number(adv.installment_amount || 0);
-            // Jika ada nilai cicilan dan lebih kecil dari sisa, targetnya nilai cicilan. Jika tidak, target sisa penuh.
             const targetPotong = instAmt > 0 && instAmt < sisa ? instAmt : sisa;
 
             const bayar = Math.min(targetPotong, remainBudget);
@@ -171,8 +169,8 @@ export default async function Page({ searchParams }: Props) {
                 paid_amount: newPaid,
                 status: isLunas ? "LUNAS" : "AKTIF",
                 notes: isLunas
-                  ? `Lunas via Payroll Bulanan #${runId}`
-                  : `Angsuran terbayar via Payroll Bulanan #${runId}`,
+                  ? `Lunas via Payroll #${runId}`
+                  : `Angsuran terbayar via Payroll #${runId}`,
               })
               .eq("id", adv.id);
 
@@ -181,15 +179,12 @@ export default async function Page({ searchParams }: Props) {
         }
       }
 
-      // 3. Update status item jadi PAID
       const { error: updateErr } = await client
         .from("payroll_run_items")
         .update({ payment_status: "PAID" })
         .eq("id", itemId);
 
-      if (updateErr) {
-        console.error("Gagal update status item:", updateErr.message);
-      }
+      if (updateErr) console.error("Gagal update status item:", updateErr.message);
     } catch (err) {
       console.error("Fatal action error:", err);
     }
@@ -254,21 +249,24 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Ambil batch BULANAN terbaru murni dari data snapshot batch
-  const latestBulananRun = payrollRuns.find((r) => r.payroll_type === "BULANAN") || payrollRuns[0];
-  const bulananItems = latestBulananRun
-    ? payrollItems.filter((it) => it.payroll_run_id === latestBulananRun.id)
+  // Ambil Run Aktif Terbaru (tanpa dipaksa bulanan)
+  const activeRun = payrollRuns[0];
+  const activeItems = activeRun
+    ? payrollItems.filter((it) => it.payroll_run_id === activeRun.id)
     : [];
 
+  const isBulanan = activeRun?.payroll_type === "BULANAN";
+
   // Hitung Total Keseluruhan Footer
-  const totBase = bulananItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
-  const totOvertime = bulananItems.reduce(
+  const totBase = activeItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
+  const totMeal = activeItems.reduce((acc, i) => acc + Number(i.meal_amount || 0), 0);
+  const totOvertime = activeItems.reduce(
     (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0),
     0
   );
-  const totGross = totBase + totOvertime;
-  const totKasbonP = bulananItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0);
-  const totKasbonW = bulananItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0);
+  const totGross = totBase + totMeal + totOvertime;
+  const totKasbonP = activeItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0);
+  const totKasbonW = activeItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0);
   const totDed = totKasbonP + totKasbonW;
   const totNet = Math.max(0, totGross - totDed);
 
@@ -295,29 +293,26 @@ export default async function Page({ searchParams }: Props) {
           📑 Export Form Pembayaran Upah Harian (Excel)
         </a>
         <a
-          href={`/api/export/xlsx?report=payroll_slips&run_id=${latestBulananRun?.id ?? latestRunId}`}
+          href={`/api/export/xlsx?report=payroll_slips&run_id=${activeRun?.id ?? latestRunId}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
         >
-          📥 Export Slip Bulanan
+          📥 Export Slip Payroll
         </a>
         <a
           href={`/api/export/xlsx?report=operator_payroll_slips&price_type=operator&run_id=${operatorRuns[0]?.id ?? ""}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3.5 py-1.5 text-xs font-semibold text-violet-900 shadow-xs hover:bg-violet-100 transition"
-          title="Slip Gaji Riil yang dibayarkan ke tukang jahit (Harga Operator · Gabungan Paspor + Ransel)"
         >
           💰 Export Upah Real Operator (Gabungan)
         </a>
         <a
           href={`/api/export/xlsx?report=operator_payroll_slips&price_type=pengajuan&run_id=${operatorRuns[0]?.id ?? ""}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-900 shadow-xs hover:bg-emerald-100 transition"
-          title="Rekap Pengajuan Pencairan Dana (Harga Pengajuan · Pisah Paspor & Ransel · Termasuk Pekerja Harian)"
         >
           📑 Export Rekap Pengajuan (Per Produk)
         </a>
         <a
           href={`/api/export/xlsx?report=operator_payroll_slips&run_id=${operatorRuns[0]?.id ?? ""}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-1.5 text-xs font-semibold text-indigo-800 shadow-xs hover:bg-indigo-100 transition"
-          title="Export Lengkap: Upah Real + Pengajuan Paspor + Pengajuan Ransel + Margin Kas Jahit"
         >
           📊 Export Lengkap + Margin
         </a>
@@ -336,8 +331,8 @@ export default async function Page({ searchParams }: Props) {
 
       <PayrollViewTabs
         canWrite={canWrite}
-        activeRunCode={payrollRuns[0]?.payroll_code}
-        workerCount={payrollRuns[0] ? payrollItems.filter((it) => it.payroll_run_id === payrollRuns[0].id).length : 0}
+        activeRunCode={activeRun?.payroll_code}
+        workerCount={activeItems.length}
         slipsNode={
           <div className="space-y-6 min-w-0 max-w-full">
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center sm:text-left min-w-0">
@@ -355,21 +350,26 @@ export default async function Page({ searchParams }: Props) {
               </div>
             </div>
 
-            {/* TABEL GAJI BULANAN LENGKAP */}
-            {latestBulananRun ? (
+            {/* TABEL REKAPITULASI AKTIF (DINAMIS MINGGUAN / BULANAN) */}
+            {activeRun ? (
               <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-sm space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="rounded-lg bg-blue-600 px-2 py-0.5 text-xs font-black text-white">
-                        {latestBulananRun.payroll_code}
+                        {activeRun.payroll_code}
                       </span>
                       <h2 className="text-base font-extrabold text-slate-900">
-                        Rekapitulasi Gaji Karyawan Bulanan
+                        {isBulanan
+                          ? "Rekapitulasi Gaji Karyawan Bulanan"
+                          : "Rekapitulasi Payroll Mingguan (Upah Harian & Uang Makan Staf)"}
                       </h2>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Periode: <b>{latestBulananRun.period_start} s/d {latestBulananRun.period_end}</b> — Total Bruto = Gaji Pokok + Lembur.
+                      Periode: <b>{activeRun.period_start} s/d {activeRun.period_end}</b> —{" "}
+                      {isBulanan
+                        ? "Total Bruto = Gaji Pokok + Lembur."
+                        : "Upah kehadiran harian + Pencairan uang makan mingguan staf bulanan."}
                     </p>
                   </div>
                   <div className="text-right">
@@ -383,7 +383,8 @@ export default async function Page({ searchParams }: Props) {
                     <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-600 border-b border-slate-200">
                       <tr>
                         <th className="px-3 py-2.5">Pekerja</th>
-                        <th className="px-3 py-2.5 text-right">Gaji Pokok</th>
+                        <th className="px-3 py-2.5 text-right">{isBulanan ? "Gaji Pokok" : "Upah Harian"}</th>
+                        {!isBulanan && <th className="px-3 py-2.5 text-right text-amber-700">Uang Makan</th>}
                         <th className="px-3 py-2.5 text-right">Lembur</th>
                         <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
                         <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
@@ -395,14 +396,15 @@ export default async function Page({ searchParams }: Props) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {bulananItems.map((item) => {
+                      {activeItems.map((item) => {
                         const w = workerMap.get(item.worker_id);
                         const base = Number(item.base_amount || 0);
+                        const meal = Number(item.meal_amount || 0);
                         const overtime =
                           Number(item.overtime_amount || 0) +
                           Number(item.manual_overtime_amount || 0) +
                           Number(item.overtime_bonus || 0);
-                        const gross = base + overtime;
+                        const gross = base + meal + overtime;
                         const kp = Number(item.kasbon_perusahaan_amount || 0);
                         const kw = Number(item.kasbon_warung_amount || 0);
                         const ded = kp + kw;
@@ -413,9 +415,16 @@ export default async function Page({ searchParams }: Props) {
                           <tr key={item.id} className={`transition ${isPaid ? "bg-emerald-50/20" : "hover:bg-slate-50/80"}`}>
                             <td className="px-3 py-2.5 font-bold text-slate-900">
                               <div>{item.worker_name_snapshot || w?.name || `Worker #${item.worker_id}`}</div>
-                              <div className="text-[10px] font-normal text-slate-400">{w?.worker_code || w?.position || "Staf Bulanan"}</div>
+                              <div className="text-[10px] font-normal text-slate-400">
+                                {w?.worker_code || "-"} · {w?.pay_system || (isBulanan ? "BULANAN" : "HARIAN")}
+                              </div>
                             </td>
                             <td className="px-3 py-2.5 text-right font-medium">{money(base)}</td>
+                            {!isBulanan && (
+                              <td className="px-3 py-2.5 text-right font-semibold text-amber-700">
+                                {meal > 0 ? money(meal) : "-"}
+                              </td>
+                            )}
                             <td className="px-3 py-2.5 text-right font-medium text-slate-600">{money(overtime)}</td>
                             <td className="px-3 py-2.5 text-right font-bold text-slate-900 bg-blue-50/30">{money(gross)}</td>
                             <td className="px-3 py-2.5 text-right text-rose-600 font-medium">{money(kp)}</td>
@@ -440,7 +449,6 @@ export default async function Page({ searchParams }: Props) {
                                 <div className="inline-flex items-center gap-1.5">
                                   {!isPaid ? (
                                     <>
-                                      {/* Popover Edit */}
                                       <details className="relative">
                                         <summary className="cursor-pointer list-none rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100">
                                           ✏️ Edit
@@ -448,11 +456,17 @@ export default async function Page({ searchParams }: Props) {
                                         <div className="absolute right-0 z-50 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl text-left">
                                           <form action={editBulananItem} className="space-y-2">
                                             <input type="hidden" name="item_id" value={item.id} />
-                                            <input type="hidden" name="run_id" value={latestBulananRun.id} />
+                                            <input type="hidden" name="run_id" value={activeRun.id} />
                                             <div>
-                                              <label className="text-[10px] font-bold text-slate-600">Gaji Pokok</label>
+                                              <label className="text-[10px] font-bold text-slate-600">{isBulanan ? "Gaji Pokok" : "Upah Harian"}</label>
                                               <input name="base_amount" type="number" defaultValue={base} className="w-full rounded border px-2 py-1 text-xs" required />
                                             </div>
+                                            {!isBulanan && (
+                                              <div>
+                                                <label className="text-[10px] font-bold text-amber-700">Uang Makan</label>
+                                                <input name="meal_amount" type="number" defaultValue={meal} className="w-full rounded border border-amber-200 px-2 py-1 text-xs" />
+                                              </div>
+                                            )}
                                             <div>
                                               <label className="text-[10px] font-bold text-slate-600">Lembur</label>
                                               <input name="overtime_amount" type="number" defaultValue={overtime} className="w-full rounded border px-2 py-1 text-xs" required />
@@ -470,10 +484,9 @@ export default async function Page({ searchParams }: Props) {
                                         </div>
                                       </details>
 
-                                      {/* Form Bayar Lunas */}
                                       <form action={markBulananPaid}>
                                         <input type="hidden" name="item_id" value={item.id} />
-                                        <input type="hidden" name="run_id" value={latestBulananRun.id} />
+                                        <input type="hidden" name="run_id" value={activeRun.id} />
                                         <input type="hidden" name="worker_id" value={item.worker_id} />
                                         <input type="hidden" name="kasbon_perusahaan_amount" value={kp} />
                                         <input type="hidden" name="kasbon_warung_amount" value={kw} />
@@ -498,13 +511,13 @@ export default async function Page({ searchParams }: Props) {
                       })}
                     </tbody>
 
-                    {/* BARIS TOTAL KESELURUHAN DI SETIAP KOLOM */}
                     <tfoot className="bg-slate-100/90 font-black text-slate-900 border-t-2 border-slate-300">
                       <tr>
                         <td className="px-3 py-3 uppercase text-[11px] tracking-wider text-slate-600">
-                          TOTAL ({bulananItems.length} Pekerja)
+                          TOTAL ({activeItems.length} Pekerja)
                         </td>
                         <td className="px-3 py-3 text-right">{money(totBase)}</td>
+                        {!isBulanan && <td className="px-3 py-3 text-right text-amber-800">{money(totMeal)}</td>}
                         <td className="px-3 py-3 text-right text-slate-700">{money(totOvertime)}</td>
                         <td className="px-3 py-3 text-right bg-blue-100/60 text-blue-900">{money(totGross)}</td>
                         <td className="px-3 py-3 text-right text-rose-700">{money(totKasbonP)}</td>
