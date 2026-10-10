@@ -77,15 +77,15 @@ function Kpi({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition hover:shadow-md">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>
-        <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border text-base ${colorMap[color]}`}>
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-3.5 sm:p-5 shadow-xs transition hover:shadow-md">
+      <div className="flex items-center justify-between gap-1">
+        <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 truncate">{label}</p>
+        <span className={`inline-flex h-7 w-7 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl border text-sm sm:text-base ${colorMap[color]}`}>
           {icon}
         </span>
       </div>
-      <p className="mt-3 text-3xl font-black tracking-tight text-slate-900">{value}</p>
-      {hint ? <p className="mt-1 text-xs font-medium text-slate-500">{hint}</p> : null}
+      <p className="mt-2 text-xl sm:text-3xl font-black tracking-tight text-slate-900">{value}</p>
+      {hint ? <p className="mt-0.5 text-[10px] sm:text-xs font-medium text-slate-500 truncate">{hint}</p> : null}
     </div>
   );
 }
@@ -202,7 +202,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       );
       setSummary(data as ManagerSummary);
 
-      // Invalidate on-demand data
       setItemLoaded(false);
       setItemRows([]);
       setFgData(null);
@@ -212,7 +211,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       setHistoryRows([]);
       setHistoryOffset(0);
 
-      // Reload active tab
       if (activeTab === "HASIL") loadItemDetail();
       if (activeTab === "BARANG_JADI") loadBarangJadi();
       if (activeTab === "EMBARKASI") loadEmbarkasi();
@@ -347,7 +345,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
     }
   }
 
-  // Effect load otomatis saat ganti tab
   useEffect(() => {
     if (activeTab === "HASIL" && !itemLoaded) {
       loadItemDetail();
@@ -379,7 +376,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
     });
   }, [topProducts, projectId, productId, projects, products]);
 
-  // Grouping itemRows PER PRODUK
   const groupedProducts = useMemo(() => {
     const map = new Map<
       string,
@@ -413,150 +409,158 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
   }, [itemRows]);
 
   return (
-    <div className="space-y-6">
-      {/* HEADER UTAMA */}
-      <header className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-4 sm:space-y-6 pb-28 sm:pb-8">
+      {/* HEADER UTAMA: MOBILE-FRIENDLY & CLEAN */}
+      <header className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs">
+        <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-black tracking-wide text-blue-800">
+              <span className="rounded-lg bg-blue-100 px-2.5 py-0.5 text-[10px] sm:text-xs font-black tracking-wide text-blue-800">
                 PORTAL EKSEKUTIF
               </span>
-              <span className="text-xs font-semibold text-slate-500">Mode Ringkas & Pengawasan</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-500">Mode Ringkas & Pengawasan</span>
             </div>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="mt-1.5 text-xl sm:text-3xl font-black tracking-tight text-slate-900">
               Dashboard Hasil & Pengiriman
             </h1>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 leading-relaxed">
               Monitoring hasil produksi per produk, alur kerja borongan, barang jadi, transfer, pengiriman embarkasi, dan log reject.
             </p>
           </div>
 
-          {/* Filter Periode & Proyek */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 shadow-2xs">
-              <span className="text-xs font-bold text-slate-500">Periode:</span>
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none"
-              />
-              <span className="text-xs font-medium text-slate-400">s/d</span>
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none"
-              />
+          {/* Filter Periode & Dropdown yang Pas di Layar HP */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            {/* Input Rentang Tanggal (Tidak terpotong lagi) */}
+            <div className="flex items-center justify-between gap-1.5 rounded-2xl border border-slate-200 bg-slate-50/80 p-1.5 sm:px-3 sm:py-1.5 shadow-2xs w-full sm:w-auto">
+              <div className="flex flex-1 items-center gap-1 min-w-0">
+                <span className="text-[11px] font-bold text-slate-500 shrink-0">Tgl:</span>
+                <input
+                  type="date"
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  className="w-full min-w-0 bg-transparent text-xs font-semibold text-slate-800 focus:outline-none"
+                />
+                <span className="text-[11px] font-medium text-slate-400 shrink-0">s/d</span>
+                <input
+                  type="date"
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  className="w-full min-w-0 bg-transparent text-xs font-semibold text-slate-800 focus:outline-none"
+                />
+              </div>
               <button
                 type="button"
                 onClick={refreshSummary}
                 disabled={summaryLoading}
-                className="ml-1 rounded-xl bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50 transition"
+                className="shrink-0 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50 transition active:scale-95"
               >
                 {summaryLoading ? "..." : "Terapkan"}
               </button>
             </div>
 
-            <select
-              value={projectId || ""}
-              onChange={(e) => {
-                const nextProj = Number(e.target.value) || 0;
-                setProjectId(nextProj);
-                setProductId(0);
-              }}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs focus:border-blue-500 focus:outline-none"
-            >
-              <option value="">Semua Proyek</option>
-              {projects.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-            </select>
+            {/* Dropdown Proyek & Produk: Grid 2 Kolom Sejajar Rapi di HP */}
+            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center">
+              <select
+                value={projectId || ""}
+                onChange={(e) => {
+                  const nextProj = Number(e.target.value) || 0;
+                  setProjectId(nextProj);
+                  setProductId(0);
+                }}
+                className="w-full sm:w-auto rounded-xl border border-slate-200 bg-white px-2.5 py-2 sm:py-1.5 text-xs font-bold text-slate-700 shadow-xs focus:border-blue-500 focus:outline-none truncate"
+              >
+                <option value="">Semua Proyek</option>
+                {projects.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
 
-            <select
-              value={productId || ""}
-              onChange={(e) => setProductId(Number(e.target.value) || 0)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs focus:border-blue-500 focus:outline-none"
-            >
-              <option value="">Semua Produk</option>
-              {productOptions.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-            </select>
+              <select
+                value={productId || ""}
+                onChange={(e) => setProductId(Number(e.target.value) || 0)}
+                className="w-full sm:w-auto rounded-xl border border-slate-200 bg-white px-2.5 py-2 sm:py-1.5 text-xs font-bold text-slate-700 shadow-xs focus:border-blue-500 focus:outline-none truncate"
+              >
+                <option value="">Semua Produk</option>
+                {productOptions.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* TAB NAVIGATION */}
-        <div className="mt-6 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-          <button
-            type="button"
-            onClick={() => setActiveTab("HASIL")}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-              activeTab === "HASIL"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
-            }`}
-          >
-            <span>🏭</span>
-            <span>Hasil Produksi (Per Produk)</span>
-          </button>
+        {/* TAB NAVIGATION: BISA DISWIPE KE SAMPING (HORIZONTAL SCROLL) */}
+        <div className="mt-4 sm:mt-6 border-t border-slate-100 pt-3 sm:pt-4">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1.5 no-scrollbar -mx-1 px-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("HASIL")}
+              className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+                activeTab === "HASIL"
+                  ? "bg-blue-600 text-white shadow-xs font-black"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
+              }`}
+            >
+              <span>🏭</span>
+              <span>Hasil Produksi (Per Produk)</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("BARANG_JADI")}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-              activeTab === "BARANG_JADI"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
-            }`}
-          >
-            <span>📦</span>
-            <span>Barang Jadi & Stok</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("BARANG_JADI")}
+              className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+                activeTab === "BARANG_JADI"
+                  ? "bg-blue-600 text-white shadow-xs font-black"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
+              }`}
+            >
+              <span>📦</span>
+              <span>Barang Jadi & Stok</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("EMBARKASI")}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-              activeTab === "EMBARKASI"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
-            }`}
-          >
-            <span>🚚</span>
-            <span>Emberkasi & Pengiriman / Transfer</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("EMBARKASI")}
+              className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+                activeTab === "EMBARKASI"
+                  ? "bg-blue-600 text-white shadow-xs font-black"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
+              }`}
+            >
+              <span>🚚</span>
+              <span>Embarkasi & Pengiriman / Transfer</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("REJECT")}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-              activeTab === "REJECT"
-                ? "bg-rose-600 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
-            }`}
-          >
-            <span>⚠️</span>
-            <span>Barang Reject</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("REJECT")}
+              className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+                activeTab === "REJECT"
+                  ? "bg-rose-600 text-white shadow-xs font-black"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
+              }`}
+            >
+              <span>⚠️</span>
+              <span>Barang Reject</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("RIWAYAT")}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${
-              activeTab === "RIWAYAT"
-                ? "bg-blue-600 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
-            }`}
-          >
-            <span>📜</span>
-            <span>Log Aktivitas Pabrik</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("RIWAYAT")}
+              className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+                activeTab === "RIWAYAT"
+                  ? "bg-blue-600 text-white shadow-xs font-black"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200/80"
+              }`}
+            >
+              <span>📜</span>
+              <span>Log Aktivitas Pabrik</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -567,12 +571,12 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       ) : null}
 
       {/* ======================================================== */}
-      {/* TAB 1: HASIL PRODUKSI (PER PRODUK DENGAN RIWAYAT BUKA/TUTUP) */}
+      {/* TAB 1: HASIL PRODUKSI */}
       {/* ======================================================== */}
       {activeTab === "HASIL" && (
-        <div className="space-y-6">
-          {/* KPI Cards Hasil */}
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="space-y-4 sm:space-y-6">
+          {/* KPI Cards Hasil: 2 Kolom di HP */}
+          <section className="grid gap-2.5 sm:gap-4 grid-cols-2 xl:grid-cols-4">
             <Kpi
               label="Hasil Sah Periode Ini"
               value={`${num(prod.qty_sah_period)} Pcs`}
@@ -604,10 +608,10 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
           </section>
 
           {/* Rekap Target vs Capaian per Produk */}
-          <section className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+          <section className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Rekap Hasil Output per Produk</h2>
+                <h2 className="text-base sm:text-lg font-black text-slate-900">Rekap Hasil Output per Produk</h2>
                 <p className="text-xs text-slate-500">
                   Target proyek vs Actual hasil sah dari Checker pada Output Final produk.
                 </p>
@@ -686,11 +690,11 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
             )}
           </section>
 
-          {/* Rincian Pengerjaan Dikelompokkan PER PRODUK + Tombol Riwayat Buka-Tutup */}
-          <section className="space-y-6">
+          {/* Rincian Pengerjaan Dikelompokkan PER PRODUK */}
+          <section className="space-y-4 sm:space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-black text-slate-900">Rincian Tahapan Alur Kerja per Produk</h2>
+                <h2 className="text-lg sm:text-xl font-black text-slate-900">Rincian Tahapan Alur Kerja per Produk</h2>
                 <p className="text-xs text-slate-500">
                   Data tahapan kerja dikelompokkan rapi per produk. Klik tombol <span className="font-bold text-blue-600">Riwayat Pengerjaan</span> pada baris item untuk melihat rincian SPK, operator, checker, dan catatan.
                 </p>
@@ -713,7 +717,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                     className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-xs transition"
                   >
                     {/* Header Card Produk */}
-                    <div className="border-b border-slate-100 bg-slate-50/70 px-6 py-4">
+                    <div className="border-b border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-6 sm:py-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-3">
                           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-lg">
@@ -723,23 +727,23 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                             <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">
                               {prodGroup.project_name}
                             </span>
-                            <h3 className="text-lg font-black text-slate-900">{prodGroup.product_name}</h3>
+                            <h3 className="text-base sm:text-lg font-black text-slate-900">{prodGroup.product_name}</h3>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-right shadow-2xs">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-right shadow-2xs">
                             <p className="text-[10px] font-bold uppercase text-slate-400">Target Produk</p>
-                            <p className="text-sm font-black text-slate-900">{num(prodGroup.target_production)} Pcs</p>
+                            <p className="text-xs sm:text-sm font-black text-slate-900">{num(prodGroup.target_production)} Pcs</p>
                           </div>
-                          <span className="rounded-full bg-slate-200/80 px-3 py-1 text-xs font-bold text-slate-700">
-                            {prodGroup.items.length} Tahapan Kerja
+                          <span className="rounded-full bg-slate-200/80 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-slate-700">
+                            {prodGroup.items.length} Tahapan
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Tabel Tahapan Kerja Produk ini */}
+                    {/* Tabel Tahapan Kerja */}
                     <TableWrap>
                       <thead>
                         <tr>
@@ -828,11 +832,11 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                                 </Td>
                               </tr>
 
-                              {/* BARIS SUB-TABEL RIWAYAT BUKA/TUTUP */}
+                              {/* BARIS SUB-TABEL RIWAYAT */}
                               {isExpanded && (
                                 <tr key={`history-${itemIdx}`} className="bg-slate-50/90 border-t border-b border-blue-200">
-                                  <td colSpan={9} className="p-4 sm:p-5">
-                                    <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-xs">
+                                  <td colSpan={9} className="p-3 sm:p-5">
+                                    <div className="rounded-2xl border border-blue-100 bg-white p-3.5 sm:p-4 shadow-xs">
                                       <div className="mb-3 flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-sm">
@@ -958,11 +962,11 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       {/* TAB 2: BARANG JADI & STOK */}
       {/* ======================================================== */}
       {activeTab === "BARANG_JADI" && (
-        <div className="space-y-6">
-          <section className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+        <div className="space-y-4 sm:space-y-6">
+          <section className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Stok & Hasil Barang Jadi</h2>
+                <h2 className="text-base sm:text-lg font-black text-slate-900">Stok & Hasil Barang Jadi</h2>
                 <p className="text-xs text-slate-500">
                   Daftar seluruh barang jadi (Internal, Titipan Luar, dan Mitra) beserta saldo stok per lokasi gudang.
                 </p>
@@ -1051,15 +1055,15 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       )}
 
       {/* ======================================================== */}
-      {/* TAB 3: EMBERKASI & PENGIRIMAN / TRANSFER BARANG */}
+      {/* TAB 3: EMBARKASI & PENGIRIMAN / TRANSFER BARANG */}
       {/* ======================================================== */}
       {activeTab === "EMBARKASI" && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Target Embarkasi */}
-          <section className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+          <section className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Target Alokasi per Embarkasi</h2>
+                <h2 className="text-base sm:text-lg font-black text-slate-900">Target Alokasi per Embarkasi</h2>
                 <p className="text-xs text-slate-500">
                   Target pengiriman koper, paket isian, dan aksesoris haji ke masing-masing asrama embarkasi.
                 </p>
@@ -1136,7 +1140,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                     Manifes & Pelacakan Armada Pengiriman
                   </span>
                 </div>
-                <h2 className="mt-1 text-lg font-black text-slate-900">
+                <h2 className="mt-1 text-base sm:text-lg font-black text-slate-900">
                   Surat Jalan & Pengiriman ke Asrama Embarkasi
                 </h2>
                 <p className="text-xs text-slate-500">
@@ -1182,10 +1186,8 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
             })()}
           </section>
 
-          {/* ======================================================== */}
           {/* MONITORING STOK & PENGIRIMAN PABRIK MITRA MR WU */}
-          {/* ======================================================== */}
-          <section className="rounded-3xl border-2 border-indigo-200/90 bg-gradient-to-b from-indigo-50/40 via-white to-white p-5 shadow-xs sm:p-6 space-y-6">
+          <section className="rounded-3xl border-2 border-indigo-200/90 bg-gradient-to-b from-indigo-50/40 via-white to-white p-4 sm:p-6 shadow-xs space-y-4 sm:space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -1196,7 +1198,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                     Monitoring Fasilitas Mitra & Target Harian ({embData?.mr_wu_locations?.length || 3} Titik)
                   </span>
                 </div>
-                <h2 className="mt-1 text-lg font-black text-slate-900">
+                <h2 className="mt-1 text-base sm:text-lg font-black text-slate-900">
                   Target Harian & Posisi Stok di Pabrik Mitra MR WU
                 </h2>
                 <p className="text-xs text-slate-500">
@@ -1211,7 +1213,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
               </Link>
             </div>
 
-            {/* Target Harian & Summary Cards */}
             {(() => {
               const stocks = (embData?.mr_wu_stock || []) as Array<{
                 id: number;
@@ -1245,7 +1246,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
 
               const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
 
-              // Actual packed today per location
               const actualTodayByLoc = new Map<number, number>();
               runs.filter((r) => r.packing_date === todayStr).forEach((r) => {
                 const cur = actualTodayByLoc.get(Number(r.location_id)) || 0;
@@ -1261,7 +1261,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
               }
 
               return (
-                <div className="space-y-6">
+                <div className="space-y-4 sm:space-y-6">
                   {/* Dynamic Facility Cards with Target Trackers */}
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {locations.map((loc: any) => {
@@ -1273,7 +1273,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                       const pct = targetVal > 0 ? Math.round((todayPacked / targetVal) * 100) : 0;
                       const isEditing = editingTargetLocId === locId;
 
-                      // Ready SET stock
                       const readySetItem = locItems.find((it) =>
                         String(it.item_name || "").toUpperCase().includes("SET")
                       );
@@ -1282,10 +1281,9 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                       return (
                         <div
                           key={locId}
-                          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs hover:shadow-xs transition flex flex-col justify-between"
+                          className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs hover:shadow-xs transition flex flex-col justify-between"
                         >
                           <div>
-                            {/* Card Header */}
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-mono text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
                                 {icon} Lokasi #{locId}
@@ -1297,7 +1295,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
 
                             <h4 className="mt-2 text-sm font-black text-slate-900 line-clamp-1">{loc.name}</h4>
 
-                            {/* Flexible Target Monitor */}
                             <div className="mt-3 rounded-xl bg-slate-50 p-3 border border-slate-100 space-y-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1350,9 +1347,8 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                                 )}
                               </div>
 
-                              {/* Capaian Hari Ini */}
                               <div className="flex items-baseline justify-between text-xs">
-                                <span className="text-slate-600 font-medium">Hasil Packing Hari Ini:</span>
+                                <span className="text-slate-600 font-medium">Hasil Packing:</span>
                                 <span className="font-black text-slate-900">
                                   {todayPacked} / {targetVal} SET{" "}
                                   <span
@@ -1369,7 +1365,6 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                                 </span>
                               </div>
 
-                              {/* Visual Progress Bar */}
                               <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
                                 <div
                                   className={`h-full rounded-full transition-all duration-500 ${
@@ -1384,7 +1379,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                               </div>
 
                               <div className="flex items-center justify-between text-[10px]">
-                                <span className="text-slate-400">Status Capaian:</span>
+                                <span className="text-slate-400">Status:</span>
                                 <span
                                   className={`font-bold ${
                                     pct >= 100
@@ -1398,19 +1393,18 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                                     ? "🟢 Target Tercapai"
                                     : pct >= 70
                                     ? "🟡 Mendekati Target"
-                                    : "🔴 Perlu Dikejar / Lembur"}
+                                    : "🔴 Perlu Dikejar"}
                                 </span>
                               </div>
                             </div>
 
-                            {/* Ready SET Stock Card Info */}
                             <div className="mt-3 flex items-center justify-between rounded-xl bg-emerald-50/70 p-2.5 border border-emerald-100">
                               <div>
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-                                  Stok SET Siap Embarkasi:
+                                  Stok Siap Kirim:
                                 </span>
                                 <p className="text-base font-black text-emerald-800">
-                                  {num(readySetQty)} <span className="text-xs font-semibold">SET / Pcs</span>
+                                  {num(readySetQty)} <span className="text-xs font-semibold">SET</span>
                                 </p>
                               </div>
                               <span
@@ -1420,15 +1414,14 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                                     : "bg-slate-100 text-slate-500 border-slate-200"
                                 }`}
                               >
-                                {readySetQty > 0 ? "✅ Ready Kirim" : "Belum Ada Set"}
+                                {readySetQty > 0 ? "✅ Ready" : "Kosong"}
                               </span>
                             </div>
                           </div>
 
-                          {/* Items Breakdown list */}
                           <div className="mt-3 border-t border-slate-100 pt-2 text-xs">
                             <div className="flex items-center justify-between text-slate-500 text-[11px] mb-1 font-semibold">
-                              <span>Komponen Fisik di Lokasi:</span>
+                              <span>Komponen Fisik:</span>
                               <span>{locItems.length} Jenis</span>
                             </div>
                             <div className="divide-y divide-slate-100 max-h-32 overflow-y-auto pr-1">
@@ -1451,17 +1444,15 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                     })}
                   </div>
 
-                  {/* ======================================================== */}
-                  {/* RIWAYAT PENGERJAAN PACKING HARIAN MR WU (HANYA LIHAT / READ-ONLY) */}
-                  {/* ======================================================== */}
-                  <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs space-y-4">
+                  {/* Riwayat Packing Harian MR WU */}
+                  <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
                             AUDIT LOG
                           </span>
-                          <h3 className="text-base font-black text-slate-900">
+                          <h3 className="text-sm sm:text-base font-black text-slate-900">
                             Riwayat Pencatatan Packing Harian MR WU
                           </h3>
                         </div>
@@ -1476,7 +1467,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                           placeholder="Cari lokasi, set koper, catatan..."
                           value={mrWuRunSearch}
                           onChange={(e) => setMrWuRunSearch(e.target.value)}
-                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-hidden"
+                          className="w-full sm:w-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-hidden"
                         />
                       </div>
                     </div>
@@ -1500,7 +1491,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                               <Th>Tanggal Packing</Th>
                               <Th>Lokasi Fasilitas MR WU</Th>
                               <Th>Jenis Set Koper</Th>
-                              <Th className="text-right">Hasil Packing Hari Itu</Th>
+                              <Th className="text-right">Hasil Packing</Th>
                               <Th>Catatan Pengerjaan</Th>
                               <Th className="text-slate-400 text-right">Waktu Input</Th>
                             </tr>
@@ -1525,7 +1516,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
                                     )}
                                   </Td>
                                   <Td className="text-right font-black text-emerald-700">
-                                    +{num(r.set_qty)} <span className="text-xs font-semibold text-slate-500">SET / Pcs</span>
+                                    +{num(r.set_qty)} <span className="text-xs font-semibold text-slate-500">SET</span>
                                   </Td>
                                   <Td className="text-xs text-slate-600 max-w-xs truncate">
                                     {text(r.notes || "-")}
@@ -1581,10 +1572,10 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
             })()}
           </section>
 
-          {/* Riwayat Transfer Barang Antar Gudang / Pabrik Mitra */}
-          <section className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+          {/* Riwayat Transfer Barang */}
+          <section className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs space-y-4">
             <div>
-              <h2 className="text-lg font-black text-slate-900">Transfer Barang Antar Gudang & Pabrik Mitra</h2>
+              <h2 className="text-base sm:text-lg font-black text-slate-900">Transfer Barang Antar Gudang & Pabrik Mitra</h2>
               <p className="text-xs text-slate-500">
                 Mutasi fisik stok barang jadi antar titik fasilitas (Gudang Pusat, Pabrik Mitra MR WU, dll) beserta status konfirmasi penerimaan dan foto surat jalan.
               </p>
@@ -1677,9 +1668,8 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       {/* TAB 4: BARANG REJECT */}
       {/* ======================================================== */}
       {activeTab === "REJECT" && (
-        <div className="space-y-6">
-          {/* KPI Reject */}
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="space-y-4 sm:space-y-6">
+          <section className="grid gap-2.5 sm:gap-4 grid-cols-2 xl:grid-cols-4">
             <Kpi
               label="Reject Lini Borongan"
               value={`${num(rejectData?.summary.total_production_reject || 0)} Pcs`}
@@ -1710,11 +1700,10 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
             />
           </section>
 
-          {/* Rincian Reject Lini Borongan */}
-          <section className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+          <section className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Rincian Reject Lini Borongan & Checker</h2>
+                <h2 className="text-base sm:text-lg font-black text-slate-900">Rincian Reject Lini Borongan & Checker</h2>
                 <p className="text-xs text-slate-500">
                   Daftar pengerjaan yang dicatat reject oleh checker harian saat verifikasi output borongan.
                 </p>
@@ -1769,10 +1758,9 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
             )}
           </section>
 
-          {/* Rincian Reject QC */}
-          <section className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+          <section className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs space-y-4">
             <div>
-              <h2 className="text-lg font-black text-slate-900">Temuan Reject pada Quality Control (QC)</h2>
+              <h2 className="text-base sm:text-lg font-black text-slate-900">Temuan Reject pada Quality Control (QC)</h2>
               <p className="text-xs text-slate-500">
                 Pemeriksaan fisik akhir sebelum barang masuk ke saldo barang jadi siap kirim.
               </p>
@@ -1820,10 +1808,10 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       {/* TAB 5: RIWAYAT AKTIVITAS PABRIK */}
       {/* ======================================================== */}
       {activeTab === "RIWAYAT" && (
-        <section className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+        <section className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-slate-900">Riwayat Aktivitas & Peristiwa Pabrik</h2>
+              <h2 className="text-base sm:text-lg font-black text-slate-900">Riwayat Aktivitas & Peristiwa Pabrik</h2>
               <p className="text-xs text-slate-500">
                 Log kronologis seluruh aktivitas: SPK, input checker, hasil QC, dan pergerakan stok pada periode terpilih.
               </p>
@@ -1916,7 +1904,7 @@ export function ManagerDashboard({ initialSummary }: { initialSummary: ManagerSu
       {previewPhoto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
           <div className="relative max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 bg-slate-50">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-5 py-3 sm:py-3.5 bg-slate-50">
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900">{previewPhoto.title}</h3>
                 {previewPhoto.subtitle && (
