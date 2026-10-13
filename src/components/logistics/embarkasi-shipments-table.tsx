@@ -63,7 +63,7 @@ export function EmbarkasiShipmentTable({
   };
 
   // Filter logic
-  const filteredShipments = shipments.filter((item) => {
+  const filteredShipments = (shipments ?? []).filter((item) => {
     if (statusFilter !== "ALL" && item.status !== statusFilter) {
       return false;
     }
@@ -71,13 +71,13 @@ export function EmbarkasiShipmentTable({
 
     const query = searchQuery.toLowerCase();
     return (
-      item.shipment_code.toLowerCase().includes(query) ||
-      (item.document_no && item.document_no.toLowerCase().includes(query)) ||
-      item.embarkation_name.toLowerCase().includes(query) ||
-      item.item_name.toLowerCase().includes(query) ||
-      (item.driver_name && item.driver_name.toLowerCase().includes(query)) ||
-      (item.vehicle_no && item.vehicle_no.toLowerCase().includes(query)) ||
-      item.source_location_name.toLowerCase().includes(query)
+      (item.shipment_code ?? "").toLowerCase().includes(query) ||
+      (item.document_no ?? "").toLowerCase().includes(query) ||
+      (item.embarkation_name ?? "").toLowerCase().includes(query) ||
+      (item.item_name ?? "").toLowerCase().includes(query) ||
+      (item.driver_name ?? "").toLowerCase().includes(query) ||
+      (item.vehicle_no ?? "").toLowerCase().includes(query) ||
+      (item.source_location_name ?? "").toLowerCase().includes(query)
     );
   });
 

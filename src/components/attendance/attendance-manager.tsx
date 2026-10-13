@@ -89,11 +89,11 @@ function checkIsHalfDay(rec: AttendanceRecordItem): boolean {
 }
 
 export default function AttendanceManager({
-  records,
-  workers,
+  records = [],
+  workers = [],
   canWrite,
   shiftSettings,
-  payrollRuns,
+  payrollRuns = [],
 }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<AttendanceStatusFilter>("DRAFT");
@@ -227,7 +227,7 @@ export default function AttendanceManager({
         const wName = rec.worker?.name?.toLowerCase() || "";
         const wCode = rec.worker?.worker_code?.toLowerCase() || "";
         const fId = rec.worker?.finger_id?.toLowerCase() || "";
-        const attCode = rec.attendance_code.toLowerCase();
+        const attCode = (rec.attendance_code ?? "").toLowerCase();
         if (!wName.includes(q) && !wCode.includes(q) && !fId.includes(q) && !attCode.includes(q)) {
           return false;
         }

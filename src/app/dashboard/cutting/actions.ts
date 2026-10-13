@@ -93,13 +93,12 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function recordResult(f: FormData) {
   await requirePermission("cutting.write");
-  const compId = getId(f, "component_id");
-  const goodQty = getNumber(f, "good_qty", { min: 0 });
-  const rejectQty = getNumber(f, "reject_qty", { min: 0 });
-  const officer = getText(f, "officer");
-  const notes = getText(f, "notes") || null;
-
   try {
+    const compId = getId(f, "component_id");
+    const goodQty = getNumber(f, "good_qty", { min: 0 });
+    const rejectQty = getNumber(f, "reject_qty", { min: 0 });
+    const officer = getText(f, "officer");
+    const notes = getText(f, "notes") || null;
     const d = getOptionalDate(f, "result_date");
     if (!d) throw new Error("Tanggal wajib diisi.");
 

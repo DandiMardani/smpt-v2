@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { formatNumber } from "@/lib/master/page-utils";
 
 export type MonitoringRow = {
@@ -14,17 +15,18 @@ export type MonitoringRow = {
 };
 
 export function MonitoringMaterialTable({
-  rows,
-  targetProduction,
+  rows = [],
+  targetProduction = 0,
 }: {
   rows: MonitoringRow[];
   targetProduction: number;
 }) {
-  const surplusCount = rows.filter((r) => r.selisih > 0).length;
-  const defisitCount = rows.filter((r) => r.selisih < 0).length;
+  const safeRows = rows ?? [];
+  const surplusCount = safeRows.filter((r) => r.selisih > 0).length;
+  const defisitCount = safeRows.filter((r) => r.selisih < 0).length;
 
   // Group by categoryGroup
-  const groups = Array.from(new Set(rows.map((r) => r.categoryGroup)));
+  const groups = Array.from(new Set(safeRows.map((r) => r.categoryGroup)));
 
   return (
     <div className="space-y-6">
@@ -70,15 +72,22 @@ export function MonitoringMaterialTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {groups.map((groupName) => {
-                const groupRows = rows.filter((r) => r.categoryGroup === groupName);
-                return (
-                  <React.Fragment key={groupName}>
-                    <tr className="bg-slate-100/80">
-                      <td colSpan={8} className="py-2 px-4 font-extrabold uppercase tracking-wider text-slate-700 text-[11px]">
-                        🏷️ {groupName} ({groupRows.length} item)
-                      </td>
-                    </tr>
+              {groups.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 px-4 text-center text-slate-400 font-medium">
+                    Belum ada data monitoring material untuk target produksi ini.
+                  </td>
+                </tr>
+              ) : (
+                groups.map((groupName) => {
+                  const groupRows = safeRows.filter((r) => r.categoryGroup === groupName);
+                  return (
+                    <Fragment key={groupName}>
+                      <tr className="bg-slate-100/80">
+                        <td colSpan={8} className="py-2 px-4 font-extrabold uppercase tracking-wider text-slate-700 text-[11px]">
+                          🏷️ {groupName} ({groupRows.length} item)
+                        </td>
+                      </tr>
                     {groupRows.map((r) => {
                       const isMinus = r.selisih < 0;
                       const isZero = r.selisih === 0;
@@ -126,9 +135,10 @@ export function MonitoringMaterialTable({
                         </tr>
                       );
                     })}
-                  </React.Fragment>
+                  </Fragment>
                 );
-              })}
+              })
+            )}
             </tbody>
           </table>
         </div>
@@ -136,5 +146,3 @@ export function MonitoringMaterialTable({
     </div>
   );
 }
-
-import React from "react";

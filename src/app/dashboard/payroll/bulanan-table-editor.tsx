@@ -32,8 +32,9 @@ type Props = {
   canWrite: boolean;
 };
 
-function formatRupiah(num: number) {
-  return "Rp " + Math.round(num).toLocaleString("id-ID");
+function formatRupiah(num: number | null | undefined) {
+  const val = Number(num ?? 0);
+  return "Rp " + Math.round(Number.isFinite(val) ? val : 0).toLocaleString("id-ID");
 }
 
 export default function BulananTableEditor({
@@ -41,29 +42,30 @@ export default function BulananTableEditor({
   runId,
   periodStart,
   periodEnd,
-  items,
+  items = [],
   canWrite,
 }: Props) {
+  const safeItems = items ?? [];
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editingItem, setEditingItem] = useState<BulananItem | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Perhitungan total murni kolom footer
-  const totalBase = items.reduce((acc, i) => acc + i.base_amount, 0);
-  const totalOvertime = items.reduce((acc, i) => acc + i.overtime_amount, 0);
-  const totalGross = items.reduce((acc, i) => acc + i.gross_amount, 0);
-  const totalKasbonP = items.reduce((acc, i) => acc + i.kasbon_perusahaan_amount, 0);
-  const totalKasbonW = items.reduce((acc, i) => acc + i.kasbon_warung_amount, 0);
-  const totalDeduction = items.reduce((acc, i) => acc + i.deduction_amount, 0);
-  const totalNet = items.reduce((acc, i) => acc + i.net_amount, 0);
+  const totalBase = safeItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
+  const totalOvertime = safeItems.reduce((acc, i) => acc + Number(i.overtime_amount || 0), 0);
+  const totalGross = safeItems.reduce((acc, i) => acc + Number(i.gross_amount || 0), 0);
+  const totalKasbonP = safeItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0);
+  const totalKasbonW = safeItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0);
+  const totalDeduction = safeItems.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0);
+  const totalNet = safeItems.reduce((acc, i) => acc + Number(i.net_amount || 0), 0);
 
-  const allSelected = items.length > 0 && selectedIds.length === items.length;
+  const allSelected = safeItems.length > 0 && selectedIds.length === safeItems.length;
 
   function toggleSelectAll() {
     if (allSelected) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(items.map((i) => i.id));
+      setSelectedIds(safeItems.map((i) => i.id));
     }
   }
 
@@ -180,7 +182,14 @@ export default function BulananTableEditor({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items.map((item) => {
+            {safeItems.length === 0 ? (
+              <tr>
+                <td colSpan={canWrite ? 11 : 10} className="px-4 py-8 text-center text-slate-400 font-medium">
+                  Belum ada data rekap gaji bulanan untuk periode ini.
+                </td>
+              </tr>
+            ) : (
+              safeItems.map((item) => {
               const isPaid = item.payment_status === "PAID";
               const isChecked = selectedIds.includes(item.id);
 
@@ -257,7 +266,8 @@ export default function BulananTableEditor({
                   )}
                 </tr>
               );
-            })}
+            })
+          )}
           </tbody>
 
           {/* TOTAL FOOTER DI SEMUA KOLOM */}

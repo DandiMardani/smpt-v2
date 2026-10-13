@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { logActionFailure } from "@/lib/logger";
 
 function t(f: FormData, k: string) {
   return String(f.get(k) ?? "").trim();
@@ -51,7 +52,10 @@ function msg(e: unknown): string {
   return typeof e === "string" ? e : "Terjadi kesalahan.";
 }
 
-function go(path: string, type: "success" | "error", message: string) {
+function go(path: string, type: "success" | "error", message: string, payload?: unknown, error?: unknown) {
+  if (type === "error") {
+    logActionFailure(`final/actions:${path}`, payload, error ?? message);
+  }
   redirect(`${path}?${type}=${encodeURIComponent(message)}`);
 }
 
@@ -62,12 +66,21 @@ async function rpc(name: string, args: Record<string, unknown>) {
   return data;
 }
 
-async function mutate(path: string, permission: string, fn: () => Promise<void>, success: string) {
+async function mutate(path: string, permission: string, fn: () => Promise<void>, success: string, payload?: unknown) {
   await requirePermission(permission);
   try {
     await fn();
   } catch (e) {
-    go(path, "error", msg(e));
+    if (
+      e &&
+      typeof e === "object" &&
+      (("digest" in e && String((e as any).digest).startsWith("NEXT_REDIRECT")) ||
+        ("message" in e && (e as any).message === "NEXT_REDIRECT"))
+    ) {
+      throw e;
+    }
+    logActionFailure(`mutate:${permission}@${path}`, payload, e);
+    go(path, "error", msg(e), payload, e);
   }
   revalidatePath(path);
   go(path, "success", success);
@@ -111,33 +124,61 @@ export async function createSpkAction(f: FormData) {
 }
 
 export async function addSpkItemAction(f: FormData) {
-  const order = id(f, "order_id");
-  const path = `/dashboard/spk?order=${order}`;
-  await requirePermission("spk.write");
+  let order: number | null = null;
+  let path = "/dashboard/spk";
   try {
+    order = id(f, "order_id");
+    path = `/dashboard/spk?order=${order}`;
+    await requirePermission("spk.write");
     await rpc("add_production_order_item", {
       p_order_id: order,
       p_work_item_id: id(f, "work_item_id"),
       p_assigned_qty: num(f, "assigned_qty"),
     });
   } catch (e) {
-    redirect(`${path}&error=${encodeURIComponent(msg(e))}`);
+    if (
+      e &&
+      typeof e === "object" &&
+      (("digest" in e && String((e as any).digest).startsWith("NEXT_REDIRECT")) ||
+        ("message" in e && (e as any).message === "NEXT_REDIRECT"))
+    ) {
+      throw e;
+    }
+    logActionFailure("addSpkItemAction", f, e);
+    const redirectUrl = order
+      ? `${path}&error=${encodeURIComponent(msg(e))}`
+      : `${path}?error=${encodeURIComponent(msg(e))}`;
+    redirect(redirectUrl);
   }
   revalidatePath("/dashboard/spk");
   redirect(`${path}&success=${encodeURIComponent("Item SPK disimpan.")}`);
 }
 
 export async function removeSpkItemAction(f: FormData) {
-  const order = id(f, "order_id");
-  const path = `/dashboard/spk?order=${order}`;
-  await requirePermission("spk.write");
+  let order: number | null = null;
+  let path = "/dashboard/spk";
   try {
+    order = id(f, "order_id");
+    path = `/dashboard/spk?order=${order}`;
+    await requirePermission("spk.write");
     await rpc("remove_production_order_item", {
       p_order_id: order,
       p_order_item_id: id(f, "order_item_id"),
     });
   } catch (e) {
-    redirect(`${path}&error=${encodeURIComponent(msg(e))}`);
+    if (
+      e &&
+      typeof e === "object" &&
+      (("digest" in e && String((e as any).digest).startsWith("NEXT_REDIRECT")) ||
+        ("message" in e && (e as any).message === "NEXT_REDIRECT"))
+    ) {
+      throw e;
+    }
+    logActionFailure("removeSpkItemAction", f, e);
+    const redirectUrl = order
+      ? `${path}&error=${encodeURIComponent(msg(e))}`
+      : `${path}?error=${encodeURIComponent(msg(e))}`;
+    redirect(redirectUrl);
   }
   revalidatePath("/dashboard/spk");
   redirect(`${path}&success=${encodeURIComponent("Item dihapus.")}`);

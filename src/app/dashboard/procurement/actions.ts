@@ -47,8 +47,9 @@ export async function createPlan(formData: FormData) {
 
 export async function savePlanLine(formData: FormData) {
   await requirePermission("procurement.edit_draft");
-  const planId = getId(formData, "plan_id");
+  let planId: number | null = null;
   try {
+    planId = getId(formData, "plan_id");
     await callRpc("smpt_update_purchase_plan_line", {
       p_line_id: getId(formData, "line_id"),
       p_confirmed_incoming: getNumber(formData, "confirmed_incoming", { min: 0 }),
@@ -58,7 +59,11 @@ export async function savePlanLine(formData: FormData) {
       p_notes: getText(formData, "notes") || null,
     });
   } catch (error) {
-    redirect(`${PATH}?plan=${planId}&error=${encodeURIComponent(errorMessage(error, "Gagal menyimpan baris planning."))}`);
+    if (error && typeof error === "object" && "digest" in error) throw error;
+    const redirectUrl = planId
+      ? `${PATH}?plan=${planId}&error=${encodeURIComponent(errorMessage(error, "Gagal menyimpan baris planning.", "savePlanLine", formData))}`
+      : `${PATH}?error=${encodeURIComponent(errorMessage(error, "Gagal menyimpan baris planning.", "savePlanLine", formData))}`;
+    redirect(redirectUrl);
   }
   refresh();
   redirect(`${PATH}?plan=${planId}&success=${encodeURIComponent("Baris planning diperbarui.")}`);
@@ -66,8 +71,9 @@ export async function savePlanLine(formData: FormData) {
 
 export async function createDraftPo(formData: FormData) {
   await requirePermission("procurement.create");
-  const planId = getId(formData, "plan_id");
+  let planId: number | null = null;
   try {
+    planId = getId(formData, "plan_id");
     const poId = await callRpc<number>("smpt_create_draft_purchase_order", {
       p_purchase_plan_id: planId,
       p_supplier_id: getId(formData, "supplier_id"),
@@ -79,7 +85,10 @@ export async function createDraftPo(formData: FormData) {
     redirect(`${PATH}?plan=${planId}&po=${poId}&success=${encodeURIComponent("Draft PO dibuat. Review qty, unit, dan harga sebelum diterbitkan.")}`);
   } catch (error) {
     if (error && typeof error === "object" && "digest" in error) throw error;
-    redirect(`${PATH}?plan=${planId}&error=${encodeURIComponent(errorMessage(error, "Gagal membuat Draft PO."))}`);
+    const redirectUrl = planId
+      ? `${PATH}?plan=${planId}&error=${encodeURIComponent(errorMessage(error, "Gagal membuat Draft PO.", "createDraftPo", formData))}`
+      : `${PATH}?error=${encodeURIComponent(errorMessage(error, "Gagal membuat Draft PO.", "createDraftPo", formData))}`;
+    redirect(redirectUrl);
   }
 }
 

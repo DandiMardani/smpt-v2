@@ -3,48 +3,62 @@
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { logActionFailure } from "@/lib/logger";
 
 // 1. Aksi Simpan Koreksi Edit Manual
 export async function updateBulananItemAction(formData: FormData) {
   await requirePermission("payroll.write");
 
-  const itemId = Number(formData.get("item_id"));
-  const runId = Number(formData.get("run_id"));
-  const baseAmount = Number(formData.get("base_amount") || 0);
-  const overtimeAmount = Number(formData.get("overtime_amount") || 0);
-  const kasbonKantor = Number(formData.get("kasbon_perusahaan_amount") || 0);
-  const kasbonWarung = Number(formData.get("kasbon_warung_amount") || 0);
+  try {
+    const itemId = Number(formData.get("item_id"));
+    const runId = Number(formData.get("run_id"));
+    const baseAmount = Number(formData.get("base_amount") || 0);
+    const overtimeAmount = Number(formData.get("overtime_amount") || 0);
+    const kasbonKantor = Number(formData.get("kasbon_perusahaan_amount") || 0);
+    const kasbonWarung = Number(formData.get("kasbon_warung_amount") || 0);
 
-  if (!itemId || !runId) throw new Error("ID Item tidak valid.");
-  if (baseAmount < 0 || overtimeAmount < 0 || kasbonKantor < 0 || kasbonWarung < 0) {
-    throw new Error("Nominal gaji atau potongan tidak boleh negatif.");
+    if (!itemId || !runId) throw new Error("ID Item tidak valid.");
+    if (baseAmount < 0 || overtimeAmount < 0 || kasbonKantor < 0 || kasbonWarung < 0) {
+      throw new Error("Nominal gaji atau potongan tidak boleh negatif.");
+    }
+
+    const supabase = await createClient();
+
+    // Rumus murni sesuai permintaan
+    const gross = baseAmount + overtimeAmount;
+    const deduction = kasbonKantor + kasbonWarung;
+    const net = Math.max(0, gross - deduction);
+
+    const { error: itemErr } = await supabase
+      .from("payroll_run_items")
+      .update({
+        base_amount: baseAmount,
+        overtime_amount: overtimeAmount,
+        meal_amount: 0, // Pastikan tidak ada uang makan siluman
+        kasbon_perusahaan_amount: kasbonKantor,
+        kasbon_warung_amount: kasbonWarung,
+        deduction_amount: deduction,
+        net_amount: net,
+      })
+      .eq("id", itemId);
+
+    if (itemErr) throw new Error("Gagal update data pekerja: " + itemErr.message);
+
+    // Recalculate total run
+    await recalculateRunTotals(supabase, runId);
+    revalidatePath("/dashboard/payroll");
+  } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      (("digest" in err && String((err as any).digest).startsWith("NEXT_REDIRECT")) ||
+        ("message" in err && (err as any).message === "NEXT_REDIRECT"))
+    ) {
+      throw err;
+    }
+    logActionFailure("updateBulananItemAction", formData, err);
+    throw err;
   }
-
-  const supabase = await createClient();
-
-  // Rumus murni sesuai permintaan
-  const gross = baseAmount + overtimeAmount;
-  const deduction = kasbonKantor + kasbonWarung;
-  const net = Math.max(0, gross - deduction);
-
-  const { error: itemErr } = await supabase
-    .from("payroll_run_items")
-    .update({
-      base_amount: baseAmount,
-      overtime_amount: overtimeAmount,
-      meal_amount: 0, // Pastikan tidak ada uang makan siluman
-      kasbon_perusahaan_amount: kasbonKantor,
-      kasbon_warung_amount: kasbonWarung,
-      deduction_amount: deduction,
-      net_amount: net,
-    })
-    .eq("id", itemId);
-
-  if (itemErr) throw new Error("Gagal update data pekerja: " + itemErr.message);
-
-  // Recalculate total run
-  await recalculateRunTotals(supabase, runId);
-  revalidatePath("/dashboard/payroll");
 }
 
 // 2. Aksi Verifikasi Lunas (Bisa 1 orang atau banyak sekaligus)

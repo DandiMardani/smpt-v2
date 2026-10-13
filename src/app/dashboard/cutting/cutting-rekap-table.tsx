@@ -50,7 +50,7 @@ export function CuttingRekapTable({
   // Group results by component_id
   const resultsByComp = useMemo(() => {
     const map = new Map<number, CuttingResultItem[]>();
-    for (const r of results) {
+    for (const r of results ?? []) {
       const list = map.get(r.cutting_component_id) || [];
       list.push(r);
       map.set(r.cutting_component_id, list);
@@ -61,7 +61,7 @@ export function CuttingRekapTable({
   // Aggregate good and reject
   const summaryByComp = useMemo(() => {
     const map = new Map<number, { good: number; reject: number; activeCount: number }>();
-    for (const r of results) {
+    for (const r of results ?? []) {
       if (r.status !== "AKTIF") continue;
       const cur = map.get(r.cutting_component_id) || { good: 0, reject: 0, activeCount: 0 };
       cur.good += Number(r.good_qty || 0);
@@ -82,7 +82,7 @@ export function CuttingRekapTable({
   };
 
   const expandAll = () => {
-    setExpandedIds(new Set(components.map((c) => c.id)));
+    setExpandedIds(new Set((components ?? []).map((c) => c.id)));
   };
 
   const collapseAll = () => {
@@ -91,13 +91,13 @@ export function CuttingRekapTable({
 
   // Filtered components
   const filteredComponents = useMemo(() => {
-    return components.filter((c) => {
+    return (components ?? []).filter((c) => {
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
-        const matchName = c.name.toLowerCase().includes(q);
-        const matchCode = c.component_code.toLowerCase().includes(q);
-        const matchProd = (c.product_name || "").toLowerCase().includes(q);
-        const matchNotes = (c.notes || "").toLowerCase().includes(q);
+        const matchName = (c.name ?? "").toLowerCase().includes(q);
+        const matchCode = (c.component_code ?? "").toLowerCase().includes(q);
+        const matchProd = (c.product_name ?? "").toLowerCase().includes(q);
+        const matchNotes = (c.notes ?? "").toLowerCase().includes(q);
         if (!matchName && !matchCode && !matchProd && !matchNotes) return false;
       }
 

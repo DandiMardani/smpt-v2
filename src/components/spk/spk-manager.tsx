@@ -250,8 +250,9 @@ export function SpkManager({
     const op = operatorMap.get(order.operator_worker_id);
     const spv = supervisorMap.get(order.supervisor_worker_id ?? 0);
 
-    const totalQty = order.items.reduce((acc, it) => acc + num(it.assigned_qty), 0);
-    const totalNilai = order.items.reduce(
+    const orderItems = order.items ?? [];
+    const totalQty = orderItems.reduce((acc, it) => acc + num(it.assigned_qty), 0);
+    const totalNilai = orderItems.reduce(
       (acc, it) => acc + num(it.assigned_qty) * num(it.operator_price_snapshot),
       0,
     );
@@ -321,7 +322,7 @@ export function SpkManager({
               </tr>
             </thead>
             <tbody>
-              ${order.items
+              ${(order.items ?? [])
                 .map((it, idx) => {
                   const sub = num(it.assigned_qty) * num(it.operator_price_snapshot);
                   return `
@@ -532,8 +533,9 @@ export function SpkManager({
                       ? "bg-blue-50 text-blue-700 border-blue-200"
                       : "bg-slate-100 text-slate-600 border-slate-200";
 
-                  const totalItems = order.items.length;
-                  const totalAssignedQty = order.items.reduce((acc, it) => acc + num(it.assigned_qty), 0);
+                  const orderItems = order.items ?? [];
+                  const totalItems = orderItems.length;
+                  const totalAssignedQty = orderItems.reduce((acc, it) => acc + num(it.assigned_qty), 0);
 
                   return (
                     <tr key={order.id} className="hover:bg-slate-50/70 transition">
@@ -566,7 +568,7 @@ export function SpkManager({
                           {totalItems} item pekerjaan · Total {qtyFmt(totalAssignedQty)}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate max-w-xs">
-                          {order.items.map((i) => i.work_item_name_snapshot).join(", ")}
+                          {orderItems.map((i) => i.work_item_name_snapshot).join(", ")}
                         </div>
                       </td>
 
@@ -603,7 +605,7 @@ export function SpkManager({
                               onClick={() => {
                                 setEditingOrder(order);
                                 const initialQtys: Record<number, string> = {};
-                                order.items.forEach((it) => {
+                                (order.items ?? []).forEach((it) => {
                                   initialQtys[it.id] = String(it.assigned_qty);
                                 });
                                 setEditItemQtys(initialQtys);
@@ -1037,7 +1039,7 @@ export function SpkManager({
 
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-                  Daftar Pekerjaan ({detailOrder.items.length} Item)
+                  Daftar Pekerjaan ({(detailOrder.items ?? []).length} Item)
                 </h4>
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="min-w-full text-xs">
@@ -1051,7 +1053,7 @@ export function SpkManager({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {detailOrder.items.map((it) => {
+                      {(detailOrder.items ?? []).map((it) => {
                         const sub = num(it.assigned_qty) * num(it.operator_price_snapshot);
                         return (
                           <tr key={it.id}>
@@ -1152,7 +1154,7 @@ export function SpkManager({
                     Rincian Item & Qty Penugasan
                   </h4>
                   <span className="text-[11px] text-slate-500">
-                    {editingOrder.items.filter((it) => !removedItemIds.has(it.id)).length} Item Aktif
+                    {(editingOrder.items ?? []).filter((it) => !removedItemIds.has(it.id)).length} Item Aktif
                   </span>
                 </div>
 
@@ -1167,11 +1169,11 @@ export function SpkManager({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {editingOrder.items.map((it) => {
+                      {(editingOrder.items ?? []).map((it) => {
                         const isRemoved = removedItemIds.has(it.id);
                         if (isRemoved) return null;
 
-                        const activeItemCount = editingOrder.items.filter((x) => !removedItemIds.has(x.id)).length;
+                        const activeItemCount = (editingOrder.items ?? []).filter((x) => !removedItemIds.has(x.id)).length;
 
                         return (
                           <tr key={it.id} className="hover:bg-slate-50/50">
@@ -1232,7 +1234,7 @@ export function SpkManager({
               {/* Tambah Item Baru ke SPK */}
               {(() => {
                 const existingWorkItemIds = new Set(
-                  editingOrder.items
+                  (editingOrder.items ?? [])
                     .filter((it) => !removedItemIds.has(it.id))
                     .map((it) => it.work_item_id)
                 );

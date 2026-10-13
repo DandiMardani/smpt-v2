@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { logActionFailure } from "@/lib/logger";
 
 export function getText(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim().replace(/\s+/g, " ");
@@ -89,7 +90,12 @@ export function requireOneOf(value: string, allowed: readonly string[], label: s
   return value;
 }
 
-export function errorMessage(error: unknown, fallback: string): string {
+export function errorMessage(
+  error: unknown,
+  fallback: string,
+  context?: string,
+  payload?: unknown,
+): string {
   if (
     error &&
     typeof error === "object" &&
@@ -98,6 +104,9 @@ export function errorMessage(error: unknown, fallback: string): string {
   ) {
     throw error;
   }
+
+  // Catat kegagalan mutasi ke server console secara terstruktur
+  logActionFailure(context || fallback, payload, error);
 
   if (error && typeof error === "object") {
     const candidate = error as {
@@ -127,7 +136,15 @@ export function redirectWithMessage(
   path: string,
   type: "success" | "error",
   message: string,
+  options?: { context?: string; payload?: unknown; error?: unknown },
 ): never {
+  if (type === "error") {
+    logActionFailure(
+      options?.context || `redirectWithMessage:${path}`,
+      options?.payload,
+      options?.error || message,
+    );
+  }
   const params = new URLSearchParams({ [type]: message });
   redirect(`${path}?${params.toString()}`);
 }
