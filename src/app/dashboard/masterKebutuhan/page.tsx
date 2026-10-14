@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import {
   EmptyState,
   Field,
@@ -357,7 +358,7 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={`/dashboard/masterKebutuhan?project=${selectedProject}${categoryParam ? `&category=${categoryParam}` : ""}`}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
               >
                 📊 Lihat Modal Global Proyek
               </Link>
@@ -611,45 +612,45 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
             )}
           </SectionCard>
 
-          {/* Project-Wide Comparison Table */}
+          {/* Project-Wide Comparison Table (Rapi & Tidak Terpotong) */}
           <SectionCard
             title={`Ringkasan Modal & HPP Semua Produk di Proyek: ${currentProject?.name} (${projectProducts.length} Produk)`}
             description="Perbandingan total modal belanja bahan, modal upah tukang, dan HPP antar produk dalam proyek ini."
           >
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500">
-                    <th className="py-2.5 font-bold">Produk</th>
-                    <th className="py-2.5 font-bold">Target</th>
-                    <th className="py-2.5 font-bold">Biaya Bahan / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Biaya Bahan</th>
-                    <th className="py-2.5 font-bold">Harga Pengajuan / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Harga Pengajuan</th>
-                    <th className="py-2.5 font-bold text-blue-900">Total HPP Pengajuan / Pcs</th>
-                    <th className="py-2.5 font-bold text-blue-950">Total Nilai Pengajuan</th>
-                    <th className="py-2.5 font-bold">Aksi</th>
+                    <th className="px-4 py-3 font-bold">Produk</th>
+                    <th className="px-4 py-3 font-bold">Target</th>
+                    <th className="px-4 py-3 font-bold">Biaya Bahan / Pcs</th>
+                    <th className="px-4 py-3 font-bold">Total Biaya Bahan</th>
+                    <th className="px-4 py-3 font-bold">Harga Pengajuan / Pcs</th>
+                    <th className="px-4 py-3 font-bold">Total Harga Pengajuan</th>
+                    <th className="px-4 py-3 font-bold text-blue-900">Total HPP Pengajuan / Pcs</th>
+                    <th className="px-4 py-3 font-bold text-blue-950">Total Nilai Pengajuan</th>
+                    <th className="px-4 py-3 font-bold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {productBomRecap.map((pr) => (
-                    <tr key={pr.product.id} className={pr.product.id === selectedProduct ? "bg-blue-50/60 font-semibold" : ""}>
-                      <td className="py-2.5">
+                    <tr key={pr.product.id} className={`hover:bg-slate-50 transition ${pr.product.id === selectedProduct ? "bg-blue-50/60 font-semibold" : ""}`}>
+                      <td className="px-4 py-3">
                         <span className="font-mono text-blue-700 mr-1.5">{pr.product.product_code}</span>
                         {pr.product.name}
                         {pr.product.id === selectedProduct ? <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">Aktif</span> : null}
                       </td>
-                      <td className="py-2.5">{formatNumber(pr.product.target_production)} {pr.product.unit}</td>
-                      <td className="py-2.5 font-bold text-slate-700">{formatRupiah(pr.materialCostPerPcs)}</td>
-                      <td className="py-2.5 font-bold text-slate-900">{formatRupiah(pr.totalMaterialCost)}</td>
-                      <td className="py-2.5 font-bold text-blue-800">{formatRupiah(pr.proposedWagePerPcs)}</td>
-                      <td className="py-2.5 font-bold text-blue-950">{formatRupiah(pr.totalProposedWage)}</td>
-                      <td className="py-2.5 font-black text-blue-900">{formatRupiah(pr.hppBoronganPerPcs)}</td>
-                      <td className="py-2.5 font-black text-blue-950">{formatRupiah(pr.totalHppBorongan)}</td>
-                      <td className="py-2.5">
+                      <td className="px-4 py-3">{formatNumber(pr.product.target_production)} {pr.product.unit}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700">{formatRupiah(pr.materialCostPerPcs)}</td>
+                      <td className="px-4 py-3 font-bold text-slate-900">{formatRupiah(pr.totalMaterialCost)}</td>
+                      <td className="px-4 py-3 font-bold text-blue-800">{formatRupiah(pr.proposedWagePerPcs)}</td>
+                      <td className="px-4 py-3 font-bold text-blue-950">{formatRupiah(pr.totalProposedWage)}</td>
+                      <td className="px-4 py-3 font-black text-blue-900">{formatRupiah(pr.hppBoronganPerPcs)}</td>
+                      <td className="px-4 py-3 font-black text-blue-950">{formatRupiah(pr.totalHppBorongan)}</td>
+                      <td className="px-4 py-3">
                         <Link
                           href={`/dashboard/masterKebutuhan?project=${selectedProject}&product=${pr.product.id}`}
-                          className="text-blue-700 hover:underline font-semibold"
+                          className="rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 transition inline-block"
                         >
                           Buka BOM →
                         </Link>
@@ -659,15 +660,15 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-300 font-bold text-slate-900 bg-slate-50">
-                    <td className="py-3">TOTAL GLOBAL PROYEK</td>
-                    <td className="py-3">{formatNumber(grandProjectTarget)} pcs</td>
-                    <td className="py-3">-</td>
-                    <td className="py-3 text-slate-900">{formatRupiah(grandProjectMaterialCost)}</td>
-                    <td className="py-3">-</td>
-                    <td className="py-3 text-blue-900">{formatRupiah(grandProjectProposedWage)}</td>
-                    <td className="py-3">-</td>
-                    <td className="py-3 text-blue-950">{formatRupiah(grandProjectHppBorongan)}</td>
-                    <td className="py-3">-</td>
+                    <td className="px-4 py-3">TOTAL GLOBAL PROYEK</td>
+                    <td className="px-4 py-3">{formatNumber(grandProjectTarget)} pcs</td>
+                    <td className="px-4 py-3">-</td>
+                    <td className="px-4 py-3 text-slate-900">{formatRupiah(grandProjectMaterialCost)}</td>
+                    <td className="px-4 py-3">-</td>
+                    <td className="px-4 py-3 text-blue-900">{formatRupiah(grandProjectProposedWage)}</td>
+                    <td className="px-4 py-3">-</td>
+                    <td className="px-4 py-3 text-blue-950">{formatRupiah(grandProjectHppBorongan)}</td>
+                    <td className="px-4 py-3">-</td>
                   </tr>
                 </tfoot>
               </table>
@@ -751,41 +752,41 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* SectionCard: REKAPITULASI MODAL & HPP SEMUA PRODUK DALAM PROYEK */}
+          {/* SectionCard: REKAPITULASI MODAL & HPP SEMUA PRODUK DALAM PROYEK (Rapi & Tidak Terpotong) */}
           <SectionCard
             title={`Rekapitulasi Kebutuhan & Nilai Pengajuan per Produk · Proyek ${currentProject.name}`}
             description="Daftar semua produk dalam proyek ini beserta rincian biaya bahan baku, biaya produksi pengajuan, dan total HPP pengajuan per unit maupun total proyek."
           >
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500">
-                    <th className="py-2.5 font-bold">Produk</th>
-                    <th className="py-2.5 font-bold">Target</th>
-                    <th className="py-2.5 font-bold">Biaya Bahan / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Biaya Bahan</th>
-                    <th className="py-2.5 font-bold">Harga Pengajuan / Pcs</th>
-                    <th className="py-2.5 font-bold">Total Harga Pengajuan</th>
-                    <th className="py-2.5 font-bold text-blue-900">Total HPP Pengajuan / Pcs</th>
-                    <th className="py-2.5 font-bold text-blue-950">Total Nilai Pengajuan</th>
-                    <th className="py-2.5 font-bold">Aksi</th>
+                    <th className="px-4 py-3 font-bold">Produk</th>
+                    <th className="px-4 py-3 font-bold">Target</th>
+                    <th className="px-4 py-3 font-bold">Biaya Bahan / Pcs</th>
+                    <th className="px-4 py-3 font-bold">Total Biaya Bahan</th>
+                    <th className="px-4 py-3 font-bold">Harga Pengajuan / Pcs</th>
+                    <th className="px-4 py-3 font-bold">Total Harga Pengajuan</th>
+                    <th className="px-4 py-3 font-bold text-blue-900">Total HPP Pengajuan / Pcs</th>
+                    <th className="px-4 py-3 font-bold text-blue-950">Total Nilai Pengajuan</th>
+                    <th className="px-4 py-3 font-bold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {productBomRecap.map((pr) => (
-                    <tr key={pr.product.id}>
-                      <td className="py-2.5">
+                    <tr key={pr.product.id} className="hover:bg-slate-50 transition">
+                      <td className="px-4 py-3">
                         <span className="font-mono text-blue-700 mr-1.5">{pr.product.product_code}</span>
                         {pr.product.name}
                       </td>
-                      <td className="py-2.5">{formatNumber(pr.product.target_production)} {pr.product.unit}</td>
-                      <td className="py-2.5 font-bold text-slate-700">{formatRupiah(pr.materialCostPerPcs)}</td>
-                      <td className="py-2.5 font-bold text-slate-900">{formatRupiah(pr.totalMaterialCost)}</td>
-                      <td className="py-2.5 font-bold text-blue-800">{formatRupiah(pr.proposedWagePerPcs)}</td>
-                      <td className="py-2.5 font-bold text-blue-950">{formatRupiah(pr.totalProposedWage)}</td>
-                      <td className="py-2.5 font-black text-blue-900">{formatRupiah(pr.hppBoronganPerPcs)}</td>
-                      <td className="py-2.5 font-black text-blue-950">{formatRupiah(pr.totalHppBorongan)}</td>
-                      <td className="py-2.5">
+                      <td className="px-4 py-3">{formatNumber(pr.product.target_production)} {pr.product.unit}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700">{formatRupiah(pr.materialCostPerPcs)}</td>
+                      <td className="px-4 py-3 font-bold text-slate-900">{formatRupiah(pr.totalMaterialCost)}</td>
+                      <td className="px-4 py-3 font-bold text-blue-800">{formatRupiah(pr.proposedWagePerPcs)}</td>
+                      <td className="px-4 py-3 font-bold text-blue-950">{formatRupiah(pr.totalProposedWage)}</td>
+                      <td className="px-4 py-3 font-black text-blue-900">{formatRupiah(pr.hppBoronganPerPcs)}</td>
+                      <td className="px-4 py-3 font-black text-blue-950">{formatRupiah(pr.totalHppBorongan)}</td>
+                      <td className="px-4 py-3">
                         <Link
                           href={`/dashboard/masterKebutuhan?project=${selectedProject}&product=${pr.product.id}`}
                           className="rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 transition inline-block"
@@ -798,15 +799,15 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-300 font-bold text-slate-900 bg-slate-50">
-                    <td className="py-3">TOTAL GLOBAL PROYEK</td>
-                    <td className="py-3">{formatNumber(grandProjectTarget)} pcs</td>
-                    <td className="py-3">-</td>
-                    <td className="py-3 text-slate-900">{formatRupiah(grandProjectMaterialCost)}</td>
-                    <td className="py-3">-</td>
-                    <td className="py-3 text-blue-900">{formatRupiah(grandProjectProposedWage)}</td>
-                    <td className="py-3">-</td>
-                    <td className="py-3 text-blue-950">{formatRupiah(grandProjectHppBorongan)}</td>
-                    <td className="py-3">-</td>
+                    <td className="px-4 py-3">TOTAL GLOBAL PROYEK</td>
+                    <td className="px-4 py-3">{formatNumber(grandProjectTarget)} pcs</td>
+                    <td className="px-4 py-3">-</td>
+                    <td className="px-4 py-3 text-slate-900">{formatRupiah(grandProjectMaterialCost)}</td>
+                    <td className="px-4 py-3">-</td>
+                    <td className="px-4 py-3 text-blue-900">{formatRupiah(grandProjectProposedWage)}</td>
+                    <td className="px-4 py-3">-</td>
+                    <td className="px-4 py-3 text-blue-950">{formatRupiah(grandProjectHppBorongan)}</td>
+                    <td className="px-4 py-3">-</td>
                   </tr>
                 </tfoot>
               </table>
