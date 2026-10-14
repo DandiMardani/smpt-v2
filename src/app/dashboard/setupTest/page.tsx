@@ -70,163 +70,175 @@ export default async function Page({ searchParams }: Props) {
       title="Pusat Arsip & Cadangan Data"
       description="Kelola pencadangan arsip transaksi operasional ke format Excel dan pembersihan data lama secara aman tanpa memengaruhi stok gudang dan data produksi."
     >
-      <Notice success={param(q, "success")} error={param(q, "error")} />
+      <div className="w-full max-w-full min-w-0 space-y-4 overflow-x-hidden">
+        <Notice success={param(q, "success")} error={param(q, "error")} />
 
-      <Flow>
-        <b>Proteksi Stok Terjamin:</b> Fitur arsip dan pembersihan berkala hanya memproses data transaksional (Presensi, Nota Warung, dan Kasbon). Data inventaris gudang, stok kain, aksesoris, dan SPK terkunci serta tidak dapat dihapus melalui panel ini.
-      </Flow>
+        <Flow>
+          <b>Proteksi Stok Terjamin:</b> Fitur arsip dan pembersihan berkala hanya memproses data transaksional (Presensi, Nota Warung, dan Kasbon). Data inventaris gudang, stok kain, aksesoris, dan SPK terkunci serta tidak dapat dihapus melalui panel ini.
+        </Flow>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric label="SPK" value={text(h.production_orders, "0")} />
-        <Metric label="QC" value={text(h.qc_inspections, "0")} />
-        <Metric label="Barang Jadi" value={text(h.finished_goods, "0")} />
-        <Metric label="Negative Raw" value={text(h.negative_raw_stock, "0")} />
-        <Metric label="Negative Logistics" value={text(h.negative_logistics_stock, "0")} />
-      </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric label="SPK" value={text(h.production_orders, "0")} />
+          <Metric label="QC" value={text(h.qc_inspections, "0")} />
+          <Metric label="Barang Jadi" value={text(h.finished_goods, "0")} />
+          <Metric label="Negative Raw" value={text(h.negative_raw_stock, "0")} />
+          <Metric label="Negative Logistics" value={text(h.negative_logistics_stock, "0")} />
+        </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card title="1. Unduh Arsip Excel (.xlsx)">
-          <p className="text-sm leading-6 text-slate-600">
-            Pilih rentang tanggal dan modul yang ingin dicadangkan. Sistem akan memproses dan langsung memunculkan konfirmasi tanpa membuka layar kosong.
-          </p>
-          <ArchiveDownloadForm
-            defaultStartDate={firstDayLastMonth}
-            defaultEndDate={today}
-          />
-        </Card>
-
-        <Card title="2. Bersihkan Data Lama (Optional)">
-          <div className="text-sm leading-6 text-amber-900 bg-amber-50 border border-amber-200 p-3 rounded-xl font-medium space-y-1">
-            <p>⚠️ <b>Perhatian Sebelum Menghapus:</b></p>
-            <p className="text-xs leading-5 text-amber-800">
-              Pastikan Anda sudah mengunduh file Excel di sebelah kiri. Penghapusan ini permanen untuk melegakan kapasitas database, namun <b>sama sekali tidak memengaruhi stok gudang</b>.
-            </p>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="min-w-0 max-w-full">
+            <Card title="1. Unduh Arsip Excel (.xlsx)">
+              <p className="text-sm leading-6 text-slate-600 break-words">
+                Pilih rentang tanggal dan modul yang ingin dicadangkan. Sistem akan memproses dan langsung memunculkan konfirmasi tanpa membuka layar kosong.
+              </p>
+              <ArchiveDownloadForm
+                defaultStartDate={firstDayLastMonth}
+                defaultEndDate={today}
+              />
+            </Card>
           </div>
 
-          <form action={cleanupArchivedData} className="mt-4 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Tanggal Mulai">
-                <input
-                  type="date"
-                  name="start_date"
-                  defaultValue={firstDayLastMonth}
-                  required
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="Tanggal Selesai">
-                <input
-                  type="date"
-                  name="end_date"
-                  defaultValue={today}
-                  required
-                  className={inputClass}
-                />
-              </Field>
-            </div>
+          <div className="min-w-0 max-w-full">
+            <Card title="2. Bersihkan Data Lama (Optional)">
+              <div className="text-sm leading-6 text-amber-900 bg-amber-50 border border-amber-200 p-3 rounded-xl font-medium space-y-1">
+                <p>⚠️ <b>Perhatian Sebelum Menghapus:</b></p>
+                <p className="text-xs leading-5 text-amber-800 break-words">
+                  Pastikan Anda sudah mengunduh file Excel di sebelah kiri. Penghapusan ini permanen untuk melegakan kapasitas database, namun <b>sama sekali tidak memengaruhi stok gudang</b>.
+                </p>
+              </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                Data yang Akan Dihapus:
+              <form action={cleanupArchivedData} className="mt-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Tanggal Mulai">
+                    <input
+                      type="date"
+                      name="start_date"
+                      defaultValue={firstDayLastMonth}
+                      required
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Tanggal Selesai">
+                    <input
+                      type="date"
+                      name="end_date"
+                      defaultValue={today}
+                      required
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                    Data yang Akan Dihapus:
+                  </p>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="delete_attendance"
+                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    Hapus Presensi Periode Ini
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="delete_warung"
+                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    Hapus Nota Warung Periode Ini
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="delete_kasbon"
+                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    Hapus Kasbon Periode Ini
+                  </label>
+                </div>
+
+                <Field label="Ketik Kata Konfirmasi">
+                  <input
+                    className={inputClass}
+                    name="confirmation"
+                    required
+                    pattern="HAPUS"
+                    autoComplete="off"
+                    placeholder="Ketik HAPUS"
+                    data-validation-message="Ketik HAPUS persis dengan huruf kapital untuk melanjutkan."
+                  />
+                </Field>
+
+                <button type="submit" className={dangerClass}>
+                  🗑️ Hapus Data Periode Terpilih
+                </button>
+              </form>
+            </Card>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="min-w-0 max-w-full">
+            <Card title="Buat Snapshot Cadangan Database">
+              <p className="text-sm leading-6 text-slate-600 break-words">
+                Snapshot menyalin seluruh data bisnis ke catatan cadangan internal database Supabase dalam satu transaksi aman.
               </p>
-              <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="delete_attendance"
-                  className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                />
-                Hapus Presensi Periode Ini
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="delete_warung"
-                  className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                />
-                Hapus Nota Warung Periode Ini
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="delete_kasbon"
-                  className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                />
-                Hapus Kasbon Periode Ini
-              </label>
-            </div>
+              <form action={createBackup} className="mt-4 space-y-3">
+                <Field label="Label Snapshot (opsional)">
+                  <input
+                    className={inputClass}
+                    name="label"
+                    maxLength={120}
+                    placeholder="Contoh: Arsip Akhir Bulan"
+                  />
+                </Field>
+                <button className={buttonClass}>Buat Snapshot Sekarang</button>
+              </form>
+            </Card>
+          </div>
 
-            <Field label="Ketik Kata Konfirmasi">
-              <input
-                className={inputClass}
-                name="confirmation"
-                required
-                pattern="HAPUS"
-                autoComplete="off"
-                placeholder="Ketik HAPUS"
-                data-validation-message="Ketik HAPUS persis dengan huruf kapital untuk melanjutkan."
-              />
-            </Field>
-
-            <button type="submit" className={dangerClass}>
-              🗑️ Hapus Data Periode Terpilih
-            </button>
-          </form>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card title="Buat Snapshot Cadangan Database">
-          <p className="text-sm leading-6 text-slate-600">
-            Snapshot menyalin seluruh data bisnis ke catatan cadangan internal database Supabase dalam satu transaksi aman.
-          </p>
-          <form action={createBackup} className="mt-4 space-y-3">
-            <Field label="Label Snapshot (opsional)">
-              <input
-                className={inputClass}
-                name="label"
-                maxLength={120}
-                placeholder="Contoh: Arsip Akhir Bulan"
-              />
-            </Field>
-            <button className={buttonClass}>Buat Snapshot Sekarang</button>
-          </form>
-        </Card>
-
-        <Card title="Daftar Snapshot Database">
-          {backups.length ? (
-            <TableWrap>
-              <thead>
-                <tr>
-                  <Th>Kode</Th>
-                  <Th>Label</Th>
-                  <Th>Ukuran</Th>
-                  <Th>Dibuat</Th>
-                  <Th>Export</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {backups.map((backup) => (
-                  <tr key={backup.id}>
-                    <Td>{backup.backup_code}</Td>
-                    <Td>{backup.label || "-"}</Td>
-                    <Td>{sizeLabel(backup.byte_size)}</Td>
-                    <Td>{backup.created_at?.slice(0, 10)}</Td>
-                    <Td>
-                      <a
-                        href={`/api/export/backup?backup_id=${backup.id}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
-                      >
-                        📥 Excel
-                      </a>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </TableWrap>
-          ) : (
-            <p className="text-sm text-slate-500">Belum ada snapshot database tersimpan.</p>
-          )}
-        </Card>
+          <div className="min-w-0 max-w-full">
+            <Card title="Daftar Snapshot Database">
+              {backups.length ? (
+                <div className="w-full max-w-full overflow-x-auto overscroll-x-contain touch-pan-x rounded-xl border border-slate-200/80">
+                  <table className="w-full min-w-[520px] text-left text-xs whitespace-nowrap">
+                    <thead className="border-b border-slate-200 bg-slate-50/80">
+                      <tr>
+                        <Th>Kode</Th>
+                        <Th>Label</Th>
+                        <Th>Ukuran</Th>
+                        <Th>Dibuat</Th>
+                        <Th>Export</Th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {backups.map((backup) => (
+                        <tr key={backup.id} className="hover:bg-slate-50/60 transition">
+                          <Td>{backup.backup_code}</Td>
+                          <Td>{backup.label || "-"}</Td>
+                          <Td>{sizeLabel(backup.byte_size)}</Td>
+                          <Td>{backup.created_at?.slice(0, 10)}</Td>
+                          <Td>
+                            <a
+                              href={`/api/export/backup?backup_id=${backup.id}`}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                            >
+                              📥 Excel
+                            </a>
+                          </Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Belum ada snapshot database tersimpan.</p>
+              )}
+            </Card>
+          </div>
+        </div>
       </div>
     </PageShell>
   );
