@@ -442,6 +442,15 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                 {productBoms.map((row, idx) => {
                   const material = row.material_id ? materialMap.get(row.material_id) : undefined;
                   const subCost = Number(row.qty_per_unit || 0) * Number(row.unit_price || 0);
+                  const rowAllowance = Number(row.allowance_percent || 0);
+                  const rowNetQty =
+                    row.net_usage_per_product !== null &&
+                    row.net_usage_per_product !== undefined &&
+                    Number(row.net_usage_per_product) > 0
+                      ? Number(row.net_usage_per_product)
+                      : rowAllowance > 0
+                        ? Number((Number(row.qty_per_unit || 0) / (1 + rowAllowance / 100)).toFixed(6))
+                        : Number(row.qty_per_unit || 0);
 
                   return (
                     <details
@@ -461,6 +470,11 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                               <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
                                 {row.component_type}
                               </span>
+                              {rowAllowance > 0 ? (
+                                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                  +Overage {rowAllowance}%
+                                </span>
+                              ) : null}
                               <StatusBadge status={row.status} />
                               {row.fulfillment_source ? (
                                 <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
@@ -470,14 +484,21 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                             </div>
                             <p className="mt-1 text-xs text-slate-500 font-medium">
                               Kode BOM: <span className="font-mono font-semibold text-slate-700">{row.requirement_code}</span> · Metode: {row.calculation_method || "MANUAL"}
+                              {rowAllowance > 0 ? (
+                                <span className="ml-2 text-slate-600">
+                                  · Bersih: <b>{rowNetQty} {row.unit}</b> (+{rowAllowance}%)
+                                </span>
+                              ) : null}
                             </p>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-4 text-xs lg:text-right border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
                             <div>
-                              <p className="text-[11px] text-slate-400">Kebutuhan / Pcs</p>
+                              <p className="text-[11px] text-slate-400">
+                                {rowAllowance > 0 ? `Total / Pcs (+${rowAllowance}%)` : "Kebutuhan / Pcs"}
+                              </p>
                               <p className="font-semibold text-slate-800">
-                                {formatNumber(row.qty_per_unit)} {row.unit}
+                                {Number(row.qty_per_unit || 0)} {row.unit}
                               </p>
                             </div>
                             <div>
@@ -521,14 +542,31 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
                                 </Field>
                               )}
 
-                              <Field label="Kebutuhan per Unit (Pcs)">
+                              <Field
+                                label="Kebutuhan Bersih / Pcs"
+                                hint="Qty murni untuk 1 pcs produk (sebelum overage)"
+                              >
                                 <input
                                   name="qty_per_unit"
                                   type="number"
                                   min="0.0001"
                                   step="any"
                                   required
-                                  defaultValue={Number(row.qty_per_unit || 0)}
+                                  defaultValue={rowNetQty}
+                                  className={inputClass}
+                                />
+                              </Field>
+
+                              <Field
+                                label="Toleransi / Overage (%)"
+                                hint={`Saat ini total + overage: ${Number(row.qty_per_unit || 0)} ${row.unit}`}
+                              >
+                                <input
+                                  name="allowance_percent"
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  defaultValue={rowAllowance}
                                   className={inputClass}
                                 />
                               </Field>
