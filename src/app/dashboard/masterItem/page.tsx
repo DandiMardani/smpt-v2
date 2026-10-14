@@ -15,7 +15,6 @@ import {
 import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { cookies } from "next/headers";
 import { resolveProjectCategory } from "@/lib/project-category";
 import {
   cleanSearch,
@@ -82,18 +81,19 @@ export default async function MasterItemPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("master_item.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
-  const cookieStore = await cookies();
-  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+
+  // Perbaikan Filter: Bebas pilih Semua, Haji, atau Reguler tanpa terkunci Cookie
   const rawCategory = param(params, "category");
-  const categoryParam = rawCategory
-    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
-    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
+  const categoryParam =
+    rawCategory && rawCategory.toUpperCase() !== "ALL"
+      ? rawCategory.toUpperCase()
+      : "";
+
   let selectedProject = Number(param(params, "project")) || 0;
   const selectedProduct = Number(param(params, "product")) || 0;
 
   const supabase = await createClient();
 
-  // Load reference projects and products
   const [projectResult, productResult] = await Promise.all([
     supabase.rpc("master_reference_projects"),
     supabase.rpc("master_reference_products", { p_project_id: null, p_include_inactive: true }),
@@ -120,12 +120,10 @@ export default async function MasterItemPage({ searchParams }: Props) {
   }
   const currentProject = selectedProject ? projectMap.get(selectedProject) : undefined;
 
-  // Products belonging to the selected project
   const projectProducts = selectedProject
     ? products.filter((p) => p.project_id === selectedProject && p.status === "AKTIF")
     : [];
 
-  // Query work items for the project to calculate Global Project Modal
   let projectWorkItems: WorkItemRow[] = [];
   if (selectedProject) {
     let projectItemsQuery = supabase
@@ -138,7 +136,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
     projectWorkItems = (pItems ?? []) as WorkItemRow[];
   }
 
-  // Calculate Product Recap (Modal per produk dalam proyek)
   const productRecap = projectProducts.map((prod) => {
     const prodItems = projectWorkItems.filter(
       (item) => item.product_id === prod.id && item.status === "AKTIF"
@@ -169,13 +166,11 @@ export default async function MasterItemPage({ searchParams }: Props) {
     };
   });
 
-  // Grand Total Se-Proyek (Modal Global Proyek)
   const grandProjectOperator = productRecap.reduce((acc, p) => acc + p.totalOperator, 0);
   const grandProjectProposed = productRecap.reduce((acc, p) => acc + p.totalProposed, 0);
   const grandProjectMargin = grandProjectProposed - grandProjectOperator;
   const grandProjectTarget = productRecap.reduce((acc, p) => acc + Number(p.product.target_production || 0), 0);
 
-  // If a single product is selected, filter its items
   const productItems = selectedProduct
     ? projectWorkItems
         .filter((w) => w.product_id === selectedProduct)
@@ -193,7 +188,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
     0
   );
   const totalMargin = totalProposedPrice - totalOperatorPrice;
-  const marginPercent = totalProposedPrice > 0 ? ((totalMargin / totalProposedPrice) * 100).toFixed(1) : "0";
   const targetProduction = Number(currentProduct?.target_production || 0);
   const totalBoronganProduct = targetProduction * totalProposedPrice;
   const totalOperatorProduct = targetProduction * totalOperatorPrice;
@@ -213,14 +207,14 @@ export default async function MasterItemPage({ searchParams }: Props) {
       ? "Master Data Haji"
       : categoryParam === "REGULER"
       ? "Master Data Reguler"
-      : "Master Data";
+      : "Master Data Terpadu";
 
   const pageTitle =
     categoryParam === "HAJI"
       ? "Item & Tarif Pekerjaan (Proyek Haji)"
       : categoryParam === "REGULER"
       ? "Item & Tarif Pekerjaan (Proyek Reguler)"
-      : "Master Item Pekerjaan & Modal Upah";
+      : "Item & Tarif Pekerjaan (Semua Proyek)";
 
   return (
     <MasterPageShell
@@ -231,7 +225,40 @@ export default async function MasterItemPage({ searchParams }: Props) {
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
-      {/* Filter Selector Proyek & Produk */}
+      {/* Tab Filter Cepat Kategori Proyek */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-4 no-scrollbar">
+        <Link
+          href="/dashboard/masterItem"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            !categoryParam
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          🌟 Semua Proyek ({rawProjects.length})
+        </Link>
+        <Link
+          href="/dashboard/masterItem?category=HAJI"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            categoryParam === "HAJI"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          🕋 Proyek Haji
+        </Link>
+        <Link
+          href="/dashboard/masterItem?category=REGULER"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            categoryParam === "REGULER"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          📦 Proyek Reguler
+        </Link>
+      </div>
+
       <MasterItemFilter
         projects={projects}
         products={products}
@@ -241,10 +268,8 @@ export default async function MasterItemPage({ searchParams }: Props) {
         initialCategory={categoryParam}
       />
 
-      {/* SCENARIO 1: SPECIFIC PRODUCT SELECTED -> TAMPILKAN RINCIAN MODAL PRODUK & DAFTAR ITEM */}
       {selectedProduct && currentProduct ? (
         <div className="space-y-6">
-          {/* Active Product Banner & Quick Links */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-blue-200 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 p-4 sm:p-5 shadow-xs">
             <div className="flex items-center gap-3">
               <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-xl font-bold text-white shadow-xs">
@@ -280,7 +305,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* 4 SUMMARY KPI CARDS: MODAL & UPAH PRODUK TERPILIH */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
@@ -327,7 +351,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* Form Tambah Item Pekerjaan: Pre-locked to product */}
           {canWrite ? (
             <MasterItemCreateForm
               key={`create-form-${selectedProject}-${selectedProduct}`}
@@ -339,7 +362,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
             />
           ) : null}
 
-          {/* Daftar Item Pekerjaan Produk Ini */}
           <SectionCard
             title={`Rincian Tarif Pekerjaan: ${currentProduct.name} (${productItems.length} Tahapan Borongan)`}
             description={`Daftar ${productItems.length} tahapan pekerjaan untuk ${currentProduct.name}. Total modal tukang: ${formatRupiah(totalOperatorPrice)}/pcs · Nilai pengajuan borongan: ${formatRupiah(totalProposedPrice)}/pcs.`}
@@ -418,10 +440,8 @@ export default async function MasterItemPage({ searchParams }: Props) {
                         </div>
                       </summary>
 
-                      {/* Detail / Inline Edits */}
                       {canWrite && row.product_id ? (
                         <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
-                          {/* 1. EDIT INFORMASI & TARIF ITEM PEKERJAAN */}
                           <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4">
                             <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                               <div>
@@ -624,7 +644,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
                   );
                 })}
 
-                {/* Grand Total Footer Summary Per Produk */}
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-4 text-sm">
                     <span className="font-bold text-slate-900">Total Upah Produk ({activeItems.length} Item Aktif):</span>
@@ -648,7 +667,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
             )}
           </SectionCard>
 
-          {/* Collapsible / Comparison Section for Project-wide Totals */}
           <SectionCard
             title={`Ringkasan Modal Global Proyek: ${currentProject?.name} (${projectProducts.length} Produk)`}
             description="Perbandingan total modal upah operator dan nilai pengajuan antar produk dalam proyek ini."
@@ -709,9 +727,7 @@ export default async function MasterItemPage({ searchParams }: Props) {
           </SectionCard>
         </div>
       ) : selectedProject && currentProject ? (
-        /* SCENARIO 2: PROJECT SELECTED, BUT ALL PRODUCTS -> TAMPILKAN MODAL GLOBAL PROYEK */
         <div className="space-y-6">
-          {/* Active Project Banner */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-blue-200 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 p-4 sm:p-5 shadow-xs">
             <div className="flex items-center gap-3">
               <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-xl font-bold text-white shadow-xs">
@@ -738,7 +754,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* 4 GLOBAL PROJECT KPI CARDS */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border-2 border-emerald-200 bg-white p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between">
@@ -785,7 +800,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* TABLE REKAPITULASI MODAL SEMUA PRODUK DALAM PROYEK */}
           <SectionCard
             title={`Rekapitulasi Modal per Produk · Proyek ${currentProject.name}`}
             description="Tabel perbandingan modal upah operator dan harga pengajuan borongan per produk. Klik salah satu produk untuk mengelola rincian item."
@@ -858,7 +872,6 @@ export default async function MasterItemPage({ searchParams }: Props) {
           </SectionCard>
         </div>
       ) : (
-        /* SCENARIO 3: NO PROJECT SELECTED -> TAMPILKAN GRID PRODUK & PROYEK */
         <MasterItemProductGrid
           projects={projects}
           products={products.filter((p) => p.status === "AKTIF")}
