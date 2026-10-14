@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   EmptyState,
   Field,
@@ -20,7 +21,6 @@ import {
   type SearchParams,
   totalPages,
 } from "@/lib/master/page-utils";
-import { cookies } from "next/headers";
 import { formatProjectOption, resolveProjectCategory } from "@/lib/project-category";
 import { createProjectProduct } from "./actions";
 import { ProductUnifiedClient } from "./product-unified-client";
@@ -51,12 +51,15 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("master_produk_proyek.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
-  const cookieStore = await cookies();
-  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+
+  // Hanya filter jika parameter ?category=... secara eksplisit ada di URL
+  // Default tampilkan SEMUA proyek (Haji + Reguler) tanpa terkunci cookie workspace
   const rawCategory = param(params, "category");
-  const categoryParam = rawCategory
-    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
-    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
+  const categoryParam =
+    rawCategory && rawCategory.toUpperCase() !== "ALL"
+      ? rawCategory.toUpperCase()
+      : "";
+
   const selectedProject = Number(param(params, "project")) || 0;
   const page = positivePage(param(params, "page", "1"));
   const { from, to } = pageRange(page, 20);
@@ -126,14 +129,14 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
       ? "Master Produk Proyek Haji"
       : categoryParam === "REGULER"
       ? "Master Produk Proyek Reguler"
-      : "Master Produk & Spesifikasi Terpadu";
+      : "Master Produk & Spesifikasi Proyek";
 
   const pageDesc =
     categoryParam === "HAJI"
       ? "Katalog produk tas Haji beserta Kebutuhan Bahan (BOM), Komponen Potong (Cutting), dan Ongkos Jahit Operator."
       : categoryParam === "REGULER"
       ? "Katalog produk tas pesanan umum/reguler beserta BOM, cutting, dan tarif pekerjaan terpadu."
-      : "Kelola produk tas beserta Kebutuhan Bahan (BOM), Komponen Potong (Cutting), dan Ongkos Jahit Operator langsung di 1 halaman terpusat.";
+      : "Katalog seluruh produk tas (Haji & Reguler) beserta Kebutuhan Bahan (BOM), Komponen Potong (Cutting), dan Ongkos Jahit Operator.";
 
   return (
     <MasterPageShell
@@ -144,8 +147,42 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
 
+      {/* Tab Filter Cepat Kategori Proyek */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-4 no-scrollbar">
+        <Link
+          href="/dashboard/masterProdukProyek"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            !categoryParam
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          🌟 Semua Proyek ({rawProjects.length})
+        </Link>
+        <Link
+          href="/dashboard/masterProdukProyek?category=HAJI"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            categoryParam === "HAJI"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          🕋 Proyek Haji
+        </Link>
+        <Link
+          href="/dashboard/masterProdukProyek?category=REGULER"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            categoryParam === "REGULER"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          📦 Proyek Reguler
+        </Link>
+      </div>
+
       {canWrite ? (
-        <details className="group rounded-2xl border border-blue-200 bg-linear-to-r from-blue-50/70 to-indigo-50/70 p-5 shadow-xs">
+        <details className="group rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-5 shadow-xs mb-6">
           <summary className="cursor-pointer list-none flex items-center justify-between font-bold text-sm text-blue-900 select-none">
             <span className="flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white text-xs">＋</span>
@@ -202,7 +239,11 @@ export default async function MasterProdukProyekPage({ searchParams }: Props) {
             page={page}
             total={pages}
             basePath="/dashboard/masterProdukProyek"
-            params={{ ...(q ? { q } : {}), ...(selectedProject ? { project: String(selectedProject) } : {}) }}
+            params={{
+              ...(q ? { q } : {}),
+              ...(selectedProject ? { project: String(selectedProject) } : {}),
+              ...(categoryParam ? { category: categoryParam } : {}),
+            }}
           />
         </div>
       </SectionCard>
