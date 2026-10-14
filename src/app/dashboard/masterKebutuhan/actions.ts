@@ -62,14 +62,22 @@ export async function saveBomRequirement(formData: FormData) {
     const componentType = requireOneOf(getText(formData, "component_type") || "BAHAN", TYPES, "Jenis komponen");
     const componentName = getText(formData, "component_name");
     const unit = getText(formData, "unit");
-    const qtyPerUnit = getNumber(formData, "qty_per_unit", { min: 0 });
+    const rawQtyInput = getNumber(formData, "qty_per_unit", { min: 0 });
     const unitPrice = getNumber(formData, "unit_price", { min: 0 });
     const status = requireOneOf(getText(formData, "status") || "AKTIF", STATUSES, "Status kebutuhan");
     const source = requireOneOf(getText(formData, "fulfillment_source") || "COMPANY_PURCHASE", SOURCES, "Sumber pemenuhan");
     const method = requireOneOf(getText(formData, "calculation_method") || "MANUAL", METHODS, "Metode perhitungan");
-    const netUsage = optionalNumber(formData, "net_usage_per_product");
+
+    // Fleksibel untuk BAHAN, JASA, dan BIAYA tanpa pembulatan otomatis
+    const netUsageInput = optionalNumber(formData, "net_usage_per_product");
+    const netUsage = netUsageInput !== null && netUsageInput > 0 ? netUsageInput : rawQtyInput;
     const allowancePercent = optionalNumber(formData, "allowance_percent") ?? 0;
     const wastePercent = optionalNumber(formData, "waste_percent") ?? 0;
+
+    // Hitung total qty per unit = Net Usage * (1 + Allowance / 100) tanpa pembulatan
+    const calculatedGrossQty = Number((netUsage * (1 + allowancePercent / 100)).toFixed(6));
+    const qtyPerUnit = calculatedGrossQty;
+
     const finalRequirement = optionalNumber(formData, "final_requirement");
     const snapshot = calculationSnapshot(formData);
 
