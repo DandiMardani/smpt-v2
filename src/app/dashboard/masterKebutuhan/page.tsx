@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
 import {
   EmptyState,
   Field,
@@ -89,12 +88,14 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
   const canWrite = access.permissionCodes.includes("master_kebutuhan.write");
   const params = await searchParams;
   const q = cleanSearch(param(params, "q"));
-  const cookieStore = await cookies();
-  const workspaceCookie = cookieStore.get("smpt_workspace")?.value?.toUpperCase();
+
+  // Perbaikan Filter: Bebas pilih Semua, Haji, atau Reguler tanpa terkunci Cookie
   const rawCategory = param(params, "category");
-  const categoryParam = rawCategory
-    ? (rawCategory.toUpperCase() === "ALL" ? "" : rawCategory.toUpperCase())
-    : (workspaceCookie === "HAJI" ? "HAJI" : workspaceCookie === "REGULER" ? "REGULER" : "");
+  const categoryParam =
+    rawCategory && rawCategory.toUpperCase() !== "ALL"
+      ? rawCategory.toUpperCase()
+      : "";
+
   let selectedProject = Number(param(params, "project")) || 0;
   const selectedProduct = Number(param(params, "product")) || 0;
 
@@ -268,14 +269,14 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
       ? "Master Data Haji"
       : categoryParam === "REGULER"
       ? "Master Data Reguler"
-      : "Master Data";
+      : "Master Data Terpadu";
 
   const pageTitle =
     categoryParam === "HAJI"
       ? "Kebutuhan Bahan (BOM) & HPP - Proyek Haji"
       : categoryParam === "REGULER"
       ? "Kebutuhan Bahan (BOM) & HPP - Proyek Reguler"
-      : "Master Kebutuhan Bahan (BOM) & HPP Produksi";
+      : "Kebutuhan Bahan (BOM) & HPP (Semua Proyek)";
 
   return (
     <MasterPageShell
@@ -285,6 +286,40 @@ export default async function MasterKebutuhanPage({ searchParams }: Props) {
     >
       <Notice success={param(params, "success")} error={param(params, "error")} />
       {!canWrite ? <ReadOnlyBanner /> : null}
+
+      {/* Tab Filter Cepat Kategori Proyek */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-4 no-scrollbar">
+        <Link
+          href="/dashboard/masterKebutuhan"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            !categoryParam
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          🌟 Semua Proyek ({rawProjects.length})
+        </Link>
+        <Link
+          href="/dashboard/masterKebutuhan?category=HAJI"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            categoryParam === "HAJI"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          🕋 Proyek Haji
+        </Link>
+        <Link
+          href="/dashboard/masterKebutuhan?category=REGULER"
+          className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
+            categoryParam === "REGULER"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          📦 Proyek Reguler
+        </Link>
+      </div>
 
       {/* Product & Project Filter */}
       <MasterKebutuhanFilter
