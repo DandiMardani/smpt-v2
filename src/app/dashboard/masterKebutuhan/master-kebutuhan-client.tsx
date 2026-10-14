@@ -271,9 +271,9 @@ export function MasterKebutuhanCreateForm({
   const [materialId, setMaterialId] = useState<string>("");
   const [componentName, setComponentName] = useState<string>("");
   const [unit, setUnit] = useState<string>("Meter");
-  const [qtyPerUnit, setQtyPerUnit] = useState<number>(1);
+  const [netQtyPerUnit, setNetQtyPerUnit] = useState<number>(1);
+  const [allowancePercent, setAllowancePercent] = useState<number>(2);
   const [unitPrice, setUnitPrice] = useState<number>(0);
-  const [calculatorSnapshot, setCalculatorSnapshot] = useState<Record<string, unknown> | null>(null);
 
   const availableProducts = useMemo(() => {
     if (!projectId) return products;
@@ -301,7 +301,17 @@ export function MasterKebutuhanCreateForm({
     }
   }
 
-  const subtotalCost = qtyPerUnit * unitPrice;
+  function handleComponentTypeChange(type: string) {
+    setComponentType(type);
+    if (type !== "BAHAN") {
+      setAllowancePercent(0);
+    } else if (allowancePercent === 0) {
+      setAllowancePercent(2);
+    }
+  }
+
+  const totalQtyWithOverage = Number((netQtyPerUnit * (1 + allowancePercent / 100)).toFixed(6));
+  const subtotalCost = totalQtyWithOverage * unitPrice;
 
   return (
     <SectionCard
@@ -314,6 +324,7 @@ export function MasterKebutuhanCreateForm({
         <input type="hidden" name="return_q" value={currentQ || ""} />
         <input type="hidden" name="project_id" value={projectId || activeProduct?.project_id || ""} />
         <input type="hidden" name="product_id" value={productId || ""} />
+        <input type="hidden" name="net_usage_per_product" value={netQtyPerUnit || 0} />
 
         {/* Selected Product Banner */}
         {productId && activeProduct ? (
@@ -391,7 +402,7 @@ export function MasterKebutuhanCreateForm({
             <select
               name="component_type"
               value={componentType}
-              onChange={(e) => setComponentType(e.target.value)}
+              onChange={(e) => handleComponentTypeChange(e.target.value)}
               className={selectClass}
             >
               <option value="BAHAN">BAHAN (Fisik / Material)</option>
@@ -451,16 +462,31 @@ export function MasterKebutuhanCreateForm({
             />
           </Field>
 
-          <Field label="Kebutuhan per Produk" hint="Qty material yang dibutuhkan untuk 1 pcs produk">
+          <Field label="Kebutuhan per Produk (Bersih)" hint="Qty murni untuk 1 pcs produk (sebelum overage)">
             <input
               id="bom-qty-per-unit"
               name="qty_per_unit"
               type="number"
               min="0.0001"
               step="any"
-              value={qtyPerUnit || ""}
-              onChange={(e) => setQtyPerUnit(e.target.value === "" ? 0 : Number(e.target.value))}
+              value={netQtyPerUnit || ""}
+              onChange={(e) => setNetQtyPerUnit(e.target.value === "" ? 0 : Number(e.target.value))}
               required
+              className={inputClass}
+            />
+          </Field>
+
+          <Field
+            label="Toleransi / Overage (%)"
+            hint={`Total + Overage (${allowancePercent}%): ${totalQtyWithOverage} ${unit}`}
+          >
+            <input
+              name="allowance_percent"
+              type="number"
+              min="0"
+              step="any"
+              value={allowancePercent === 0 ? "0" : allowancePercent || ""}
+              onChange={(e) => setAllowancePercent(e.target.value === "" ? 0 : Number(e.target.value))}
               className={inputClass}
             />
           </Field>
@@ -469,8 +495,8 @@ export function MasterKebutuhanCreateForm({
             label="Harga Satuan (Rp)"
             hint={
               subtotalCost > 0
-                ? `Estimasi Biaya / Pcs: ${formatRupiah(subtotalCost)}`
-                : "Estimasi harga beli bahan per satuan"
+                ? `Estimasi Biaya / Pcs (termasuk overage): ${formatRupiah(subtotalCost)}`
+                : "Estimasi harga beli per satuan"
             }
           >
             <CurrencyNumberInput
