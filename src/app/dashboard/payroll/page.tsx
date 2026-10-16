@@ -301,44 +301,54 @@ export default async function Page({ searchParams }: Props) {
       {!canWrite ? <ReadOnly /> : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <a
-          href={`/api/export/xlsx?report=pembayaran_uang_makan&run_id=${latestRunId}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-1.5 text-xs font-bold text-amber-900 shadow-xs hover:bg-amber-100 transition"
-        >
-          🍱 Export Form Pembayaran Uang Makan (Excel)
-        </a>
-        <a
-          href={`/api/export/xlsx?report=pembayaran_upah_harian&run_id=${latestRunId}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3.5 py-1.5 text-xs font-bold text-blue-900 shadow-xs hover:bg-blue-100 transition"
-        >
-          📑 Export Form Pembayaran Upah Harian (Excel)
-        </a>
-        <a
-          href={`/api/export/xlsx?report=payroll_slips&run_id=${activeRun?.id ?? latestRunId}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
-        >
-          📥 Export Slip Payroll
-        </a>
-        <a
-          href={`/api/export/xlsx?report=operator_payroll_slips&price_type=operator&run_id=${operatorRuns[0]?.id ?? ""}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3.5 py-1.5 text-xs font-semibold text-violet-900 shadow-xs hover:bg-violet-100 transition"
-        >
-          💰 Export Upah Real Operator (Gabungan)
-        </a>
-        <a
-          href={`/api/export/xlsx?report=operator_payroll_slips&price_type=pengajuan&run_id=${operatorRuns[0]?.id ?? ""}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-900 shadow-xs hover:bg-emerald-100 transition"
-        >
-          📑 Export Rekap Pengajuan (Per Produk)
-        </a>
-        <a
-          href={`/api/export/xlsx?report=operator_payroll_slips&run_id=${operatorRuns[0]?.id ?? ""}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-1.5 text-xs font-semibold text-indigo-800 shadow-xs hover:bg-indigo-100 transition"
-        >
-          📊 Export Lengkap + Margin
-        </a>
+        {latestRunId ? (
+          <>
+            <a
+              href={`/api/export/xlsx?report=pembayaran_uang_makan&run_id=${latestRunId}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-1.5 text-xs font-bold text-amber-900 shadow-xs hover:bg-amber-100 transition"
+            >
+              🍱 Export Form Pembayaran Uang Makan (Excel)
+            </a>
+            <a
+              href={`/api/export/xlsx?report=pembayaran_upah_harian&run_id=${latestRunId}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3.5 py-1.5 text-xs font-bold text-blue-900 shadow-xs hover:bg-blue-100 transition"
+            >
+              📑 Export Form Pembayaran Upah Harian (Excel)
+            </a>
+            <a
+              href={`/api/export/xlsx?report=payroll_slips&run_id=${activeRun?.id ?? latestRunId}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
+            >
+              📥 Export Slip Payroll
+            </a>
+          </>
+        ) : null}
+
+        {operatorRuns.length > 0 ? (
+          <>
+            <a
+              href={`/api/export/xlsx?report=operator_payroll_slips&price_type=operator&run_id=${operatorRuns[0].id}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3.5 py-1.5 text-xs font-semibold text-violet-900 shadow-xs hover:bg-violet-100 transition"
+            >
+              💰 Export Upah Real Operator (Gabungan)
+            </a>
+            <a
+              href={`/api/export/xlsx?report=operator_payroll_slips&price_type=pengajuan&run_id=${operatorRuns[0].id}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-900 shadow-xs hover:bg-emerald-100 transition"
+            >
+              📑 Export Rekap Pengajuan (Per Produk)
+            </a>
+            <a
+              href={`/api/export/xlsx?report=operator_payroll_slips&run_id=${operatorRuns[0].id}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-1.5 text-xs font-semibold text-indigo-800 shadow-xs hover:bg-indigo-100 transition"
+            >
+              📊 Export Lengkap + Margin
+            </a>
+          </>
+        ) : null}
       </div>
 
+      
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Flow>
           Pencairan Uang Makan Mingguan staf BULANAN dihitung murni dari hari masuk aktif tanpa pemotongan kasbon warung maupun kasbon kantor. Potongan kasbon resmi hanya berlaku pada proses Payroll Bulanan akhir bulan.
