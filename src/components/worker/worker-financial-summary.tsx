@@ -351,6 +351,7 @@ export function WorkerFinancialSummary({
                   </span>
                 </div>
 
+                {/* Komponen Upah Lembur Berjalan */}
                 {effectiveOtWage > 0 ? (
                   <div className="rounded-lg bg-blue-50/60 border border-blue-200/70 p-2 flex justify-between items-center">
                     <div>
@@ -361,6 +362,21 @@ export function WorkerFinancialSummary({
                     </div>
                     <span className="font-black text-blue-700 text-xs">
                       +{money(effectiveOtWage)}
+                    </span>
+                  </div>
+                ) : null}
+
+                {/* Komponen Bonus Lembur Berjalan */}
+                {effectiveBonus4h > 0 ? (
+                  <div className="rounded-lg bg-purple-50/60 border border-purple-200/70 p-2 flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-purple-800">Bonus Lembur</span>
+                      <span className="text-purple-600 text-[10px] block">
+                        (Lembur ≥ 4 Jam)
+                      </span>
+                    </div>
+                    <span className="font-black text-purple-700 text-xs">
+                      +{money(effectiveBonus4h)}
                     </span>
                   </div>
                 ) : null}
