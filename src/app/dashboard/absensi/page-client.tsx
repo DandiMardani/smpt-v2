@@ -209,15 +209,15 @@ function QuickManualAttendanceSheet({
           lateMinutes = actualInTotalMins - schedInTotalMins; 
           
           if (paySystem === "HARIAN") {
-            // PERBAIKAN TypeScript: Paksa daily_wage menjadi tipe Number yang absolut
             const dailyWage = Number(w.daily_wage) || 0; 
             const lateHours = lateMinutes / 60; 
-            
-            // Rumus: (gaji per hari / 8) * hasil per jam
             lateDeduction = Math.round((dailyWage / 8) * lateHours);
             
+            // Perbaikan: Selalu cetak catatan telat walaupun dailyWage 0
             if (lateDeduction > 0) {
               lateNotes = `Telat ${lateMinutes} mnt. Potongan: Rp ${lateDeduction.toLocaleString("id-ID")}`;
+            } else {
+              lateNotes = `Telat ${lateMinutes} mnt (Gaji harian blm diisi)`;
             }
           }
         }
