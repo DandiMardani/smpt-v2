@@ -550,7 +550,6 @@ export async function transferFinishedGoodAction(f: FormData) {
       const transferCode = `TRF-${transferDate.replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
 
       if (kind === "PACKAGE") {
-        // 1. Kurangi stok paket di lokasi asal (Pabrik Pusat)
         const { data: curBal } = await s
           .from("bundle_package_balances")
           .select("quantity")
@@ -568,7 +567,6 @@ export async function transferFinishedGoodAction(f: FormData) {
             updated_at: new Date().toISOString(),
           }, { onConflict: "package_id,location_id" });
 
-        // 2. Simpan catatan transfer paket isian
         const { error: insErr } = await s
           .from("finished_goods_transfers")
           .insert({
@@ -586,7 +584,6 @@ export async function transferFinishedGoodAction(f: FormData) {
 
         if (insErr) throw insErr;
       } else {
-        // 1. Kurangi stok barang jadi satuan di lokasi asal (Pabrik Pusat)
         const { data: curBal } = await s
           .from("logistics_stock_balances")
           .select("quantity")
@@ -606,7 +603,6 @@ export async function transferFinishedGoodAction(f: FormData) {
           .eq("location_id", srcLoc)
           .eq("item_kind", "FINISHED_GOOD");
 
-        // 2. Simpan catatan transfer barang satuan
         const { error: insErr } = await s
           .from("finished_goods_transfers")
           .insert({
@@ -628,6 +624,7 @@ export async function transferFinishedGoodAction(f: FormData) {
     "Transfer barang berhasil disimpan dan stok gudang asal telah dipotong."
   );
 }
+
 export async function receiveExternalAction(f: FormData) {
   await mutate(
     "/dashboard/barangLuar",
@@ -681,7 +678,7 @@ export async function processBundlingIsianAction(f: FormData) {
       await rpc("process_bundling_isian", {
         p_date: date(f, "bundling_date"),
         p_bundle_fg_id: id(f, "bundle_finished_good_id"),
-        p_location_id: id(f, "location_id") || 1, // default Pabrik Pusat
+        p_location_id: id(f, "location_id") || 1, 
         p_bundle_qty: num(f, "bundle_qty"),
         p_notes: t(f, "notes") || null,
         p_components: components,
@@ -711,7 +708,6 @@ export async function saveBundleRecipeAction(f: FormData) {
         throw new Error("Pilih minimal satu barang komponen untuk dimasukkan ke resep paket.");
       }
 
-      // Bersihkan susunan lama paket ini, lalu simpan susunan yang baru
       const { error: delErr } = await s
         .from("bundle_recipes")
         .delete()
@@ -1490,7 +1486,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
 
       const { data: attRecords } = await s
         .from("attendance_records")
-        .select("worker_id, day_class, overtime_minutes, attendance_date, attendance_status")
+        .select("worker_id, day_class, overtime_minutes, attendance_date, attendance_status, late_deduction")
         .gte("attendance_date", run.period_start)
         .lte("attendance_date", run.period_end)
         .eq("verification_status", "TERVERIFIKASI");
@@ -1516,6 +1512,10 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         const fullDays = workerAtts.filter((a) => a.day_class === "FULL_DAY").length;
         const halfDays = workerAtts.filter((a) => a.day_class === "HALF_DAY").length;
         const totalOtMinutes = workerAtts.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0);
+        
+        // --- MULAI PERBAIKAN: Hitung Total Potongan Telat (Late Deduction) ---
+        const totalLateDeduction = workerAtts.reduce((sum, a) => sum + (Number(a.late_deduction) || 0), 0);
+        // --- SELESAI PERBAIKAN ---
 
         let baseAmt = 0;
         let mealAmt = Number(it.meal_amount || 0);
@@ -1553,13 +1553,19 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         }
 
         const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
-        const kasbonP = workerAdvs
+        
+        // Hitung Kasbon Perusahaan asli
+        const baseKasbonP = workerAdvs
           .filter((a) => a.category === "KASBON_PERUSAHAAN")
           .reduce((sum, a) => {
             const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
             const inst = Number(a.installment_amount || 0);
             return sum + (inst > 0 ? Math.min(inst, rem) : rem);
           }, 0);
+
+        // --- MULAI PERBAIKAN: Gabungkan kasbon perusahaan dengan total potongan telat ---
+        const kasbonP = baseKasbonP + totalLateDeduction;
+        // --- SELESAI PERBAIKAN ---
 
         const kasbonW = workerAdvs
           .filter((a) => a.category === "KASBON_WARUNG")
@@ -1601,7 +1607,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         })
         .eq("id", runId);
     },
-    "Sinkronisasi berhasil: data kehadiran, uang makan, dan kasbon telah dihitung ulang."
+    "Sinkronisasi berhasil: data kehadiran, potongan telat, uang makan, dan kasbon telah dihitung ulang."
   );
 }
 
@@ -2231,7 +2237,6 @@ export async function deleteBundlePackageAction(f: FormData) {
       const s = await createClient();
       const targetId = id(f, "package_id");
 
-      // Cegah hapus jika sudah ada transaksi packing harian yang tercatat
       const { data: packings } = await s
         .from("bundle_package_packings")
         .select("id")
@@ -2248,8 +2253,6 @@ export async function deleteBundlePackageAction(f: FormData) {
     "Paket isian berhasil dihapus."
   );
 }
-
-
 
 export async function addVendorDownPaymentAction(f: FormData) {
   const returnPath = t(f, "return_path") || "/dashboard/barangLuar";
@@ -2410,6 +2413,3 @@ export async function deleteVendorPoTargetAction(f: FormData) {
     "Target PO berhasil dihapus."
   );
 }
-
-
-
