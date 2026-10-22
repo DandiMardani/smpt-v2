@@ -374,6 +374,8 @@ export default async function Page() {
           };
         }
       }
+    }
+  }
 
   const isBulanan = workerData?.pay_system === "BULANAN";
   const isBorongan = workerData?.pay_system === "BORONGAN";
