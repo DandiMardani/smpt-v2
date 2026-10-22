@@ -31,7 +31,6 @@ function isBulananWorker(w: WorkerItem): boolean {
 function isHarianWorker(w: WorkerItem): boolean {
   if (isBulananWorker(w)) return false;
 
-  // Filter ketat: Keluarkan Operator Jahit dan Borongan
   const pos = (w.position || "").toUpperCase();
   const dept = (w.department || "").toUpperCase();
   const pay = (w.pay_system || "").toUpperCase();
@@ -40,7 +39,6 @@ function isHarianWorker(w: WorkerItem): boolean {
     return false;
   }
 
-  // Khusus Helper dan Pekerja Harian
   return pos.includes("HELPER") || pay === "HARIAN" || dept.includes("HELPER");
 }
 
@@ -88,7 +86,6 @@ function QuickManualAttendanceSheet({
     return { dow, name, isSun, isSat, defaultIn, defaultOut };
   }, [date, shiftSettings]);
 
-  // Hanya ambil Bulanan dan Helper Harian murni
   const bulananWorkers = useMemo(() => workers.filter((w) => isBulananWorker(w)), [workers]);
   const harianWorkers = useMemo(() => workers.filter((w) => isHarianWorker(w)), [workers]);
 
@@ -147,14 +144,12 @@ function QuickManualAttendanceSheet({
     }));
   };
 
-  // Simpan BATCH super cepat & HANYA untuk pekerja yang diceklis (checked)
   const handleSaveAll = () => {
     setSaveSuccess(false);
     const itemsToSave: any[] = [];
 
     for (const w of activeWorkerList) {
       const row = rowStates[w.id];
-      // HANYA SIMPAN YANG DICEKLIS! Yang tidak diceklis diabaikan (tidak dibuatkan data)
       if (!row || !row.isPresent) continue;
 
       let normalizedIn = (row.actualIn || "").trim().replace(".", ":");
@@ -162,7 +157,6 @@ function QuickManualAttendanceSheet({
         const parts = normalizedIn.split(":");
         let h = parseInt(parts[0], 10);
         const m = parts[1] || "00";
-        // Jika input 01:00 s/d 06:00 (maksudnya jam 1 s/d 6 siang), otomatis jadikan 13:00 s/d 18:00
         if (h >= 1 && h <= 6) {
           h += 12;
         }
@@ -184,7 +178,6 @@ function QuickManualAttendanceSheet({
         shiftSettings
       );
 
-      // Otomatis tentukan HALF DAY jika masuk jam 12 siang ke atas atau durasi kerja <= 5 jam
       let dayClass: "FULL_DAY" | "HALF_DAY" = "FULL_DAY";
       if (normalizedIn && effectiveOut) {
         const inH = parseInt(normalizedIn.slice(0, 2), 10);
@@ -195,6 +188,49 @@ function QuickManualAttendanceSheet({
           dayClass = "HALF_DAY";
         }
       }
+
+      // ----------------------------------------------------
+      // KALKULASI POTONGAN TELAT KHUSUS PEKERJA HARIAN
+      // ----------------------------------------------------
+      let lateMinutes = 0;
+      let lateDeduction = 0;
+      let lateNotes = "";
+
+      if (normalizedIn && dayInfo.defaultIn) {
+        const inH = parseInt(normalizedIn.slice(0, 2), 10);
+        const inM = parseInt(normalizedIn.slice(3, 5), 10);
+        const actualInTotalMins = inH * 60 + inM;
+
+        const schedInH = parseInt(dayInfo.defaultIn.slice(0, 2), 10);
+        const schedInM = parseInt(dayInfo.defaultIn.slice(3, 5), 10);
+        const schedInTotalMins = schedInH * 60 + schedInM;
+
+        if (actualInTotalMins > schedInTotalMins) {
+          lateMinutes = actualInTotalMins - schedInTotalMins; // dalam menit
+          
+          if (paySystem === "HARIAN") {
+            const dailyWage = w.daily_wage || 0;
+            const lateHours = lateMinutes / 60; // ubah ke desimal jam (misal 2 jam)
+            
+            // Rumus: (gaji per hari / 8) * hasil per jam
+            lateDeduction = Math.round((dailyWage / 8) * lateHours);
+            
+            if (lateDeduction > 0) {
+              lateNotes = `Telat ${lateMinutes} mnt. Potongan: Rp ${lateDeduction.toLocaleString("id-ID")}`;
+            }
+          }
+        }
+      }
+
+      // Gabungkan catatan manual dengan catatan telat otomatis
+      let finalNotes = row.notes || "";
+      if (lateNotes) {
+        finalNotes = finalNotes ? `${finalNotes} | ${lateNotes}` : lateNotes;
+      }
+      if (!finalNotes && row.overtimeOut) {
+        finalNotes = `Lembur pulang ${row.overtimeOut}`;
+      }
+      // ----------------------------------------------------
 
       itemsToSave.push({
         worker_id: w.id,
@@ -207,7 +243,9 @@ function QuickManualAttendanceSheet({
         attendance_status: "HADIR",
         overtime_minutes: calc.overtimeMinutes,
         source: "MANUAL",
-        notes: row.notes || (row.overtimeOut ? `Lembur pulang ${row.overtimeOut}` : null),
+        notes: finalNotes,
+        late_minutes: lateMinutes,
+        late_deduction: lateDeduction,
       });
     }
 
@@ -225,7 +263,6 @@ function QuickManualAttendanceSheet({
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 4000);
       } catch (err: any) {
-        // NEXT_REDIRECT adalah sinyal sukses dari Next.js, abaikan agar tidak memicu alert
         if (err?.message && !err.message.includes("NEXT_REDIRECT")) {
           alert(err.message);
         }
@@ -319,7 +356,7 @@ function QuickManualAttendanceSheet({
       {/* Tabel Absensi */}
       <div className="max-h-[500px] overflow-auto rounded-2xl border border-slate-200 bg-white">
         <table className="min-w-full text-xs">
-          <thead className="sticky top-0 bg-slate-50 text-left font-bold text-slate-700 border-b border-slate-200">
+          <thead className="sticky top-0 bg-slate-50 text-left font-bold text-slate-700 border-b border-slate-200 z-10">
             <tr>
               <th className="px-3.5 py-3 w-12 text-center">Hadir</th>
               <th className="px-3.5 py-3">Nama Pekerja</th>
