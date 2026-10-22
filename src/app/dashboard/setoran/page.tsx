@@ -304,8 +304,8 @@ export default async function Page() {
         };
       }
 
-      // Sinkronisasi data utama
-      if (officialSlip) {
+      // Sinkronisasi data utama HANYA JIKA slip adalah draft periode berjalan (Belum Dibayar)
+      if (officialSlip && officialSlip.paymentStatus === "BELUM DIBAYAR") {
         if (officialSlip.type === "BORONGAN") {
           estimatedGross = officialSlip.grossAmount;
           breakdown = {
@@ -336,10 +336,8 @@ export default async function Page() {
           const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
           const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
 
-          // Bonus Rp 17.500 hanya jika lembur malam di atas jam 17:00
           const finalBonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
 
-          // Uang makan Minggu dibayar mingguan terpisah, tidak dimasukkan ke total bruto bulanan
           estimatedGross = monthlySalary + totalOtWage + finalBonus4h;
 
           breakdown = {
@@ -376,8 +374,6 @@ export default async function Page() {
           };
         }
       }
-    }
-  }
 
   const isBulanan = workerData?.pay_system === "BULANAN";
   const isBorongan = workerData?.pay_system === "BORONGAN";
