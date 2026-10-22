@@ -20,16 +20,14 @@ export default async function Page() {
   const now = new Date();
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
 
-  const [wr, or, ir, cr, setRes] = await Promise.all([
+  // TAHAP 1: Fetch Worker ID & Settings terlebih dahulu
+  const [wr, setRes] = await Promise.all([
     s.rpc("smpt_current_worker_id"),
-    s.from("production_orders").select("*").order("order_date", { ascending: false }).limit(200),
-    s.from("production_order_items").select("*").limit(1000),
-    s.from("production_checks").select("*").eq("status", "AKTIF").limit(2000),
     s.from("payroll_settings").select("key, value_numeric, value_text"),
   ]);
 
-  const e = [wr.error, or.error, ir.error, cr.error].find(Boolean);
-  if (e) throw new Error(e.message);
+  if (wr.error) throw new Error(wr.error.message);
+  if (setRes.error) throw new Error(setRes.error.message);
 
   const settingsMap: Record<string, any> = {};
   (setRes.data ?? []).forEach((row: any) => {
@@ -37,6 +35,7 @@ export default async function Page() {
   });
 
   const workerId = wr.data;
+  
   let workerData: any = null;
   let warungDebts: any[] = [];
   let companyLoans: any[] = [];
@@ -46,19 +45,40 @@ export default async function Page() {
   let breakdown: any = undefined;
   let officialSlip: OfficialSlipData | null = null;
 
-  const orders = or.data ?? [];
-  const items = ir.data ?? [];
-  const checks = cr.data ?? [];
+  let orders: any[] = [];
+  let items: any[] = [];
+  let checks: any[] = [];
 
   if (workerId) {
-    const [rpcProfRes, wRes, advRes, attRes, pSlipRes, opSlipRes] = await Promise.all([
+    // TAHAP 2: Fetch data profil pekerja & production_orders (worker-scoped)
+    const [rpcProfRes, wRes, advRes, attRes, pSlipRes, opSlipRes, ordersRes] = await Promise.all([
       s.rpc("smpt_get_my_worker_profile"),
       s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department,phone").eq("id", workerId).maybeSingle(),
       s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
       s.from("attendance_records").select("id,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth),
       s.from("payroll_run_items").select("*, payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(1),
       s.from("operator_payroll_items").select("*, operator_payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(30),
+      s.from("production_orders").select("*").eq("operator_worker_id", workerId).order("order_date", { ascending: false })
     ]);
+
+    if (ordersRes.error) throw new Error(ordersRes.error.message);
+    orders = ordersRes.data || [];
+
+    // TAHAP 3: Fetch order items berdasarkan orderIds
+    const orderIds = orders.map((o: any) => o.id);
+    if (orderIds.length > 0) {
+      const itemsRes = await s.from("production_order_items").select("*").in("order_id", orderIds);
+      if (itemsRes.error) throw new Error(itemsRes.error.message);
+      items = itemsRes.data || [];
+
+      // TAHAP 4: Fetch checks berdasarkan itemIds
+      const itemIds = items.map((i: any) => i.id);
+      if (itemIds.length > 0) {
+        const checksRes = await s.from("production_checks").select("*").eq("status", "AKTIF").in("order_item_id", itemIds);
+        if (checksRes.error) throw new Error(checksRes.error.message);
+        checks = checksRes.data || [];
+      }
+    }
 
     const rpcWorker = rpcProfRes.data && rpcProfRes.data.length > 0 ? rpcProfRes.data[0] : null;
     const directWorker = wRes.data || null;
