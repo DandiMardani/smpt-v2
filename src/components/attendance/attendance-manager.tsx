@@ -721,6 +721,9 @@ export default function AttendanceManager({
             const worker = rec.worker;
             const dayClass = rec.effectiveDayClass;
 
+            // CEK APAKAH PEKERJA INI TELAT
+            const isTelat = rec.notes && rec.notes.toLowerCase().includes("telat");
+
             return (
               <div
                 key={rec.id}
@@ -793,7 +796,7 @@ export default function AttendanceManager({
                         </span>
                         <span>•</span>
                         <span className="font-bold text-slate-700">
-                          Jam: <span className={rec.isHadir && rec.isMissingIn ? "text-rose-600 font-black" : ""}>{rec.actual_in || "--:--"}</span> s/d{" "}
+                          Jam: <span className={rec.isHadir && (rec.isMissingIn || isTelat) ? "text-rose-600 font-black" : ""}>{rec.actual_in || "--:--"}</span> s/d{" "}
                           <span className={rec.isHadir && rec.isMissingOut ? "text-rose-600 font-black" : ""}>{rec.actual_out || "--:--"}</span>
                         </span>
                         <span>•</span>
@@ -812,6 +815,14 @@ export default function AttendanceManager({
                           </span>
                         )}
                       </div>
+
+                      {/* HIGHLIGHT CATATAN TELAT DI TAMPILAN DEPAN */}
+                      {isTelat && (
+                        <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-orange-50 border border-orange-200 px-2 py-1 text-[11px] font-bold text-orange-800">
+                          <span>⚠️</span>
+                          <span>{rec.notes}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -972,7 +983,7 @@ export default function AttendanceManager({
                             onClick={() => handleDeleteSingle(rec.id, worker?.name || `Pekerja #${rec.worker_id}`, rec.attendance_date)}
                             className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-1.5 text-xs font-bold text-rose-800 hover:bg-rose-200 transition shadow-2xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                           >
-                            <span>🗑️️</span>
+                            <span>🗑</span>
                             <span>Hapus Data</span>
                           </button>
                         </div>
