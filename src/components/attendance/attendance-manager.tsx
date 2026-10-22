@@ -167,7 +167,6 @@ export default function AttendanceManager({
     });
   }, [records, workerMap, shiftSettings, payrollRuns]);
 
-  // Scope records mengikuti filter tanggal & tipe pekerja untuk perhitungan metrik
   const currentScopedRecords = useMemo(() => {
     return enrichedRecords.filter((r) => {
       if (dateFilter && r.attendance_date !== dateFilter) return false;
@@ -359,7 +358,6 @@ export default function AttendanceManager({
     <div className="space-y-4">
       {/* 1. KPI & Quick Filter Header */}
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-        {/* Total */}
         <div
           onClick={() => handleTabChange("ALL")}
           className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
@@ -374,7 +372,6 @@ export default function AttendanceManager({
           <p className="mt-1 text-xl sm:text-2xl font-black text-slate-900">{totalCount}</p>
         </div>
 
-        {/* Tab Filter Anomali / Jam Bolong */}
         <div
           onClick={() => handleTabChange("ANOMALI")}
           className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
@@ -399,7 +396,6 @@ export default function AttendanceManager({
           </div>
         </div>
 
-        {/* Draft */}
         <div
           onClick={() => handleTabChange("DRAFT")}
           className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
@@ -412,7 +408,6 @@ export default function AttendanceManager({
           <p className="mt-1 text-xl sm:text-2xl font-black text-amber-900">{draftCount}</p>
         </div>
 
-        {/* Terverifikasi */}
         <div
           onClick={() => handleTabChange("TERVERIFIKASI")}
           className={`cursor-pointer rounded-2xl border p-3 sm:p-3.5 transition shadow-2xs ${
@@ -465,7 +460,6 @@ export default function AttendanceManager({
               className="w-full sm:w-52 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition"
             />
 
-            {/* Quick Date Stepper (Per Hari) */}
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
                 type="button"
@@ -515,7 +509,6 @@ export default function AttendanceManager({
             )}
           </div>
 
-          {/* Filter Tipe Pekerja (Bulanan vs Harian) */}
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
             <button
               type="button"
@@ -556,7 +549,6 @@ export default function AttendanceManager({
           </div>
         </div>
 
-        {/* Tab Status Presensi */}
         <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl text-xs font-semibold overflow-x-auto no-scrollbar">
           <button
             type="button"
@@ -667,7 +659,6 @@ export default function AttendanceManager({
                 <option value="HALF_DAY" className="text-slate-900">HALF DAY</option>
               </select>
 
-              {/* Action Buttons */}
               {selectedIds.size > 0 ? (
                 <>
                   {selectedDrafts.length > 0 && (
@@ -721,8 +712,13 @@ export default function AttendanceManager({
             const worker = rec.worker;
             const dayClass = rec.effectiveDayClass;
 
-            // CEK APAKAH PEKERJA INI TELAT
             const isTelat = rec.notes && rec.notes.toLowerCase().includes("telat");
+
+            // LOGIKA PENANDA CUTOFF JUMAT
+            const d = new Date(rec.attendance_date + "T00:00:00Z");
+            const isJumat = d.getUTCDay() === 5;
+            const isHarian = worker?.pay_system !== "BULANAN";
+            const isCutoffLembur = isJumat && isHarian && calc.overtimeMinutes > 0;
 
             return (
               <div
@@ -738,7 +734,6 @@ export default function AttendanceManager({
                 }`}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  {/* Left: Checkbox + Worker Info + Date */}
                   <div className="flex items-start sm:items-center gap-3">
                     {canWrite && !rec.isPaid ? (
                       <input
@@ -772,7 +767,6 @@ export default function AttendanceManager({
                           </span>
                         ) : null}
 
-                        {/* Tag Khusus jika Jam Pulang Bolong */}
                         {rec.isHadir && rec.isMissingOut && !isVerified && !rec.isPaid && (
                           <span className="rounded-full bg-rose-100 border border-rose-300 px-2 py-0.5 text-[10px] font-black text-rose-800 animate-pulse">
                             ⚠️ Lupa Scan Pulang
@@ -816,7 +810,6 @@ export default function AttendanceManager({
                         )}
                       </div>
 
-                      {/* HIGHLIGHT CATATAN TELAT DI TAMPILAN DEPAN */}
                       {isTelat && (
                         <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-orange-50 border border-orange-200 px-2 py-1 text-[11px] font-bold text-orange-800">
                           <span>⚠️</span>
@@ -826,27 +819,32 @@ export default function AttendanceManager({
                     </div>
                   </div>
 
-                  {/* Right: Badges & Actions */}
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end border-t border-slate-100 pt-2 sm:border-t-0 sm:pt-0">
-                    {/* Sunday Indicator */}
                     {calc.isSunday ? (
                       <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
                         🌞 Minggu Masuk
                       </span>
                     ) : null}
 
-                    {/* Calculated Overtime Badge */}
+                    {/* BADGE LEMBUR DAN CUTOFF JUMAT */}
                     {calc.overtimeMinutes > 0 ? (
-                      <span className="rounded-full bg-blue-100 border border-blue-300 px-2.5 py-0.5 text-[11px] font-bold text-blue-900">
-                        ⚡ Lembur {formatMinutesToHours(calc.overtimeMinutes)}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded-full bg-blue-100 border border-blue-300 px-2.5 py-0.5 text-[11px] font-bold text-blue-900">
+                          ⚡ Lembur {formatMinutesToHours(calc.overtimeMinutes)}
+                        </span>
+                        
+                        {isCutoffLembur && (
+                          <span className="rounded-full bg-purple-100 border border-purple-300 px-2.5 py-0.5 text-[11px] font-black text-purple-900 animate-pulse shadow-sm">
+                            ⏭️ Cutoff (Slip Depan)
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
                         Tanpa Lembur
                       </span>
                     )}
 
-                    {/* Status Badge */}
                     {rec.isPaid ? (
                       <span className="rounded-full bg-slate-900 text-white px-2.5 py-0.5 text-[11px] font-black shadow-xs">
                         💳 SUDAH DIBAYAR ({rec.matchingPayrollRun?.payroll_code || "Payroll"})
@@ -865,7 +863,6 @@ export default function AttendanceManager({
                       </span>
                     )}
 
-                    {/* Toggle Edit Button & Delete Button */}
                     {canWrite && !rec.isPaid ? (
                       <div className="flex items-center gap-1.5">
                         <button
@@ -892,7 +889,6 @@ export default function AttendanceManager({
                   </div>
                 </div>
 
-                {/* Expanded Individual Verification & Edit Drawer */}
                 {expandedId === rec.id && canWrite ? (
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
