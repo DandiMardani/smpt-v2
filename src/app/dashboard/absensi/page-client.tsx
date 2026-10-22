@@ -206,11 +206,12 @@ function QuickManualAttendanceSheet({
         const schedInTotalMins = schedInH * 60 + schedInM;
 
         if (actualInTotalMins > schedInTotalMins) {
-          lateMinutes = actualInTotalMins - schedInTotalMins; // dalam menit
+          lateMinutes = actualInTotalMins - schedInTotalMins; 
           
           if (paySystem === "HARIAN") {
-            const dailyWage = w.daily_wage || 0;
-            const lateHours = lateMinutes / 60; // ubah ke desimal jam (misal 2 jam)
+            // PERBAIKAN TypeScript: Paksa daily_wage menjadi tipe Number yang absolut
+            const dailyWage = Number(w.daily_wage) || 0; 
+            const lateHours = lateMinutes / 60; 
             
             // Rumus: (gaji per hari / 8) * hasil per jam
             lateDeduction = Math.round((dailyWage / 8) * lateHours);
