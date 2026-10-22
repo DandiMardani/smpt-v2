@@ -51,6 +51,17 @@ export type SalaryBreakdown = {
   boronganItems?: BoronganItemDetail[];
 };
 
+export type OfficialMealSlipData = {
+  payrollCode: string;
+  periodStart: string;
+  periodEnd: string;
+  paymentStatus: "SUDAH DIBAYAR" | "BELUM DIBAYAR";
+  mealAmount: number;
+  fullDays: number;
+  halfDays: number;
+  notes?: string | null;
+};
+
 export type OfficialSlipData = {
   type: string;
   payrollCode: string;
@@ -109,6 +120,8 @@ export function WorkerFinancialSummary({
   estimatedGross,
   breakdown,
   officialSlip,
+  currentPeriod,
+  latestMealSlip,
 }: {
   worker: {
     id: number;
@@ -117,6 +130,8 @@ export function WorkerFinancialSummary({
     pay_system: string;
     department?: string | null;
     phone?: string | null;
+    monthly_salary?: number | string | null;
+    daily_wage?: number | string | null;
   };
   warungDebts: WarungItem[];
   companyLoans: LoanItem[];
@@ -125,6 +140,8 @@ export function WorkerFinancialSummary({
   estimatedGross: number;
   breakdown?: SalaryBreakdown;
   officialSlip?: OfficialSlipData | null;
+  currentPeriod?: { start: string; end: string };
+  latestMealSlip?: OfficialMealSlipData | null;
 }) {
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [showRulesInfo, setShowRulesInfo] = useState(false);
@@ -144,18 +161,27 @@ export function WorkerFinancialSummary({
     )
   );
 
-  // LOGIKA RESET OTOMATIS:
-  const hasOfficialSlip = Boolean(officialSlip);
-  const resetOldOvertime = isSlipPaid || hasOfficialSlip;
+  // LEMBUR REAL-TIME BERJALAN:
+  // - Mode Estimasi Berjalan (!isSlipPaid): Selalu hitung jam lembur aktual secara real-time dari absensi tanpa di-reset!
+  // - Mode Slip Resmi Lunas (isSlipPaid): Gunakan nilai lembur yang tercantum pada dokumen slip resmi.
+  const effectiveOtHours = isSlipPaid && officialSlip
+    ? (Number(officialSlip.overtimeMinutes || 0) / 60) + Number(officialSlip.manualOvertimeHours || 0)
+    : overtimeHours;
 
-  const effectiveOtHours = resetOldOvertime ? 0 : overtimeHours;
-  const effectiveOtWage = resetOldOvertime ? 0 : (breakdown?.overtimeWage || 0);
-  const effectiveBonus4h = resetOldOvertime ? 0 : (breakdown?.bonus4h || 0);
+  const effectiveOtWage = isSlipPaid && officialSlip
+    ? (Number(officialSlip.overtimeAmount || 0) + Number(officialSlip.manualOvertimeAmount || 0))
+    : (breakdown?.overtimeWage || 0);
+
+  const effectiveBonus4h = isSlipPaid && officialSlip
+    ? Number(officialSlip.overtimeBonus || 0)
+    : (breakdown?.bonus4h || 0);
 
   // Upah pokok standar
-  const baseSalary = Number(breakdown?.baseAmount || (isBulanan ? 3000000 : 0));
+  const baseSalary = Number(
+    breakdown?.baseAmount || (isBulanan ? Number(worker.monthly_salary || 3000000) : 0)
+  );
   
-  // Total bruto berjalan yang sudah di-reset
+  // Total bruto berjalan yang sudah diakumulasi real-time
   const liveGross = isBulanan 
     ? (baseSalary + effectiveOtWage + effectiveBonus4h)
     : (workedDays * (breakdown?.baseAmount || 0) + effectiveOtWage + effectiveBonus4h);
@@ -187,24 +213,41 @@ export function WorkerFinancialSummary({
     ? officialSlip.kasbonWarungAmount
     : totalWarung;
 
-  const getOfficialWhatsAppText = () => {
-    if (!officialSlip) return "";
-    const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
-    const otHrs = Math.round((totalOtMins / 60) * 10) / 10;
-    const totalOtAmt = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
+  // Tanggal Periode: gunakan slip resmi jika ada, atau gunakan periode kalender berjalan (tanggal 1 s/d akhir bulan untuk bulanan)
+  const periodStartDate = officialSlip?.periodStart || currentPeriod?.start;
+  const periodEndDate = officialSlip?.periodEnd || currentPeriod?.end;
 
-    return `*SLIP GAJI RESMI - CV. SMPT - Kreasi Dinamika*\n` +
-      `No. Dokumen: ${officialSlip.payrollCode}\n` +
-      `Status: ${officialSlip.paymentStatus}\n` +
-      `Periode: ${formatDateId(officialSlip.periodStart)} s/d ${formatDateId(officialSlip.periodEnd)}\n\n` +
+  const getWhatsAppText = () => {
+    if (officialSlip) {
+      const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
+      const otHrs = Math.round((totalOtMins / 60) * 10) / 10;
+      const totalOtAmt = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
+
+      return `*SLIP GAJI RESMI - CV. SMPT - Kreasi Dinamika*\n` +
+        `No. Dokumen: ${officialSlip.payrollCode}\n` +
+        `Status: ${officialSlip.paymentStatus}\n` +
+        `Periode: ${formatDateId(officialSlip.periodStart)} s/d ${formatDateId(officialSlip.periodEnd)}\n\n` +
+        `Nama Pekerja: ${worker.name} (${worker.worker_code})\n` +
+        `Sistem Upah: ${officialSlip.type}\n\n` +
+        `• Gaji Pokok: ${money(officialSlip.baseAmount || 0)}\n` +
+        `${totalOtAmt > 0 ? `• Lembur (${otHrs} Jam): ${money(totalOtAmt)}\n` : ""}` +
+        `• Pot. Kasbon Kantor: -${money(officialSlip.kasbonPerusahaanAmount || 0)}\n` +
+        `• Pot. Kasbon Warung: -${money(officialSlip.kasbonWarungAmount || 0)}\n` +
+        `---------------------------------------------\n` +
+        `*GAJI BERSIH (THP): ${money(officialSlip.netAmount)}*`;
+    }
+
+    return `*ESTIMASI GAJI BERJALAN - CV. SMPT*\n` +
+      `Periode: ${formatDateId(periodStartDate)} s/d ${formatDateId(periodEndDate)}\n\n` +
       `Nama Pekerja: ${worker.name} (${worker.worker_code})\n` +
-      `Sistem Upah: ${officialSlip.type}\n\n` +
-      `• Gaji Pokok: ${money(officialSlip.baseAmount || 0)}\n` +
-      `${totalOtAmt > 0 ? `• Lembur (${otHrs} Jam):${money(totalOtAmt)}\n` : ""}` +
-      `• Pot. Kasbon Kantor: -${money(officialSlip.kasbonPerusahaanAmount || 0)}\n` +
-      `• Pot. Kasbon Warung: -${money(officialSlip.kasbonWarungAmount || 0)}\n` +
+      `Sistem Upah: ${worker.pay_system}\n\n` +
+      `• ${isBulanan ? "Gaji Pokok Bulanan" : "Upah Kerja Pokok"}: ${money(baseSalary)}\n` +
+      `${effectiveOtWage > 0 ? `• Upah Lembur (${effectiveOtHours} Jam): +${money(effectiveOtWage)}\n` : ""}` +
+      `${effectiveBonus4h > 0 ? `• Bonus Lembur (>= 4 Jam): +${money(effectiveBonus4h)}\n` : ""}` +
+      `• Pot. Kasbon Kantor: -${money(displayedKasbonPerusahaan)}\n` +
+      `• Pot. Kasbon Warung: -${money(displayedKasbonWarung)}\n` +
       `---------------------------------------------\n` +
-      `*GAJI BERSIH (THP): ${money(officialSlip.netAmount)}*`;
+      `*ESTIMASI GAJI BERSIH (THP): ${money(displayedNet)}*`;
   };
 
   return (
@@ -243,47 +286,47 @@ export function WorkerFinancialSummary({
               <span><b>{worker.name}</b> ({worker.worker_code})</span>
               <span>•</span>
               <span>Sistem Upah: <b>{worker.pay_system}</b></span>
-              {officialSlip?.periodStart && (
+              {periodStartDate && periodEndDate && (
                 <>
                   <span>•</span>
-                  <span>📅 <b>Periode:</b> {formatDateId(officialSlip.periodStart)} s/d {formatDateId(officialSlip.periodEnd)}</span>
+                  <span>📅 <b>Periode:</b> {formatDateId(periodStartDate)} s/d {formatDateId(periodEndDate)}</span>
                 </>
               )}
             </p>
 
             <p className="text-[11px] text-blue-700 flex items-center gap-1 font-medium">
               <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
-              <span>Nilai berjalan real-time periode baru. Lembur periode yang sudah dibayar otomatis di-reset.</span>
+              <span>
+                {isSlipPaid
+                  ? "Slip resmi telah dibayar lunas sesuai ketetapan manajemen."
+                  : "Akumulasi berjalan real-time. Jam lembur terdata langsung masuk ke perkiraan upah tanpa menunggu jadwal payroll."}
+              </span>
             </p>
           </div>
 
           {/* Action Buttons Header */}
           <div className="flex flex-wrap items-center gap-2">
-            {officialSlip ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setShowSlipModal(true)}
-                  className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  📄 Lihat / Cetak Slip
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const text = getOfficialWhatsAppText();
-                    const phone = normalizePhone(worker.phone);
-                    const appUrl = phone
-                      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-                      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-                    window.open(appUrl, "_blank");
-                  }}
-                  className="rounded-xl border border-emerald-600 bg-white hover:bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 shadow-2xs transition inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  💬 Share WA
-                </button>
-              </>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setShowSlipModal(true)}
+              className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              📄 {officialSlip ? "Lihat / Cetak Slip" : "Lihat Slip Estimasi"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const text = getWhatsAppText();
+                const phone = normalizePhone(worker.phone);
+                const appUrl = phone
+                  ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+                  : `https://wa.me/?text=${encodeURIComponent(text)}`;
+                window.open(appUrl, "_blank");
+              }}
+              className="rounded-xl border border-emerald-600 bg-white hover:bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 shadow-2xs transition inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              💬 Share WA
+            </button>
 
             <button
               type="button"
@@ -318,6 +361,38 @@ export function WorkerFinancialSummary({
           </div>
         )}
 
+        {/* Seksi Uang Makan Staf Mingguan Terakhir (Khusus Karyawan Bulanan) */}
+        {isBulanan && latestMealSlip && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 shadow-2xs space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🍱</span>
+                <span className="text-xs font-bold text-amber-950">
+                  Uang Makan Staf Terakhir: <b className="font-mono text-amber-900">{latestMealSlip.payrollCode}</b>
+                </span>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black border ${
+                  latestMealSlip.paymentStatus === "SUDAH DIBAYAR"
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                    : "bg-amber-100 text-amber-800 border-amber-300"
+                }`}>
+                  {latestMealSlip.paymentStatus === "SUDAH DIBAYAR" ? "🟢 SUDAH DIBAYAR (LUNAS)" : "🟡 BELUM DIBAYAR"}
+                </span>
+              </div>
+              <span className="text-xs font-mono font-black text-amber-950">
+                {money(latestMealSlip.mealAmount)}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-between text-[11px] text-amber-900 gap-2">
+              <span>
+                📅 Periode Mingguan: <b>{formatDateId(latestMealSlip.periodStart)}</b> s/d <b>{formatDateId(latestMealSlip.periodEnd)}</b> ({latestMealSlip.fullDays} hari kerja)
+              </span>
+              <span className="text-amber-800 text-[10.5px]">
+                ℹ️ Uang makan staf dibayarkan terpisah per minggu, terpisah dari gaji pokok bulanan & lembur.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* 4 Kartu Metrik Keuangan Utama */}
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4 items-start">
           {/* Card 1: Upah Bruto */}
@@ -330,7 +405,7 @@ export function WorkerFinancialSummary({
               <div className="mt-1 text-[11px] text-gray-600">
                 {isBulanan
                   ? (effectiveOtHours > 0
-                      ? `Pokok (${money(baseSalary)}) + Lembur`
+                      ? `Pokok (${money(baseSalary)}) + Lembur (${effectiveOtHours} Jam)`
                       : "Gaji Pokok Bulanan Tetap")
                   : `${workedDays} Hari Kerja + ${effectiveOtHours} Jam Lembur`}
               </div>
@@ -560,13 +635,13 @@ export function WorkerFinancialSummary({
           </div>
         </div>
 
-        {/* Modal Cetak Slip Resmi */}
-        {showSlipModal && officialSlip && (
+        {/* Modal Cetak Slip Resmi / Estimasi */}
+        {showSlipModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs">
             <div className="relative w-full max-w-lg rounded-2xl bg-white p-5 sm:p-7 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
               <div className="flex items-start justify-between border-b border-slate-200 pb-3">
                 <h3 className="text-lg font-black text-slate-900">
-                  Slip Gaji Karyawan ({officialSlip.type})
+                  {officialSlip ? `Slip Gaji Karyawan (${officialSlip.type})` : `Pratinjau Estimasi Gaji (${worker.pay_system})`}
                 </h3>
                 <button
                   type="button"
@@ -584,43 +659,61 @@ export function WorkerFinancialSummary({
                       CV. SMPT - Kreasi Dinamika
                     </h2>
                     <p className="text-xs font-bold text-blue-700 uppercase tracking-wider mt-0.5">
-                      SLIP GAJI RESMI
+                      {officialSlip ? "SLIP GAJI RESMI" : "ESTIMASI GAJI BERJALAN"}
                     </p>
                   </div>
                   <div className="text-right text-xs">
-                    <div className="font-mono font-bold text-slate-800">{officialSlip.payrollCode}</div>
-                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase mt-1 bg-emerald-100 text-emerald-800">
-                      {officialSlip.paymentStatus}
+                    <div className="font-mono font-bold text-slate-800">
+                      {officialSlip ? officialSlip.payrollCode : "DRAFT-REALTIME"}
+                    </div>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase mt-1 ${
+                      isSlipPaid ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"
+                    }`}>
+                      {officialSlip ? officialSlip.paymentStatus : "BERJALAN"}
                     </span>
                   </div>
                 </div>
 
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between py-1 border-b border-dashed">
+                    <span className="text-slate-500">Periode</span>
+                    <span className="font-bold text-slate-800">
+                      {formatDateId(periodStartDate)} s/d {formatDateId(periodEndDate)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-dashed">
                     <span className="text-slate-500">Nama Penerima</span>
                     <span className="font-black text-slate-900">{worker.name} ({worker.worker_code})</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-dashed">
-                    <span className="text-slate-500">Gaji Pokok Bulanan</span>
-                    <span className="font-bold text-slate-800">{money(officialSlip.baseAmount || 0)}</span>
+                    <span className="text-slate-500">{isBulanan ? "Gaji Pokok Bulanan" : "Upah Kerja Pokok"}</span>
+                    <span className="font-bold text-slate-800">{money(baseSalary)}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-dashed">
-                    <span className="text-slate-500">Upah Lembur</span>
+                    <span className="text-slate-500">
+                      Upah Lembur {effectiveOtHours > 0 ? `(${effectiveOtHours} Jam)` : ""}
+                    </span>
                     <span className="font-bold text-slate-800">
-                      {money((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0))}
+                      {money(effectiveOtWage)}
                     </span>
                   </div>
+                  {effectiveBonus4h > 0 && (
+                    <div className="flex justify-between py-1 border-b border-dashed">
+                      <span className="text-slate-500">Bonus Lembur (≥ 4 Jam)</span>
+                      <span className="font-bold text-slate-800">{money(effectiveBonus4h)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
                     <span>Potongan Kasbon Kantor</span>
-                    <span className="font-bold">-{money(officialSlip.kasbonPerusahaanAmount || 0)}</span>
+                    <span className="font-bold">-{money(displayedKasbonPerusahaan)}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-dashed text-amber-600">
                     <span>Potongan Kasbon Warung</span>
-                    <span className="font-bold">-{money(officialSlip.kasbonWarungAmount || 0)}</span>
+                    <span className="font-bold">-{money(displayedKasbonWarung)}</span>
                   </div>
                   <div className="flex justify-between pt-2 text-sm font-black text-emerald-700 bg-emerald-50/60 p-2 rounded-xl">
                     <span>TOTAL GAJI BERSIH (THP)</span>
-                    <span>{money(officialSlip.netAmount)}</span>
+                    <span>{money(displayedNet)}</span>
                   </div>
                 </div>
 
@@ -633,7 +726,7 @@ export function WorkerFinancialSummary({
                   <div>
                     <p>Yang Mengajukan,</p>
                     <div className="h-10"></div>
-                    <p className="font-bold text-slate-900 underline">Dandi Mardani</p>
+                    <p className="font-bold text-slate-900 underline">{worker.name}</p>
                   </div>
                 </div>
               </div>

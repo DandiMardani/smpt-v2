@@ -2,14 +2,42 @@ import { Badge, Card, Empty, Flow, Metric, PageShell } from "@/components/final/
 import { requirePermission } from "@/lib/access/current-user";
 import { n, qty } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
-import { WorkerFinancialSummary, type OfficialSlipData } from "@/components/worker/worker-financial-summary";
+import { WorkerFinancialSummary, type OfficialSlipData, type OfficialMealSlipData } from "@/components/worker/worker-financial-summary";
 
-function getRunPaymentStatus(run?: { status?: string; config_snapshot?: any; notes?: string | null }): "SUDAH DIBAYAR" | "BELUM DIBAYAR" {
+function getRunPaymentStatus(
+  run?: { status?: string; config_snapshot?: any; notes?: string | null },
+  item?: { payment_status?: string | null }
+): "SUDAH DIBAYAR" | "BELUM DIBAYAR" {
+  // 1. Cek dari payment_status pada item snapshot
+  const itemStatus = String(item?.payment_status || "").toUpperCase();
+  if (itemStatus === "PAID" || itemStatus === "SUDAH_DIBAYAR" || itemStatus === "SUDAH DIBAYAR") {
+    return "SUDAH DIBAYAR";
+  }
+
   if (!run) return "BELUM DIBAYAR";
-  if (run.config_snapshot?.payment_status === "SUDAH_DIBAYAR") return "SUDAH DIBAYAR";
-  if (run.config_snapshot?.payment_status === "BELUM_DIBAYAR") return "BELUM DIBAYAR";
-  if (/\[STATUS:\s*SUDAH_DIBAYAR\]/i.test(run.notes || "")) return "SUDAH DIBAYAR";
-  if (/\[STATUS:\s*BELUM_DIBAYAR\]/i.test(run.notes || "")) return "BELUM DIBAYAR";
+
+  // 2. Cek dari config_snapshot atau status run
+  const snap = run.config_snapshot || {};
+  const snapStatus = String(snap.payment_status || "").toUpperCase();
+  const snapCode = String(snap.payment_status_code || "").toUpperCase();
+  const runStatus = String(run.status || "").toUpperCase();
+
+  if (
+    snapStatus === "SUDAH DIBAYAR" ||
+    snapStatus === "SUDAH_DIBAYAR" ||
+    snapCode === "SUDAH_DIBAYAR" ||
+    snapCode === "SUDAH DIBAYAR" ||
+    runStatus === "PAID" ||
+    runStatus === "SUDAH_DIBAYAR"
+  ) {
+    return "SUDAH DIBAYAR";
+  }
+
+  // 3. Cek dari notes run
+  if (String(run.notes || "").includes("SUDAH_DIBAYAR") || /SUDAH\s+DIBAYAR/i.test(run.notes || "")) {
+    return "SUDAH DIBAYAR";
+  }
+
   return "BELUM DIBAYAR";
 }
 
@@ -18,7 +46,12 @@ export default async function Page() {
   const s = await createClient();
 
   const now = new Date();
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const currYear = now.getFullYear();
+  const currMonth = now.getMonth();
+  const firstDayOfMonth = `${currYear}-${String(currMonth + 1).padStart(2, "0")}-01`;
+  const lastDate = new Date(currYear, currMonth + 1, 0).getDate();
+  const lastDayOfMonth = `${currYear}-${String(currMonth + 1).padStart(2, "0")}-${String(lastDate).padStart(2, "0")}`;
+  const currentPeriod = { start: firstDayOfMonth, end: lastDayOfMonth };
 
   // TAHAP 1: Fetch Worker ID & Settings terlebih dahulu
   const [wr, setRes] = await Promise.all([
@@ -44,6 +77,7 @@ export default async function Page() {
   let estimatedGross = 0;
   let breakdown: any = undefined;
   let officialSlip: OfficialSlipData | null = null;
+  let latestMealSlip: OfficialMealSlipData | null = null; 
 
   let orders: any[] = [];
   let items: any[] = [];
@@ -55,8 +89,8 @@ export default async function Page() {
       s.rpc("smpt_get_my_worker_profile"),
       s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department,phone").eq("id", workerId).maybeSingle(),
       s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
-      s.from("attendance_records").select("id,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth),
-      s.from("payroll_run_items").select("*, payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(1),
+      s.from("attendance_records").select("id,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth).lte("attendance_date", lastDayOfMonth),
+      s.from("payroll_run_items").select("*, payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(10),
       s.from("operator_payroll_items").select("*, operator_payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(30),
       s.from("production_orders").select("*").eq("operator_worker_id", workerId).order("order_date", { ascending: false })
     ]);
@@ -105,6 +139,7 @@ export default async function Page() {
     let sundayCount = 0;
 
     for (const a of attList) {
+      if (a.verification_status === "DITOLAK") continue;
       if (a.attendance_status === "HADIR") {
         if (a.day_class === "FULL_DAY") fullDays += 1;
         else if (a.day_class === "HALF_DAY") halfDays += 1;
@@ -225,7 +260,40 @@ export default async function Page() {
         };
       }
 
-      // Ambil Slip Gaji Resmi Terakhir
+      // Ambil Slip Gaji Resmi Terakhir Sesuai Sistem Penggajian
+      let officialSlipItem: any = null;
+      let latestWeeklyMealItem: any = null;
+      latestMealSlip = null;
+
+      if (workerData.pay_system === "BULANAN") {
+        // Staf Bulanan: Slip resmi bulanan hanya berasal dari payroll khusus tipe BULANAN
+        officialSlipItem = (pSlipRes.data ?? []).find(
+          (it: any) => it.payroll_runs?.payroll_type === "BULANAN"
+        ) || null;
+
+        // Ambil riwayat slip uang makan mingguan staf terakhir jika ada
+        latestWeeklyMealItem = (pSlipRes.data ?? []).find(
+          (it: any) => it.payroll_runs?.payroll_type === "MINGGUAN"
+        ) || null;
+      } else {
+        // Pekerja Harian: Menggunakan slip payroll run mingguan terakhir
+        officialSlipItem = pSlipRes.data && pSlipRes.data[0] ? pSlipRes.data[0] : null;
+      }
+
+      if (latestWeeklyMealItem) {
+        const mRun = latestWeeklyMealItem.payroll_runs;
+        latestMealSlip = {
+          payrollCode: mRun?.payroll_code || `PAY-${String(latestWeeklyMealItem.payroll_run_id).padStart(6, "0")}`,
+          periodStart: mRun?.period_start || "",
+          periodEnd: mRun?.period_end || "",
+          paymentStatus: getRunPaymentStatus(mRun, latestWeeklyMealItem),
+          mealAmount: n(latestWeeklyMealItem.meal_amount),
+          fullDays: Number(latestWeeklyMealItem.full_days || 0),
+          halfDays: Number(latestWeeklyMealItem.half_days || 0),
+          notes: mRun?.notes,
+        };
+      }
+
       if (workerData.pay_system === "BORONGAN" && opSlipRes.data && opSlipRes.data.length > 0) {
         const latestRunId = opSlipRes.data[0].run_id;
         const latestRun = opSlipRes.data[0].operator_payroll_runs;
@@ -252,8 +320,8 @@ export default async function Page() {
             operatorValue: Number(it.operator_value || 0),
           })),
         };
-      } else if (pSlipRes.data && pSlipRes.data[0]) {
-        const it = pSlipRes.data[0];
+      } else if (officialSlipItem) {
+        const it = officialSlipItem;
         const run = it.payroll_runs;
         const gr = n(it.base_amount) + n(it.meal_amount) + n(it.overtime_amount) + n(it.manual_overtime_amount) + n(it.overtime_bonus) + n(it.holiday_bonus);
 
@@ -284,7 +352,7 @@ export default async function Page() {
           payrollCode: run?.payroll_code || `PAY-${String(it.payroll_run_id).padStart(6, "0")}`,
           periodStart: run?.period_start || "",
           periodEnd: run?.period_end || "",
-          paymentStatus: getRunPaymentStatus(run),
+          paymentStatus: getRunPaymentStatus(run, it),
           baseAmount: (workerData.pay_system === "BULANAN" && n(it.base_amount) === 0) ? n(workerData.monthly_salary) : n(it.base_amount),
           fullDays: Number(it.full_days || 0),
           halfDays: Number(it.half_days || 0),
@@ -401,6 +469,8 @@ export default async function Page() {
           estimatedGross={estimatedGross}
           breakdown={breakdown}
           officialSlip={officialSlip}
+          currentPeriod={currentPeriod}
+          latestMealSlip={latestMealSlip}
         />
       ) : (
         <Card title="Status Akun Pekerja">
