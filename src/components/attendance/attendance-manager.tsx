@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, useEffect } from "react";
 import {
   calculateShiftOvertime,
   formatMinutesToHours,
@@ -8,6 +8,7 @@ import {
   type ShiftOvertimeResult,
 } from "@/lib/attendance/overtime-calculator";
 import {
+  addBulkAttendanceAction,
   verifyAttendanceAction,
   verifyBulkAttendanceAction,
   unverifyAttendanceAction,
@@ -113,6 +114,10 @@ export default function AttendanceManager({
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // STATE UNTUK MODAL LEMBUR JUMAT
+  const [showJumatModal, setShowJumatModal] = useState(false);
+  const [jumatOutTimes, setJumatOutTimes] = useState<Record<number, string>>({});
+
   const workerMap = useMemo(() => {
     return new Map(workers.map((w) => [w.id, w]));
   }, [workers]);
@@ -167,6 +172,31 @@ export default function AttendanceManager({
     });
   }, [records, workerMap, shiftSettings, payrollRuns]);
 
+  // LOGIKA PENCARIAN HARI JUMAT TERAKHIR
+  const latestJumatDate = useMemo(() => {
+    const dates = [...new Set(records.map(r => r.attendance_date))].sort((a,b) => b.localeCompare(a));
+    for (const d of dates) {
+      if (new Date(d + "T00:00:00Z").getUTCDay() === 5) return d;
+    }
+    return null;
+  }, [records]);
+
+  const jumatWorkers = useMemo(() => {
+    if (!latestJumatDate) return [];
+    return enrichedRecords.filter(r => r.attendance_date === latestJumatDate && r.isHadir && r.paySystem !== "BULANAN");
+  }, [enrichedRecords, latestJumatDate]);
+
+  // SET DEFAULT JAM PULANG SAAT MODAL DIBUKA
+  useEffect(() => {
+    if (showJumatModal && jumatWorkers.length > 0) {
+      const initialTimes: Record<number, string> = {};
+      jumatWorkers.forEach(w => {
+        initialTimes[w.id] = w.actual_out || "17:00";
+      });
+      setJumatOutTimes(initialTimes);
+    }
+  }, [showJumatModal, jumatWorkers]);
+
   const currentScopedRecords = useMemo(() => {
     return enrichedRecords.filter((r) => {
       if (dateFilter && r.attendance_date !== dateFilter) return false;
@@ -177,12 +207,7 @@ export default function AttendanceManager({
 
   const totalCount = currentScopedRecords.length;
   const draftCount = currentScopedRecords.filter(
-    (r) =>
-      !r.isPaid &&
-      r.verification_status !== "TERVERIFIKASI" &&
-      r.isHadir &&
-      !r.isMissingIn &&
-      !r.isMissingOut
+    (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn && !r.isMissingOut
   ).length;
   const anomalyCount = currentScopedRecords.filter(
     (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isAnomaly
@@ -215,38 +240,25 @@ export default function AttendanceManager({
       if (statusFilter === "NON_HADIR") {
         if (rec.isHadir) return false;
       }
-      if (dateFilter && rec.attendance_date !== dateFilter) {
-        return false;
-      }
-      if (payTypeFilter !== "ALL" && rec.paySystem !== payTypeFilter) {
-        return false;
-      }
+      if (dateFilter && rec.attendance_date !== dateFilter) return false;
+      if (payTypeFilter !== "ALL" && rec.paySystem !== payTypeFilter) return false;
+      
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const wName = rec.worker?.name?.toLowerCase() || "";
         const wCode = rec.worker?.worker_code?.toLowerCase() || "";
         const fId = rec.worker?.finger_id?.toLowerCase() || "";
         const attCode = (rec.attendance_code ?? "").toLowerCase();
-        if (!wName.includes(q) && !wCode.includes(q) && !fId.includes(q) && !attCode.includes(q)) {
-          return false;
-        }
+        if (!wName.includes(q) && !wCode.includes(q) && !fId.includes(q) && !attCode.includes(q)) return false;
       }
       return true;
     });
   }, [enrichedRecords, statusFilter, dateFilter, payTypeFilter, searchQuery]);
 
   const selectableRecords = filteredRecords.filter((r) => !r.isPaid);
-  const isAllSelected =
-    selectableRecords.length > 0 &&
-    selectableRecords.every((r) => selectedIds.has(r.id));
-
-  const selectedDrafts = filteredRecords.filter(
-    (r) => selectedIds.has(r.id) && !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
-  );
-
-  const allDraftsInFilter = filteredRecords.filter(
-    (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
-  );
+  const isAllSelected = selectableRecords.length > 0 && selectableRecords.every((r) => selectedIds.has(r.id));
+  const selectedDrafts = filteredRecords.filter((r) => selectedIds.has(r.id) && !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn);
+  const allDraftsInFilter = filteredRecords.filter((r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn);
 
   function handleTabChange(tab: AttendanceStatusFilter) {
     setStatusFilter(tab);
@@ -273,18 +285,13 @@ export default function AttendanceManager({
 
   function handleToggleRow(id: number) {
     const next = new Set(selectedIds);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     setSelectedIds(next);
   }
 
   function handleDeleteSingle(id: number, workerName: string, date: string) {
-    if (!window.confirm(`Yakin ingin menghapus data absensi ${workerName} tanggal ${date}?`)) {
-      return;
-    }
+    if (!window.confirm(`Yakin ingin menghapus data absensi ${workerName} tanggal ${date}?`)) return;
     const fd = new FormData();
     fd.append("attendance_id", String(id));
     startTransition(async () => {
@@ -299,9 +306,7 @@ export default function AttendanceManager({
 
   function handleBulkDelete() {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`Yakin ingin menghapus ${selectedIds.size} data absensi yang dipilih?`)) {
-      return;
-    }
+    if (!window.confirm(`Yakin ingin menghapus ${selectedIds.size} data absensi yang dipilih?`)) return;
     const fd = new FormData();
     fd.append("attendance_ids", Array.from(selectedIds).join(","));
     startTransition(async () => {
@@ -315,17 +320,10 @@ export default function AttendanceManager({
     const items = selectedDrafts.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
       const assignedDayClass = row.isHalfDay ? "HALF_DAY" : (row.day_class || defaultDayClass);
-      return {
-        id: row.id,
-        day_class: assignedDayClass,
-        overtime_minutes: ot,
-        notes: row.notes || undefined,
-      };
+      return { id: row.id, day_class: assignedDayClass, overtime_minutes: ot, notes: row.notes || undefined };
     });
-
     const fd = new FormData();
     fd.append("items", JSON.stringify(items));
-
     startTransition(async () => {
       await verifyBulkAttendanceAction(fd);
       setSelectedIds(new Set());
@@ -337,25 +335,160 @@ export default function AttendanceManager({
     const items = allDraftsInFilter.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
       const assignedDayClass = row.isHalfDay ? "HALF_DAY" : (row.day_class || defaultDayClass);
-      return {
-        id: row.id,
-        day_class: assignedDayClass,
-        overtime_minutes: ot,
-        notes: row.notes || undefined,
-      };
+      return { id: row.id, day_class: assignedDayClass, overtime_minutes: ot, notes: row.notes || undefined };
     });
-
     const fd = new FormData();
     fd.append("items", JSON.stringify(items));
-
     startTransition(async () => {
       await verifyBulkAttendanceAction(fd);
       setSelectedIds(new Set());
     });
   }
 
+  // FUNGSI SAKTI PENYIMPAN LEMBUR JUMAT MALAM
+  function handleSaveJumatLembur() {
+    const itemsToAdd: any[] = [];
+    const itemsToVerify: any[] = [];
+
+    for (const rec of jumatWorkers) {
+      let outTime = jumatOutTimes[rec.id];
+      if (!outTime) outTime = "17:00";
+      if (outTime === rec.actual_out) continue; // Skip jika tidak ada perubahan jam pulang
+
+      const newCalc = calculateShiftOvertime(
+        rec.attendance_date,
+        rec.actual_in,
+        outTime,
+        rec.paySystem,
+        null,
+        shiftSettings
+      );
+
+      let newNotes = rec.notes || "";
+      if (newCalc.overtimeMinutes > 0 && !newNotes.includes("Lembur Jumat")) {
+        newNotes = newNotes ? `${newNotes} | Titipan Lembur Jumat: ${newCalc.overtimeHours} Jam` : `Titipan Lembur Jumat: ${newCalc.overtimeHours} Jam`;
+      }
+
+      itemsToAdd.push({
+        worker_id: rec.worker_id,
+        attendance_date: rec.attendance_date,
+        schedule_in: rec.schedule_in,
+        schedule_out: rec.schedule_out,
+        actual_in: rec.actual_in,
+        actual_out: outTime,
+        day_class: rec.day_class,
+        attendance_status: rec.attendance_status,
+        overtime_minutes: newCalc.overtimeMinutes,
+        source: "MANUAL",
+        notes: newNotes,
+        verification_status: "TERVERIFIKASI"
+      });
+
+      itemsToVerify.push({
+        id: rec.id,
+        day_class: rec.day_class || "FULL_DAY",
+        overtime_minutes: newCalc.overtimeMinutes,
+        notes: newNotes
+      });
+    }
+
+    if (itemsToAdd.length === 0) {
+      alert("Tidak ada jam lembur baru yang diinput.");
+      setShowJumatModal(false);
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const fdAdd = new FormData();
+        fdAdd.append("items", JSON.stringify(itemsToAdd));
+        await addBulkAttendanceAction(fdAdd);
+
+        const fdVerify = new FormData();
+        fdVerify.append("items", JSON.stringify(itemsToVerify));
+        await verifyBulkAttendanceAction(fdVerify);
+
+        setShowJumatModal(false);
+      } catch (e: any) {
+        if (!e.message?.includes("NEXT_REDIRECT")) {
+          alert("Gagal menyimpan lembur: " + e.message);
+        }
+      }
+    });
+  }
+
   return (
     <div className="space-y-4">
+
+      {/* POPUP MODAL LEMBUR JUMAT */}
+      {showJumatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-all">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl ring-4 ring-purple-500/30">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-3">
+              <div>
+                <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <span>🌙</span> Input Lembur Jumat ({latestJumatDate})
+                </h2>
+                <p className="text-[11px] text-slate-500 font-medium mt-1">Ubah jam pulang menjadi malam (misal 21:00) untuk memicu perhitungan lembur otomatis. Data gaji pokok siang tidak akan terganggu.</p>
+              </div>
+              <button onClick={() => setShowJumatModal(false)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 text-slate-500 font-bold transition cursor-pointer">✕</button>
+            </div>
+            
+            <div className="overflow-y-auto pr-2 space-y-2 flex-1">
+              {jumatWorkers.map(w => {
+                const currentOut = jumatOutTimes[w.id] ?? (w.actual_out || "");
+                const isChanged = currentOut !== w.actual_out;
+                
+                const tempCalc = calculateShiftOvertime(
+                  w.attendance_date,
+                  w.actual_in,
+                  currentOut,
+                  w.paySystem,
+                  null,
+                  shiftSettings
+                );
+
+                return (
+                  <div key={w.id} className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 border rounded-xl gap-3 transition-colors ${isChanged ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-200'}`}>
+                    <div>
+                      <p className="font-extrabold text-slate-900">{w.worker?.name}</p>
+                      <p className="text-[10px] text-slate-500 font-medium">Jam Masuk: <b className="text-slate-700">{w.actual_in || "--:--"}</b></p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-end">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Jam Pulang / Lembur</label>
+                        <input 
+                          type="time" 
+                          value={currentOut} 
+                          onChange={(e) => setJumatOutTimes(prev => ({...prev, [w.id]: e.target.value}))} 
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+                      <div className="w-24 text-right">
+                        {tempCalc.overtimeMinutes > 0 ? (
+                          <span className="inline-block rounded-md bg-purple-100 px-2 py-1 text-[10px] font-black text-purple-800">
+                            ⚡ {tempCalc.overtimeHours} Jam
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium">0 Jam</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="border-t border-slate-200 pt-3 mt-3 flex justify-end gap-2">
+              <button disabled={isPending} onClick={() => setShowJumatModal(false)} className="rounded-xl px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer text-sm">Batal</button>
+              <button disabled={isPending} onClick={handleSaveJumatLembur} className="rounded-xl bg-purple-600 hover:bg-purple-700 px-6 py-2 font-black text-white shadow-md transition disabled:opacity-50 cursor-pointer text-sm flex items-center gap-2">
+                {isPending ? "Menyimpan..." : "💾 Simpan & Rekap Lembur"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. KPI & Quick Filter Header */}
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
         <div
@@ -420,6 +553,29 @@ export default function AttendanceManager({
           <p className="mt-1 text-xl sm:text-2xl font-black text-emerald-900">{verifiedCount}</p>
         </div>
       </div>
+
+      {/* BANNER KHUSUS REKAP LEMBUR JUMAT MALAM (MUNCUL OTOMATIS) */}
+      {canWrite && latestJumatDate && jumatWorkers.length > 0 && (
+        <div className="rounded-2xl border-2 border-purple-300 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-100 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
+          <div className="absolute -right-4 -top-6 text-7xl opacity-10">🌙</div>
+          <div className="space-y-1 z-10">
+            <div className="font-black text-purple-900 flex items-center gap-1.5 text-sm">
+              <span>🌙</span>
+              <span>Rekap Lembur Jumat Malam (Susulan)</span>
+            </div>
+            <p className="text-purple-700 text-[11px] font-medium leading-relaxed max-w-xl">
+              Input jam pulang pekerja harian yang lembur di hari Jumat ({latestJumatDate}). Data ini aman dan <b>tidak akan merusak</b> Finalisasi Payroll (Gaji Siang) yang sudah terkunci.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowJumatModal(true)}
+            className="shrink-0 w-full sm:w-auto rounded-xl bg-purple-600 hover:bg-purple-700 px-5 py-2.5 font-black text-white shadow-md transition active:scale-95 text-xs flex items-center justify-center gap-2 cursor-pointer z-10 ring-2 ring-purple-300 ring-offset-1"
+          >
+            <span>📝</span>
+            <span>Input Lembur Jumat</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. Banner Solusi Cepat Jam Bolong */}
       {canWrite && anomalyCount > 0 && (
@@ -828,7 +984,7 @@ export default function AttendanceManager({
 
                     {/* BADGE LEMBUR DAN CUTOFF JUMAT */}
                     {calc.overtimeMinutes > 0 ? (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1 sm:mt-0">
                         <span className="rounded-full bg-blue-100 border border-blue-300 px-2.5 py-0.5 text-[11px] font-bold text-blue-900">
                           ⚡ Lembur {formatMinutesToHours(calc.overtimeMinutes)}
                         </span>
