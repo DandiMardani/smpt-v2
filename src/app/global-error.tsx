@@ -13,6 +13,24 @@ export default function GlobalError({
     console.error("[SMPT Root Global Error Caught]:", error);
   }, [error]);
 
+  // Fungsi Sapu Jagat: Hapus Cache PWA & Reload
+  const handleHardReset = async () => {
+    if (typeof window !== "undefined" && "caches" in window) {
+      try {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((name) => caches.delete(name)));
+      } catch (err) {
+        console.error("Gagal menghapus cache:", err);
+      }
+    }
+    
+    // Hapus juga catatan versi biar trigger download ulang dari server
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("smpt_app_version");
+      window.location.reload();
+    }
+  };
+
   return (
     <html lang="id">
       <body
@@ -77,7 +95,7 @@ export default function GlobalError({
               color: "#64748b",
             }}
           >
-            Aplikasi mengalami kendala fatal di tingkat root sistem. Silakan muat ulang atau coba lagi.
+            Aplikasi mengalami kendala fatal di tingkat root sistem. Silakan bersihkan cache atau coba lagi.
           </p>
 
           {error?.message && (
@@ -120,6 +138,24 @@ export default function GlobalError({
                 padding: "10px 18px",
                 fontSize: "12px",
                 fontWeight: 700,
+                color: "#334155",
+                backgroundColor: "#ffffff",
+                border: "1px solid #cbd5e1",
+                borderRadius: "10px",
+                outline: "none",
+              }}
+            >
+              🔄 Coba Lagi
+            </button>
+
+            <button
+              type="button"
+              onClick={handleHardReset}
+              style={{
+                cursor: "pointer",
+                padding: "10px 18px",
+                fontSize: "12px",
+                fontWeight: 700,
                 color: "#ffffff",
                 backgroundColor: "#2563eb",
                 border: "none",
@@ -127,8 +163,9 @@ export default function GlobalError({
                 outline: "none",
               }}
             >
-              🔄 Coba Lagi
+              🧹 Bersihkan Cache & Muat Ulang
             </button>
+
             <button
               type="button"
               onClick={() => {
