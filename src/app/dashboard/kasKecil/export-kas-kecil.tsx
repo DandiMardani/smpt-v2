@@ -33,32 +33,32 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       return;
     }
 
-    // Urutkan dari tanggal terlama ke terbaru agar hitungan saldo berjalan akurat
+    // Urutkan dari tanggal terlama ke terbaru
     const sortedData = [...filtered].sort(
       (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
     );
 
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Laporan Kas Kecil");
+    const sheet = workbook.addWorksheet("FORM KAS KECIL");
 
     // Mengatur Lebar Kolom
     sheet.columns = [
-      { key: "tanggal", width: 30 },
-      { key: "keterangan", width: 40 },
-      { key: "debet", width: 22 },
-      { key: "kredit", width: 22 },
+      { key: "tanggal", width: 28 },
+      { key: "keterangan", width: 38 },
+      { key: "debet", width: 20 },
+      { key: "kredit", width: 20 },
       { key: "saldo", width: 22 },
     ];
 
-    // Judul Laporan (Merge cell)
-    sheet.mergeCells("A1:E1");
-    const titleCell = sheet.getCell("A1");
+    // Judul Laporan
+    sheet.mergeCells("B2:E2");
+    const titleCell = sheet.getCell("B2");
     titleCell.value = "LAPORAN KAS KECIL BUARAN";
-    titleCell.font = { bold: true, size: 16 };
+    titleCell.font = { bold: true, size: 14 };
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
 
     // Header Tabel
-    const headerRow = sheet.getRow(3);
+    const headerRow = sheet.getRow(4);
     headerRow.values = ["TANGGAL", "KETERANGAN", "DEBET / MASUK", "KREDIT/KELUAR", "SALDO"];
     headerRow.font = { bold: true };
     headerRow.alignment = { horizontal: "center", vertical: "middle" };
@@ -75,13 +75,12 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       cell.border = borderStyle;
     });
 
-    // Isi Data Laporan
     let runningBalance = 0;
     let totalDebet = 0;
     let totalKredit = 0;
-    let currentRow = 4;
+    let currentRow = 5;
+    let lastDate = "";
 
-    // Format Mata Uang Rupiah Akuntansi Excel
     const currencyFormat = '_("Rp"* #,##0.00_);_("Rp"* -#,##0.00_);_("Rp"* "-"??_);_(@_)';
 
     sortedData.forEach((item) => {
@@ -93,7 +92,6 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       totalDebet += debet;
       totalKredit += kredit;
 
-      // Format Tanggal (Contoh: Friday, October 2, 2026)
       const dateObj = new Date(item.transaction_date);
       const formattedDate = dateObj.toLocaleDateString("en-US", {
         weekday: "long",
@@ -102,16 +100,19 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
         day: "numeric",
       });
 
+      // Jangan tampilkan tanggal jika sama dengan baris sebelumnya (Biar rapi kayak contoh)
+      const displayDate = formattedDate === lastDate ? "" : formattedDate;
+      lastDate = formattedDate;
+
       const row = sheet.getRow(currentRow);
       row.values = [
-        formattedDate,
+        displayDate,
         item.description || item.category,
-        debet || null, // Pakai null agar cell kosong jika 0
+        debet || null,
         kredit || null,
         runningBalance,
       ];
 
-      // Terapkan Border dan Format Mata Uang
       row.eachCell((cell, colNumber) => {
         cell.border = borderStyle;
         if (colNumber === 1) cell.alignment = { horizontal: "center" };
@@ -121,10 +122,9 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       currentRow++;
     });
 
-    // Spasi sebelum baris Total
-    currentRow++;
+    currentRow += 1; // Spasi sebelum total
 
-    // Baris Total Bawah
+    // Baris Total
     const totalRow = sheet.getRow(currentRow);
     totalRow.values = ["Total", "", totalDebet, totalKredit, runningBalance];
     totalRow.font = { bold: true };
@@ -135,7 +135,6 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       if (colNumber >= 3) cell.numFmt = currencyFormat;
     });
 
-    // Proses Download File Excel
     const buffer = await workbook.xlsx.writeBuffer();
     const label = startDate || endDate ? `_${startDate}_sd_${endDate}` : "_Semua";
     saveAs(new Blob([buffer]), `Laporan_Kas_Kecil${label}.xlsx`);
