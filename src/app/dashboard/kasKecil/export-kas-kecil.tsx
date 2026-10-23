@@ -33,7 +33,19 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       return;
     }
 
-    // Urutkan dari tanggal terlama ke terbaru
+    // 1. HITUNG SALDO AWAL (Dari semua transaksi SEBELUM startDate)
+    let saldoAwal = 0;
+    if (startDate) {
+      const pastData = data.filter((item) => item.transaction_date < startDate);
+      pastData.forEach((item) => {
+        const isMasuk = item.direction.toUpperCase() === "MASUK";
+        const d = isMasuk ? Number(item.amount || 0) : 0;
+        const k = !isMasuk ? Number(item.amount || 0) : 0;
+        saldoAwal += d - k;
+      });
+    }
+
+    // 2. Urutkan data yang tampil dari terlama ke terbaru
     const sortedData = [...filtered].sort(
       (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
     );
@@ -63,7 +75,6 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
     headerRow.font = { bold: true };
     headerRow.alignment = { horizontal: "center", vertical: "middle" };
 
-    // Style Border
     const borderStyle: Partial<ExcelJS.Borders> = {
       top: { style: "thin" },
       left: { style: "thin" },
@@ -75,14 +86,46 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       cell.border = borderStyle;
     });
 
-    let runningBalance = 0;
+    const currencyFormat = '_("Rp"* #,##0.00_);_("Rp"* -#,##0.00_);_("Rp"* "-"??_);_(@_)';
+
+    let runningBalance = saldoAwal; // Saldo berjalan dimulai dari Saldo Awal
     let totalDebet = 0;
     let totalKredit = 0;
     let currentRow = 5;
     let lastDate = "";
 
-    const currencyFormat = '_("Rp"* #,##0.00_);_("Rp"* -#,##0.00_);_("Rp"* "-"??_);_(@_)';
+    // 3. CETAK BARIS SALDO AWAL JIKA ADA FILTER TANGGAL
+    if (startDate) {
+      const row = sheet.getRow(currentRow);
+      
+      const dateObj = new Date(startDate);
+      dateObj.setDate(dateObj.getDate() - 1);
+      const formattedPastDate = dateObj.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
 
+      row.values = [
+        formattedPastDate,
+        "SALDO AWAL (Bawaan Sebelumnya)",
+        null,
+        null,
+        runningBalance,
+      ];
+
+      row.eachCell((cell, colNumber) => {
+        cell.border = borderStyle;
+        if (colNumber === 1) cell.alignment = { horizontal: "center" };
+        if (colNumber >= 3) cell.numFmt = currencyFormat;
+      });
+      
+      row.font = { bold: true, italic: true };
+      currentRow++;
+    }
+
+    // 4. CETAK DATA TRANSAKSI
     sortedData.forEach((item) => {
       const isMasuk = item.direction.toUpperCase() === "MASUK";
       const debet = isMasuk ? Number(item.amount || 0) : 0;
@@ -100,7 +143,6 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
         day: "numeric",
       });
 
-      // Jangan tampilkan tanggal jika sama dengan baris sebelumnya (Biar rapi kayak contoh)
       const displayDate = formattedDate === lastDate ? "" : formattedDate;
       lastDate = formattedDate;
 
@@ -122,9 +164,9 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       currentRow++;
     });
 
-    currentRow += 1; // Spasi sebelum total
+    currentRow += 1; // Spasi sebelum baris total
 
-    // Baris Total
+    // 5. BARIS TOTAL
     const totalRow = sheet.getRow(currentRow);
     totalRow.values = ["Total", "", totalDebet, totalKredit, runningBalance];
     totalRow.font = { bold: true };
