@@ -18,7 +18,7 @@ import PayrollSettingsModal, { type PayrollSettingsMap } from "@/components/payr
 import PayrollFinalizeForm from "@/components/payroll/payroll-finalize-form";
 import PayrollViewTabs from "@/components/payroll/payroll-view-tabs";
 import { requireAnyPermission } from "@/lib/access/current-user";
-import { finalizeOperatorPayrollAction } from "@/lib/final/actions";
+import { finalizeOperatorPayrollAction, deletePayrollRunAction } from "@/lib/final/actions";
 import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
@@ -979,20 +979,50 @@ export default async function Page({ searchParams }: Props) {
         historyNode={
           <div className="space-y-4">
             <Card title="Riwayat Finalisasi Payroll Umum">
-              <TableWrap>
-                <thead><tr><Th>Kode</Th><Th>Jenis</Th><Th>Periode</Th><Th>Bruto</Th><Th>Potongan</Th><Th>Net</Th></tr></thead>
-                <tbody>{payrollRuns.map((item) => <tr key={item.id}><Td>{item.payroll_code}</Td><Td>{item.payroll_type}</Td><Td>{item.period_start}—{item.period_end}</Td><Td>{money(item.total_gross)}</Td><Td>{money(item.total_deduction)}</Td><Td>{money(item.total_net)}</Td></tr>)}</tbody>
-              </TableWrap>
-            </Card>
-
-            <Card title="Payroll Operator / Pengajuan">
-              {operatorRuns.length === 0 ? <Empty>Belum ada finalisasi Payroll Operator.</Empty> : (
-                <TableWrap>
-                  <thead><tr><Th>Kode</Th><Th>Periode</Th><Th>Status</Th><Th>Nilai Operator</Th><Th>Nilai Pengajuan</Th></tr></thead>
-                  <tbody>{operatorRuns.map((item) => <tr key={item.id}><Td>{item.payroll_code}</Td><Td>{item.period_start}—{item.period_end}</Td><Td><Badge>{item.status}</Badge></Td><Td>{money(item.total_operator_value)}</Td><Td>{money(item.total_submission_value)}</Td></tr>)}</tbody>
-                </TableWrap>
-              )}
-            </Card>
+  <TableWrap>
+    <thead>
+      <tr>
+        <Th>Kode</Th>
+        <Th>Jenis</Th>
+        <Th>Periode</Th>
+        <Th>Bruto</Th>
+        <Th>Potongan</Th>
+        <Th>Net</Th>
+        {canWrite && <Th>Aksi</Th>}
+      </tr>
+    </thead>
+    <tbody>
+      {payrollRuns.map((item) => (
+        <tr key={item.id}>
+          <Td>{item.payroll_code}</Td>
+          <Td>{item.payroll_type}</Td>
+          <Td>{item.period_start}—{item.period_end}</Td>
+          <Td>{money(item.total_gross)}</Td>
+          <Td>{money(item.total_deduction)}</Td>
+          <Td>{money(item.total_net)}</Td>
+          {canWrite && (
+            <Td>
+              <form action={deletePayrollRunAction}>
+                <input type="hidden" name="run_id" value={item.id} />
+                <button
+                  type="submit"
+                  className="rounded-md bg-rose-100 px-3 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-200 transition-colors cursor-pointer"
+                  onClick={(e) => {
+                    if (!confirm("Yakin ingin membatalkan finalisasi ini? Data akan dihapus permanen.")) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  Batalkan
+                </button>
+              </form>
+            </Td>
+          )}
+        </tr>
+      ))}
+    </tbody>
+  </TableWrap>
+</Card>
 
             <Card title="Detail Payroll Operator / Pengajuan">
               {operatorItems.length === 0 ? <Empty>Belum ada detail Payroll Operator.</Empty> : (
