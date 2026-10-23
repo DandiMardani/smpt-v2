@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 export type PettyCashItem = {
   id: number;
@@ -25,55 +27,122 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
     return true;
   });
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filtered.length === 0) {
       alert("Tidak ada data pada periode ini.");
       return;
     }
 
-    const headers = [
-      "Kode Transaksi",
-      "Tanggal",
-      "Arah",
-      "Kategori",
-      "Nominal (Rp)",
-      "Deskripsi",
-      "No Dokumen / Nota",
-      "Link Bukti Nota",
-      "Status",
+    // Urutkan dari tanggal terlama ke terbaru agar hitungan saldo berjalan akurat
+    const sortedData = [...filtered].sort(
+      (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Laporan Kas Kecil");
+
+    // Mengatur Lebar Kolom
+    sheet.columns = [
+      { key: "tanggal", width: 30 },
+      { key: "keterangan", width: 40 },
+      { key: "debet", width: 22 },
+      { key: "kredit", width: 22 },
+      { key: "saldo", width: 22 },
     ];
 
-    const escape = (val: unknown) => `"${String(val ?? "").replace(/"/g, '""')}"`;
+    // Judul Laporan (Merge cell)
+    sheet.mergeCells("A1:E1");
+    const titleCell = sheet.getCell("A1");
+    titleCell.value = "LAPORAN KAS KECIL BUARAN";
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
 
-    const rows = filtered.map((x) => [
-      escape(x.transaction_code),
-      escape(x.transaction_date),
-      escape(x.direction),
-      escape(x.category),
-      escape(x.amount),
-      escape(x.description),
-      escape(x.document_no || "-"),
-      escape(x.receipt_url || "-"),
-      escape(x.status),
-    ]);
+    // Header Tabel
+    const headerRow = sheet.getRow(3);
+    headerRow.values = ["TANGGAL", "KETERANGAN", "DEBET / MASUK", "KREDIT/KELUAR", "SALDO"];
+    headerRow.font = { bold: true };
+    headerRow.alignment = { horizontal: "center", vertical: "middle" };
 
-    const csvContent =
-      "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    // Style Border
+    const borderStyle: Partial<ExcelJS.Borders> = {
+      top: { style: "thin" },
+      left: { style: "thin" },
+      bottom: { style: "thin" },
+      right: { style: "thin" },
+    };
+
+    headerRow.eachCell((cell) => {
+      cell.border = borderStyle;
+    });
+
+    // Isi Data Laporan
+    let runningBalance = 0;
+    let totalDebet = 0;
+    let totalKredit = 0;
+    let currentRow = 4;
+
+    // Format Mata Uang Rupiah Akuntansi Excel
+    const currencyFormat = '_("Rp"* #,##0.00_);_("Rp"* -#,##0.00_);_("Rp"* "-"??_);_(@_)';
+
+    sortedData.forEach((item) => {
+      const isMasuk = item.direction.toUpperCase() === "MASUK";
+      const debet = isMasuk ? Number(item.amount || 0) : 0;
+      const kredit = !isMasuk ? Number(item.amount || 0) : 0;
+      
+      runningBalance += debet - kredit;
+      totalDebet += debet;
+      totalKredit += kredit;
+
+      // Format Tanggal (Contoh: Friday, October 2, 2026)
+      const dateObj = new Date(item.transaction_date);
+      const formattedDate = dateObj.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+      const row = sheet.getRow(currentRow);
+      row.values = [
+        formattedDate,
+        item.description || item.category,
+        debet || null, // Pakai null agar cell kosong jika 0
+        kredit || null,
+        runningBalance,
+      ];
+
+      // Terapkan Border dan Format Mata Uang
+      row.eachCell((cell, colNumber) => {
+        cell.border = borderStyle;
+        if (colNumber === 1) cell.alignment = { horizontal: "center" };
+        if (colNumber >= 3) cell.numFmt = currencyFormat;
+      });
+
+      currentRow++;
+    });
+
+    // Spasi sebelum baris Total
+    currentRow++;
+
+    // Baris Total Bawah
+    const totalRow = sheet.getRow(currentRow);
+    totalRow.values = ["Total", "", totalDebet, totalKredit, runningBalance];
+    totalRow.font = { bold: true };
+    
+    totalRow.eachCell((cell, colNumber) => {
+      cell.border = borderStyle;
+      if (colNumber === 1) cell.alignment = { horizontal: "center" };
+      if (colNumber >= 3) cell.numFmt = currencyFormat;
+    });
+
+    // Proses Download File Excel
+    const buffer = await workbook.xlsx.writeBuffer();
     const label = startDate || endDate ? `_${startDate}_sd_${endDate}` : "_Semua";
-    link.href = url;
-    link.setAttribute("download", `Laporan_Kas_Kecil${label}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    saveAs(new Blob([buffer]), `Laporan_Kas_Kecil${label}.xlsx`);
   };
 
   return (
     <>
-      {/* Baris Kontrol Filter & Tombol Export (Disembunyikan saat dicetak) */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs print:hidden">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-bold text-slate-700">Filter Periode:</span>
@@ -97,7 +166,7 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
                 setStartDate("");
                 setEndDate("");
               }}
-              className="text-[11px] font-semibold text-rose-600 hover:underline"
+              className="text-[11px] font-semibold text-rose-600 hover:underline cursor-pointer"
             >
               Reset
             </button>
@@ -109,15 +178,15 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
           <button
             type="button"
             onClick={handleExportExcel}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition active:scale-95"
-            title="Download file Excel (.csv)"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition active:scale-95 cursor-pointer"
+            title="Download file Excel (.xlsx)"
           >
             📊 Export Excel
           </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 shadow-2xs hover:bg-blue-100 transition active:scale-95"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 shadow-2xs hover:bg-blue-100 transition active:scale-95 cursor-pointer"
             title="Cetak atau simpan PDF"
           >
             🖨️ Cetak / PDF
@@ -125,7 +194,6 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
         </div>
       </div>
 
-      {/* Tampilan Cetak Khusus PDF (Hanya aktif saat dialog print browser terbuka) */}
       <div className="hidden print:block fixed inset-0 bg-white z-[9999] p-6 text-slate-900">
         <div className="border-b-2 border-slate-400 pb-2 mb-4">
           <h1 className="text-xl font-bold">REKAP TRANSAKSI KAS KECIL</h1>
