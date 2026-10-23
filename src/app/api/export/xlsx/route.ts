@@ -631,11 +631,13 @@ async function payrollSlipsWorkbook(
     { key: "jam_lembur", label: "Jam Lembur", width: 12 },
     { key: "lembur_uang_makan", label: "Lembur Uang Makan", width: 18 },
     { key: "total_lembur", label: "Total Lembur", width: 18 },
+    { key: "denda_kasbon", label: "Denda / Kasbon Kantor", width: 22 },
     { key: "gaji_bersih", label: "Gaji Bersih (Bulan ini)", width: 22 },
   ];
 
   let sumGajiPokok = 0;
   let sumTotalLembur = 0;
+  let sumDendaKasbon = 0;
   let sumGajiBersih = 0;
 
   const rows: Array<Record<string, any>> = monthlyItems.map((it: any, idx: number) => {
@@ -655,10 +657,12 @@ async function payrollSlipsWorkbook(
     const otAmount = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
     const mealLembur = Number(it.overtime_bonus || 0);
     const totalLembur = otAmount + mealLembur;
+    const dendaKasbon = Number(it.kasbon_perusahaan_amount || 0);
     const netGaji = Number(it.net_amount || 0);
 
     sumGajiPokok += baseAmount;
     sumTotalLembur += totalLembur;
+    sumDendaKasbon += dendaKasbon;
     sumGajiBersih += netGaji;
 
     return {
@@ -672,6 +676,7 @@ async function payrollSlipsWorkbook(
       jam_lembur: totalOtHours,
       lembur_uang_makan: mealLembur > 0 ? formatRupiah(mealLembur) : "-",
       total_lembur: formatRupiah(totalLembur),
+      denda_kasbon: dendaKasbon > 0 ? formatRupiah(dendaKasbon) : "-",
       gaji_bersih: formatRupiah(netGaji),
     };
   });
@@ -687,16 +692,17 @@ async function payrollSlipsWorkbook(
     jam_lembur: "",
     lembur_uang_makan: "",
     total_lembur: formatRupiah(sumTotalLembur),
+    denda_kasbon: formatRupiah(sumDendaKasbon),
     gaji_bersih: formatRupiah(sumGajiBersih),
   });
 
   const signDate = formatIndoDate(run.period_end || jakartaToday());
-  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: "" });
-  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: `Tangerang Selatan, ${signDate}` });
-  rows.push({ no: "", nik: "Disetujui,", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "Yang Mengajukan,", total_lembur: "", gaji_bersih: "" });
-  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: "" });
-  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", gaji_bersih: "" });
-  rows.push({ no: "", nik: "Bony Daty", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "Dandi Mardani", total_lembur: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", denda_kasbon: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", denda_kasbon: "", gaji_bersih: `Tangerang Selatan, ${signDate}` });
+  rows.push({ no: "", nik: "Disetujui,", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "Yang Mengajukan,", total_lembur: "", denda_kasbon: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", denda_kasbon: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "", total_lembur: "", denda_kasbon: "", gaji_bersih: "" });
+  rows.push({ no: "", nik: "Bony Daty", nama: "", jabatan: "", kehadiran: "", gaji_pokok: "", lemburan_per_jam: "", jam_lembur: "", lembur_uang_makan: "Dandi Mardani", total_lembur: "", denda_kasbon: "", gaji_bersih: "" });
 
   return {
     sheets: [{ name: "Daftar Gaji", columns, rows, headerColor: "1E293B" }],
@@ -744,7 +750,7 @@ async function uangMakanWorkbook(
     { key: "hari", label: "HARI", width: 10 },
     { key: "uang_makan", label: "UANG MAKAN", width: 18 },
     { key: "insentif", label: "INSENTIF", width: 18 },
-    { key: "kasbon", label: "KASBON", width: 16 },
+    { key: "denda_kasbon", label: "DENDA / KASBON", width: 20 },
     { key: "total", label: "TOTAL", width: 20 },
     { key: "paraf", label: "PARAF", width: 10 },
   ];
@@ -768,7 +774,7 @@ async function uangMakanWorkbook(
       hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
       uang_makan: "Rp 35,000.00",
       insentif: "Rp 15,000.00",
-      kasbon: "",
+      denda_kasbon: "",
       total: formatRupiah(totalMakan),
       paraf: idx + 1,
     };
@@ -780,18 +786,18 @@ async function uangMakanWorkbook(
     hari: "",
     uang_makan: "",
     insentif: "",
-    kasbon: "",
+    denda_kasbon: "",
     total: formatRupiah(grandTotal),
     paraf: "",
   });
 
   const signDate = formatIndoDate(run.period_end || jakartaToday());
-  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: "", paraf: "" });
-  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: `Tangerang Selatan, ${signDate}`, paraf: "" });
-  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "Disetujui,", kasbon: "", total: "Yang Mengajukan,", paraf: "" });
-  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: "", paraf: "" });
-  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", kasbon: "", total: "", paraf: "" });
-  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "Bony Daty", kasbon: "", total: "Dandi Mardani", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", denda_kasbon: "", total: "", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", denda_kasbon: "", total: `Tangerang Selatan, ${signDate}`, paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "Disetujui,", denda_kasbon: "", total: "Yang Mengajukan,", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", denda_kasbon: "", total: "", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "", denda_kasbon: "", total: "", paraf: "" });
+  rows.push({ no: "", nama: "", hari: "", uang_makan: "", insentif: "Bony Daty", denda_kasbon: "", total: "Dandi Mardani", paraf: "" });
 
   return {
     sheets: [{ name: "Uang Makan", columns, rows, headerColor: "1E293B" }],
@@ -845,6 +851,7 @@ async function upahHarianWorkbook(
     { key: "um_lembur", label: "UANG MAKAN LEMBUR", width: 18 },
     { key: "total_jam", label: "TOTAL JAM", width: 12 },
     { key: "total_lembur", label: "TOTAL LEMBUR", width: 16 },
+    { key: "denda_kasbon", label: "DENDA / KASBON", width: 20 },
     { key: "total_upah", label: "TOTAL UPAH", width: 20 },
   ];
 
@@ -867,7 +874,11 @@ async function upahHarianWorkbook(
 
     const totalLembur = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
     const mealLembur = Number(it.overtime_bonus || 0);
-    const totalUpah = totalHari * dailyRate + totalLembur + mealLembur;
+    
+    // Potongan 
+    const dendaKasbon = Number(it.kasbon_perusahaan_amount || 0) + Number(it.kasbon_warung_amount || 0);
+    const totalUpah = (totalHari * dailyRate + totalLembur + mealLembur) - dendaKasbon;
+    
     grandTotal += totalUpah;
 
     return {
@@ -882,6 +893,7 @@ async function upahHarianWorkbook(
       um_lembur: mealLembur > 0 ? formatRupiah(mealLembur) : "Rp -",
       total_jam: totalOtHours,
       total_lembur: totalLembur > 0 ? formatRupiah(totalLembur) : "Rp -",
+      denda_kasbon: dendaKasbon > 0 ? formatRupiah(dendaKasbon) : "Rp -",
       total_upah: formatRupiah(totalUpah),
     };
   });
@@ -897,17 +909,18 @@ async function upahHarianWorkbook(
     lembur_per_jam: "",
     um_lembur: "",
     total_jam: "",
-    total_lembur: "TOTAL :",
+    total_lembur: "",
+    denda_kasbon: "TOTAL :",
     total_upah: formatRupiah(grandTotal),
   });
 
   const signDate = formatIndoDate(run.period_end || jakartaToday());
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: `Tangerang Selatan, ${signDate}`, total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Disetujui,", total_jam: "", total_lembur: "Yang Mengajukan,", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Bony Daty", total_jam: "", total_lembur: "Dandi Mardani", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: `Tangerang Selatan, ${signDate}` });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Disetujui,", total_jam: "", total_lembur: "", denda_kasbon: "Yang Mengajukan,", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: "" });
+  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Bony Daty", total_jam: "", total_lembur: "", denda_kasbon: "Dandi Mardani", total_upah: "" });
 
   return {
     sheets: [{ name: "Upah Harian", columns, rows, headerColor: "1E293B" }],
