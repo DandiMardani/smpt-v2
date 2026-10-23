@@ -429,7 +429,7 @@ export default async function Page({ searchParams }: Props) {
                       <h3 className="text-base font-extrabold text-slate-900">
                         ⏱️ Rekapitulasi Upah Pekerja Harian ({harianItems.length} Pekerja)
                       </h3>
-                      <p className="text-xs text-slate-500">Upah pokok kehadiran harian + lembur, otomatis dipotong kasbon.</p>
+                      <p className="text-xs text-slate-500">Upah pokok kehadiran harian + lembur, otomatis dipotong denda telat/kasbon.</p>
                     </div>
                   </div>
                   <div className="text-left sm:text-right">
@@ -447,7 +447,7 @@ export default async function Page({ searchParams }: Props) {
                         <th className="px-3 py-2.5 text-right">Upah Pokok</th>
                         <th className="px-3 py-2.5 text-right">Lembur</th>
                         <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
-                        <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
+                        <th className="px-3 py-2.5 text-right text-rose-600">Denda / Kasbon Kantor</th>
                         <th className="px-3 py-2.5 text-right text-amber-600">Kasbon Warung</th>
                         <th className="px-3 py-2.5 text-right text-rose-700 bg-rose-50/50">Tot. Potongan</th>
                         <th className="px-3 py-2.5 text-right bg-emerald-50 text-emerald-700 font-black">Gaji Bersih (THP)</th>
@@ -548,7 +548,7 @@ export default async function Page({ searchParams }: Props) {
                                               <input name="overtime_amount" type="number" defaultValue={overtime} className="w-full rounded border px-2 py-1 text-xs" required />
                                             </div>
                                             <div>
-                                              <label className="text-[10px] font-bold text-rose-600">Kasbon Kantor</label>
+                                              <label className="text-[10px] font-bold text-rose-600">Denda / Kasbon Kantor</label>
                                               <input name="kasbon_perusahaan_amount" type="number" defaultValue={kp} className="w-full rounded border border-rose-200 px-2 py-1 text-xs" required />
                                             </div>
                                             <div>
@@ -805,7 +805,7 @@ export default async function Page({ searchParams }: Props) {
                         <th className="px-3 py-2.5 text-right">Gaji Pokok</th>
                         <th className="px-3 py-2.5 text-right">Lembur</th>
                         <th className="px-3 py-2.5 text-right bg-blue-50/50">Total Bruto</th>
-                        <th className="px-3 py-2.5 text-right text-rose-600">Kasbon Kantor</th>
+                        <th className="px-3 py-2.5 text-right text-rose-600">Denda / Kasbon Kantor</th>
                         <th className="px-3 py-2.5 text-right text-amber-600">Kasbon Warung</th>
                         <th className="px-3 py-2.5 text-right text-rose-700 bg-rose-50/50">Tot. Potongan</th>
                         <th className="px-3 py-2.5 text-right bg-emerald-50 text-emerald-700 font-black">Gaji Bersih (THP)</th>
@@ -885,7 +885,7 @@ export default async function Page({ searchParams }: Props) {
                                               <input name="overtime_amount" type="number" defaultValue={overtime} className="w-full rounded border px-2 py-1 text-xs" required />
                                             </div>
                                             <div>
-                                              <label className="text-[10px] font-bold text-rose-600">Kasbon Kantor</label>
+                                              <label className="text-[10px] font-bold text-rose-600">Denda / Kasbon Kantor</label>
                                               <input name="kasbon_perusahaan_amount" type="number" defaultValue={kp} className="w-full rounded border border-rose-200 px-2 py-1 text-xs" required />
                                             </div>
                                             <div>
