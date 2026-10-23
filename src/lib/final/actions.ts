@@ -1055,6 +1055,8 @@ export async function addBulkAttendanceAction(f: FormData) {
         day_class: it.day_class || null,
         attendance_status: it.attendance_status || "HADIR",
         overtime_minutes: Number(it.overtime_minutes || 0),
+        late_minutes: Number(it.late_minutes || 0),       // <-- INI YANG KETINGGALAN
+        late_deduction: Number(it.late_deduction || 0),   // <-- INI JUGA KETINGGALAN
         source: it.source || "MANUAL",
         notes: it.notes || null,
         verification_status: it.attendance_status === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
