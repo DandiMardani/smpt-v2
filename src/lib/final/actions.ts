@@ -2413,3 +2413,17 @@ export async function deleteVendorPoTargetAction(f: FormData) {
     "Target PO berhasil dihapus."
   );
 }
+
+export async function deletePayrollRunAction(f: FormData) {
+  const path = "/dashboard/payroll";
+  await mutate(path, "payroll.write", async () => {
+    const s = await createClient();
+    const runId = id(f, "run_id");
+
+    const { error: errItems } = await s.from("payroll_run_items").delete().eq("payroll_run_id", runId);
+    if (errItems) throw new Error("Gagal menghapus rincian payroll: " + errItems.message);
+
+    const { error: errRun } = await s.from("payroll_runs").delete().eq("id", runId);
+    if (errRun) throw new Error("Gagal menghapus data induk payroll: " + errRun.message);
+  }, "Draft Payroll berhasil dibatalkan dan dihapus secara permanen.");
+}
