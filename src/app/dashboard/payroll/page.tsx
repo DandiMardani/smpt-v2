@@ -1007,11 +1007,6 @@ export default async function Page({ searchParams }: Props) {
                 <button
                   type="submit"
                   className="rounded-md bg-rose-100 px-3 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-200 transition-colors cursor-pointer"
-                  onClick={(e) => {
-                    if (!confirm("Yakin ingin membatalkan finalisasi ini? Data akan dihapus permanen.")) {
-                      e.preventDefault();
-                    }
-                  }}
                 >
                   Batalkan
                 </button>
@@ -1023,6 +1018,8 @@ export default async function Page({ searchParams }: Props) {
     </tbody>
   </TableWrap>
 </Card>
+
+            
 
             <Card title="Detail Payroll Operator / Pengajuan">
               {operatorItems.length === 0 ? <Empty>Belum ada detail Payroll Operator.</Empty> : (
