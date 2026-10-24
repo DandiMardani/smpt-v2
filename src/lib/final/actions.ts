@@ -1006,91 +1006,79 @@ export async function deleteEmbarkationIssueAction(f: FormData) {
   );
 }
 
+// =========================================================================
+// ACTION ABSENSI KHUSUS (Tanpa Redirect agar UI Floating Alert berjalan)
+// =========================================================================
+
 export async function addAttendanceAction(f: FormData) {
   const path = t(f, "return_path") || "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const otMin = num(f, "overtime_minutes", true) ?? 0;
-      const attStatus = t(f, "attendance_status") || "HADIR";
-      const payload: any = {
-        worker_id: id(f, "worker_id"),
-        attendance_date: date(f, "attendance_date"),
-        schedule_in: t(f, "schedule_in") || null,
-        schedule_out: t(f, "schedule_out") || null,
-        actual_in: t(f, "actual_in") || null,
-        actual_out: t(f, "actual_out") || null,
-        attendance_status: attStatus,
-        overtime_minutes: otMin,
-        source: "MANUAL",
-        notes: t(f, "notes") || null,
-        verification_status: attStatus === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
-      };
-      const { error } = await s.from("attendance_records").upsert(payload, { onConflict: "worker_id,attendance_date" });
-      if (error) throw error;
-    },
-    "Absensi disimpan."
-  );
+  await requirePermission("absensi.write");
+  const s = await createClient();
+  const otMin = num(f, "overtime_minutes", true) ?? 0;
+  const attStatus = t(f, "attendance_status") || "HADIR";
+  const payload: any = {
+    worker_id: id(f, "worker_id"),
+    attendance_date: date(f, "attendance_date"),
+    schedule_in: t(f, "schedule_in") || null,
+    schedule_out: t(f, "schedule_out") || null,
+    actual_in: t(f, "actual_in") || null,
+    actual_out: t(f, "actual_out") || null,
+    attendance_status: attStatus,
+    overtime_minutes: otMin,
+    source: "MANUAL",
+    notes: t(f, "notes") || null,
+    verification_status: attStatus === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
+  };
+  const { error } = await s.from("attendance_records").upsert(payload, { onConflict: "worker_id,attendance_date" });
+  if (error) throw new Error(error.message);
+  revalidatePath(path);
 }
 
 export async function addBulkAttendanceAction(f: FormData) {
   const path = t(f, "return_path") || "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const raw = f.get("items");
-      if (!raw || typeof raw !== "string") throw new Error("Data absensi tidak valid.");
-      const items = JSON.parse(raw);
-      if (!Array.isArray(items) || items.length === 0) return;
+  await requirePermission("absensi.write");
+  const s = await createClient();
+  const raw = f.get("items");
+  if (!raw || typeof raw !== "string") throw new Error("Data absensi tidak valid.");
+  const items = JSON.parse(raw);
+  if (!Array.isArray(items) || items.length === 0) return;
 
-      const payload = items.map((it: any) => ({
-        worker_id: it.worker_id,
-        attendance_date: it.attendance_date,
-        schedule_in: it.schedule_in || null,
-        schedule_out: it.schedule_out || null,
-        actual_in: it.actual_in || null,
-        actual_out: it.actual_out || null,
-        day_class: it.day_class || null,
-        attendance_status: it.attendance_status || "HADIR",
-        overtime_minutes: Number(it.overtime_minutes || 0),
-        late_minutes: Number(it.late_minutes || 0),
-        late_deduction: Number(it.late_deduction || 0),
-        source: it.source || "MANUAL",
-        notes: it.notes || null,
-        verification_status: it.attendance_status === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
-      }));
+  const payload = items.map((it: any) => ({
+    worker_id: it.worker_id,
+    attendance_date: it.attendance_date,
+    schedule_in: it.schedule_in || null,
+    schedule_out: it.schedule_out || null,
+    actual_in: it.actual_in || null,
+    actual_out: it.actual_out || null,
+    day_class: it.day_class || null,
+    attendance_status: it.attendance_status || "HADIR",
+    overtime_minutes: Number(it.overtime_minutes || 0),
+    late_minutes: Number(it.late_minutes || 0),
+    late_deduction: Number(it.late_deduction || 0),
+    source: it.source || "MANUAL",
+    notes: it.notes || null,
+    // FIX: Gunakan status verifikasi bawaan dari array, supaya tidak otomatis reset ke DRAFT!
+    verification_status: it.verification_status || (it.attendance_status === "HADIR" ? "DRAFT" : "TERVERIFIKASI"),
+  }));
 
-      for (let i = 0; i < payload.length; i += 100) {
-        const chunk = payload.slice(i, i + 100);
-        const { error } = await s
-          .from("attendance_records")
-          .upsert(chunk, { onConflict: "worker_id,attendance_date" });
-        if (error) throw error;
-      }
-    },
-    "Data absensi berhasil disimpan secara massal."
-  );
+  for (let i = 0; i < payload.length; i += 100) {
+    const chunk = payload.slice(i, i + 100);
+    const { error } = await s.from("attendance_records").upsert(chunk, { onConflict: "worker_id,attendance_date" });
+    if (error) throw new Error(error.message);
+  }
+  revalidatePath(path);
 }
 
 export async function verifyAttendanceAction(f: FormData) {
   const path = t(f, "return_path") || "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      await rpc("verify_attendance", {
-        p_attendance_id: id(f, "attendance_id"),
-        p_day_class: t(f, "day_class"),
-        p_overtime_minutes: num(f, "overtime_minutes"),
-        p_notes: t(f, "notes") || null,
-      });
-    },
-    "Absensi diverifikasi."
-  );
+  await requirePermission("absensi.write");
+  await rpc("verify_attendance", {
+    p_attendance_id: id(f, "attendance_id"),
+    p_day_class: t(f, "day_class"),
+    p_overtime_minutes: num(f, "overtime_minutes"),
+    p_notes: t(f, "notes") || null,
+  });
+  revalidatePath(path);
 }
 
 export async function autoFixMissingOutAttendanceAction(f: FormData) {
@@ -1178,203 +1166,132 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
         }).in("id", chunk);
       }
     },
-    "Absensi diperbaiki: Sabtu diset 15:00 (lembur 0), dan yang tidak scan masuk otomatis Alpha!"
+    "Absensi diperbaiki otomatis!"
   );
 }
 
 export async function verifyBulkAttendanceAction(f: FormData) {
   const path = t(f, "return_path") || "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const {
-        data: { user },
-      } = await s.auth.getUser();
-      const rawItems = t(f, "items");
-      let itemsToVerify: Array<{
-        id: number;
-        day_class?: string;
-        overtime_minutes?: number;
-        notes?: string;
-      }> = [];
+  await requirePermission("absensi.write");
+  const s = await createClient();
+  const { data: { user } } = await s.auth.getUser();
+  const rawItems = t(f, "items");
+  let itemsToVerify: Array<{ id: number; day_class?: string; overtime_minutes?: number; notes?: string }> = [];
 
-      if (rawItems) {
-        try {
-          itemsToVerify = JSON.parse(rawItems);
-        } catch {
-          throw new Error("Format data verifikasi massal tidak valid.");
-        }
-      } else {
-        const rawIds = t(f, "attendance_ids");
-        const ids = rawIds
-          .split(",")
-          .map((x) => Number(x.trim()))
-          .filter((x) => x > 0);
-        const defaultDayClass = t(f, "default_day_class") || "FULL_DAY";
-        const defaultOt = num(f, "default_overtime_minutes", true) ?? 0;
-        itemsToVerify = ids.map((attId) => ({
-          id: attId,
-          day_class: defaultDayClass,
-          overtime_minutes: defaultOt,
-        }));
-      }
+  if (rawItems) {
+    try {
+      itemsToVerify = JSON.parse(rawItems);
+    } catch {
+      throw new Error("Format data verifikasi massal tidak valid.");
+    }
+  } else {
+    const rawIds = t(f, "attendance_ids");
+    const ids = rawIds.split(",").map((x) => Number(x.trim())).filter((x) => x > 0);
+    const defaultDayClass = t(f, "default_day_class") || "FULL_DAY";
+    const defaultOt = num(f, "default_overtime_minutes", true) ?? 0;
+    itemsToVerify = ids.map((attId) => ({ id: attId, day_class: defaultDayClass, overtime_minutes: defaultOt }));
+  }
 
-      if (!itemsToVerify.length) {
-        throw new Error("Pilih minimal satu data absensi untuk diverifikasi.");
-      }
+  if (!itemsToVerify.length) throw new Error("Pilih minimal satu data absensi untuk diverifikasi.");
 
-      const now = new Date().toISOString();
-      const groups = new Map<string, { dayClass: string; otMin: number; ids: number[] }>();
+  const now = new Date().toISOString();
+  const groups = new Map<string, { dayClass: string; otMin: number; ids: number[] }>();
 
-      for (const it of itemsToVerify) {
-        const dClass = (it.day_class || "FULL_DAY").toUpperCase();
-        const ot = Math.max(0, Math.round(Number(it.overtime_minutes || 0)));
-        const key = `${dClass}__${ot}`;
+  for (const it of itemsToVerify) {
+    const dClass = (it.day_class || "FULL_DAY").toUpperCase();
+    const ot = Math.max(0, Math.round(Number(it.overtime_minutes || 0)));
+    const key = `${dClass}__${ot}`;
+    if (!groups.has(key)) groups.set(key, { dayClass: dClass, otMin: ot, ids: [] });
+    groups.get(key)!.ids.push(it.id);
+  }
 
-        if (!groups.has(key)) {
-          groups.set(key, { dayClass: dClass, otMin: ot, ids: [] });
-        }
-        groups.get(key)!.ids.push(it.id);
-      }
-
-      for (const grp of groups.values()) {
-        for (let i = 0; i < grp.ids.length; i += 100) {
-          const chunk = grp.ids.slice(i, i + 100);
-          const { error: batchErr } = await s
-            .from("attendance_records")
-            .update({
-              day_class: grp.dayClass,
-              overtime_minutes: grp.otMin,
-              verification_status: "TERVERIFIKASI",
-              verified_by: user?.id,
-              verified_at: now,
-              updated_at: now,
-            })
-            .in("id", chunk);
-
-          if (batchErr) throw batchErr;
-        }
-      }
-    },
-    "Berhasil memverifikasi seluruh data absensi sekaligus."
-  );
+  for (const grp of groups.values()) {
+    for (let i = 0; i < grp.ids.length; i += 100) {
+      const chunk = grp.ids.slice(i, i + 100);
+      const { error: batchErr } = await s
+        .from("attendance_records")
+        .update({
+          day_class: grp.dayClass,
+          overtime_minutes: grp.otMin,
+          verification_status: "TERVERIFIKASI",
+          verified_by: user?.id,
+          verified_at: now,
+          updated_at: now,
+        }).in("id", chunk);
+      if (batchErr) throw new Error(batchErr.message);
+    }
+  }
+  revalidatePath(path);
 }
 
 export async function unverifyAttendanceAction(f: FormData) {
   const path = t(f, "return_path") || "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const attId = id(f, "attendance_id");
-      const { error } = await s
-        .from("attendance_records")
-        .update({
-          verification_status: "DRAFT",
-          verified_by: null,
-          verified_at: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", attId);
-
-      if (error) throw error;
-    },
-    "Status absensi dikembalikan ke DRAFT."
-  );
+  await requirePermission("absensi.write");
+  const s = await createClient();
+  const attId = id(f, "attendance_id");
+  const { error } = await s.from("attendance_records").update({
+    verification_status: "DRAFT",
+    verified_by: null,
+    verified_at: null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", attId);
+  if (error) throw new Error(error.message);
+  revalidatePath(path);
 }
 
 export async function deleteAttendanceAction(f: FormData) {
   const path = t(f, "return_path") || "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const attId = id(f, "attendance_id");
+  await requirePermission("absensi.write");
+  const s = await createClient();
+  const attId = id(f, "attendance_id");
 
-      const { data: att, error: fetchErr } = await s
-        .from("attendance_records")
-        .select("id, attendance_date")
-        .eq("id", attId)
-        .single();
-      if (fetchErr || !att) throw new Error("Data absensi tidak ditemukan.");
+  const { data: att, error: fetchErr } = await s.from("attendance_records").select("id, attendance_date").eq("id", attId).single();
+  if (fetchErr || !att) throw new Error("Data absensi tidak ditemukan.");
 
-      const { data: finalRuns } = await s
-        .from("payroll_runs")
-        .select("id, payroll_code, period_start, period_end")
-        .eq("status", "FINAL")
-        .lte("period_start", att.attendance_date)
-        .gte("period_end", att.attendance_date);
+  const { data: finalRuns } = await s.from("payroll_runs").select("id, payroll_code, period_start, period_end").eq("status", "FINAL").lte("period_start", att.attendance_date).gte("period_end", att.attendance_date);
 
-      if (finalRuns && finalRuns.length > 0) {
-        throw new Error(
-          `Data absensi tidak dapat dihapus karena sudah masuk payroll final (${finalRuns[0].payroll_code}).`
-        );
-      }
+  if (finalRuns && finalRuns.length > 0) {
+    throw new Error(`Data absensi tidak dapat dihapus karena sudah masuk payroll final (${finalRuns[0].payroll_code}).`);
+  }
 
-      const { error: delErr } = await s.from("attendance_records").delete().eq("id", attId);
-      if (delErr) throw delErr;
-    },
-    "Data absensi berhasil dihapus."
-  );
+  const { error: delErr } = await s.from("attendance_records").delete().eq("id", attId);
+  if (delErr) throw new Error(delErr.message);
+  revalidatePath(path);
 }
 
 export async function deleteBulkAttendanceAction(f: FormData) {
   const path = t(f, "return_path") || "/dashboard/absensi";
-  await mutate(
-    path,
-    "absensi.write",
-    async () => {
-      const s = await createClient();
-      const rawIds = t(f, "attendance_ids");
-      const ids = rawIds
-        ? rawIds
-            .split(",")
-            .map((x) => Number(x.trim()))
-            .filter((x) => x > 0)
-        : [];
-      if (!ids.length) throw new Error("Pilih data absensi yang ingin dihapus.");
+  await requirePermission("absensi.write");
+  const s = await createClient();
+  const rawIds = t(f, "attendance_ids");
+  const ids = rawIds ? rawIds.split(",").map((x) => Number(x.trim())).filter((x) => x > 0) : [];
+  if (!ids.length) throw new Error("Pilih data absensi yang ingin dihapus.");
 
-      const { data: recs, error: rErr } = await s
-        .from("attendance_records")
-        .select("id, attendance_date")
-        .in("id", ids);
-      if (rErr || !recs || !recs.length) throw new Error("Data absensi tidak ditemukan.");
+  const { data: recs, error: rErr } = await s.from("attendance_records").select("id, attendance_date").in("id", ids);
+  if (rErr || !recs || !recs.length) throw new Error("Data absensi tidak ditemukan.");
 
-      const dates = recs.map((r) => r.attendance_date);
-      const minDate = dates.reduce((a, b) => (a < b ? a : b));
-      const maxDate = dates.reduce((a, b) => (a > b ? a : b));
+  const dates = recs.map((r) => r.attendance_date);
+  const minDate = dates.reduce((a, b) => (a < b ? a : b));
+  const maxDate = dates.reduce((a, b) => (a > b ? a : b));
 
-      const { data: finalRuns } = await s
-        .from("payroll_runs")
-        .select("id, payroll_code, period_start, period_end")
-        .eq("status", "FINAL")
-        .lte("period_start", maxDate)
-        .gte("period_end", minDate);
+  const { data: finalRuns } = await s.from("payroll_runs").select("id, payroll_code, period_start, period_end").eq("status", "FINAL").lte("period_start", maxDate).gte("period_end", minDate);
 
-      const lockedDates = new Set<string>();
-      (finalRuns || []).forEach((run) => {
-        recs.forEach((r) => {
-          if (r.attendance_date >= run.period_start && r.attendance_date <= run.period_end) {
-            lockedDates.add(r.attendance_date);
-          }
-        });
-      });
+  const lockedDates = new Set<string>();
+  (finalRuns || []).forEach((run) => {
+    recs.forEach((r) => {
+      if (r.attendance_date >= run.period_start && r.attendance_date <= run.period_end) lockedDates.add(r.attendance_date);
+    });
+  });
 
-      const deletableIds = recs.filter((r) => !lockedDates.has(r.attendance_date)).map((r) => r.id);
-      if (deletableIds.length === 0) {
-        throw new Error("Semua data yang dipilih sudah terkunci dalam payroll yang sudah dibayar.");
-      }
+  const deletableIds = recs.filter((r) => !lockedDates.has(r.attendance_date)).map((r) => r.id);
+  if (deletableIds.length === 0) throw new Error("Semua data yang dipilih sudah terkunci dalam payroll yang sudah dibayar.");
 
-      const { error: delErr } = await s.from("attendance_records").delete().in("id", deletableIds);
-      if (delErr) throw delErr;
-    },
-    "Data absensi terpilih berhasil dihapus."
-  );
+  const { error: delErr } = await s.from("attendance_records").delete().in("id", deletableIds);
+  if (delErr) throw new Error(delErr.message);
+  revalidatePath(path);
 }
+
+// =========================================================================
 
 export async function finalizePayrollAction(f: FormData) {
   await mutate(
@@ -2197,6 +2114,7 @@ export async function createBundlePackageAction(f: FormData) {
     "Jenis paket baru berhasil dibuat."
   );
 }
+
 
 export async function updateBundlePackageAction(f: FormData) {
   const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
