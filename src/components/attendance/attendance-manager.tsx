@@ -138,11 +138,9 @@ export default function AttendanceManager({
   const [editForm, setEditForm] = useState<EditFormState | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // STATE UNTUK MODAL LEMBUR JUMAT
   const [showJumatModal, setShowJumatModal] = useState(false);
   const [jumatOutTimes, setJumatOutTimes] = useState<Record<number, string>>({});
   
-  // STATE BARU: NOTIFIKASI BERHASIL SIMPAN
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const workerMap = useMemo(() => {
@@ -199,7 +197,6 @@ export default function AttendanceManager({
     });
   }, [records, workerMap, shiftSettings, payrollRuns]);
 
-  // LOGIKA PENCARIAN HARI JUMAT TERAKHIR
   const latestJumatDate = useMemo(() => {
     const dates = [...new Set(records.map((r) => r.attendance_date))].sort((a, b) =>
       b.localeCompare(a)
@@ -217,7 +214,6 @@ export default function AttendanceManager({
     );
   }, [enrichedRecords, latestJumatDate]);
 
-  // SET DEFAULT JAM PULANG SAAT MODAL DIBUKA
   useEffect(() => {
     if (showJumatModal && jumatWorkers.length > 0) {
       const initialTimes: Record<number, string> = {};
@@ -389,7 +385,6 @@ export default function AttendanceManager({
     });
   }
 
-  // FUNGSI BATAL CUTOFF CEPAT
   function handleCancelCutoff(rec: (typeof enrichedRecords)[number]) {
     const workerName = rec.worker?.name || `Pekerja #${rec.worker_id}`;
     const confirmMsg = `Batalkan Lembur Cutoff (Slip Depan) untuk ${workerName} pada tanggal ${rec.attendance_date}?\n\nJam pulang akan dikembalikan ke 17:00 dan lembur menjadi 0 jam.`;
@@ -413,13 +408,6 @@ export default function AttendanceManager({
       verification_status: "TERVERIFIKASI",
     };
 
-    const itemToVerify = {
-      id: rec.id,
-      day_class: rec.day_class || "FULL_DAY",
-      overtime_minutes: 0,
-      notes: cleanedNotes,
-    };
-
     startTransition(async () => {
       try {
         const fdAdd = new FormData();
@@ -428,21 +416,13 @@ export default function AttendanceManager({
 
         await addBulkAttendanceAction(fdAdd);
 
-        const fdVerify = new FormData();
-        fdVerify.append("items", JSON.stringify([itemToVerify]));
-        fdVerify.append("return_path", pathname);
-
-        await verifyBulkAttendanceAction(fdVerify);
-
         if (expandedId === rec.id) {
           setExpandedId(null);
           setEditForm(null);
         }
         showSuccess(`Berhasil membatalkan cutoff lembur untuk ${workerName}`);
       } catch (e: any) {
-        if (!e.message?.includes("NEXT_REDIRECT")) {
-          alert("Gagal membatalkan cutoff: " + e.message);
-        }
+        alert("Gagal membatalkan cutoff: " + e.message);
       }
     });
   }
@@ -488,13 +468,6 @@ export default function AttendanceManager({
       verification_status: "TERVERIFIKASI",
     };
 
-    const itemToVerify = {
-      id: rec.id,
-      day_class: editForm.dayClass,
-      overtime_minutes: otMins,
-      notes: updatedNotes,
-    };
-
     startTransition(async () => {
       try {
         const fdAdd = new FormData();
@@ -503,19 +476,11 @@ export default function AttendanceManager({
 
         await addBulkAttendanceAction(fdAdd);
 
-        const fdVerify = new FormData();
-        fdVerify.append("items", JSON.stringify([itemToVerify]));
-        fdVerify.append("return_path", pathname);
-
-        await verifyBulkAttendanceAction(fdVerify);
-
         setExpandedId(null);
         setEditForm(null);
         showSuccess(`Data ${rec.worker?.name} berhasil dikoreksi`);
       } catch (e: any) {
-        if (!e.message?.includes("NEXT_REDIRECT")) {
-          alert("Gagal menyimpan koreksi: " + e.message);
-        }
+        alert("Gagal menyimpan koreksi: " + e.message);
       }
     });
   }
@@ -531,13 +496,17 @@ export default function AttendanceManager({
     fd.append("return_path", pathname);
     
     startTransition(async () => {
-      await deleteAttendanceAction(fd);
-      if (selectedIds.has(id)) {
-        const next = new Set(selectedIds);
-        next.delete(id);
-        setSelectedIds(next);
+      try {
+        await deleteAttendanceAction(fd);
+        if (selectedIds.has(id)) {
+          const next = new Set(selectedIds);
+          next.delete(id);
+          setSelectedIds(next);
+        }
+        showSuccess(`Data ${workerName} tanggal ${date} berhasil dihapus`);
+      } catch (e: any) {
+        alert("Gagal menghapus: " + e.message);
       }
-      showSuccess(`Data ${workerName} tanggal ${date} berhasil dihapus`);
     });
   }
 
@@ -551,9 +520,13 @@ export default function AttendanceManager({
     fd.append("return_path", pathname);
     
     startTransition(async () => {
-      await deleteBulkAttendanceAction(fd);
-      setSelectedIds(new Set());
-      showSuccess(`Berhasil menghapus data terpilih`);
+      try {
+        await deleteBulkAttendanceAction(fd);
+        setSelectedIds(new Set());
+        showSuccess(`Berhasil menghapus data terpilih`);
+      } catch (e: any) {
+        alert("Gagal menghapus: " + e.message);
+      }
     });
   }
 
@@ -574,9 +547,13 @@ export default function AttendanceManager({
     fd.append("return_path", pathname);
     
     startTransition(async () => {
-      await verifyBulkAttendanceAction(fd);
-      setSelectedIds(new Set());
-      showSuccess(`${items.length} Draft terpilih berhasil disahkan`);
+      try {
+        await verifyBulkAttendanceAction(fd);
+        setSelectedIds(new Set());
+        showSuccess(`${items.length} Draft terpilih berhasil disahkan`);
+      } catch (e: any) {
+        alert("Gagal memverifikasi: " + e.message);
+      }
     });
   }
 
@@ -597,16 +574,18 @@ export default function AttendanceManager({
     fd.append("return_path", pathname);
     
     startTransition(async () => {
-      await verifyBulkAttendanceAction(fd);
-      setSelectedIds(new Set());
-      showSuccess(`Semua Draft (${items.length} data) berhasil disahkan`);
+      try {
+        await verifyBulkAttendanceAction(fd);
+        setSelectedIds(new Set());
+        showSuccess(`Semua Draft (${items.length} data) berhasil disahkan`);
+      } catch (e: any) {
+        alert("Gagal memverifikasi: " + e.message);
+      }
     });
   }
 
-  // FUNGSI SAKTI PENYIMPAN & PEMBATAL LEMBUR JUMAT MALAM
   function handleSaveJumatLembur() {
     const itemsToAdd: any[] = [];
-    const itemsToVerify: any[] = [];
 
     for (const rec of jumatWorkers) {
       let outTime = jumatOutTimes[rec.id];
@@ -645,13 +624,6 @@ export default function AttendanceManager({
         notes: newNotes || null,
         verification_status: "TERVERIFIKASI",
       });
-
-      itemsToVerify.push({
-        id: rec.id,
-        day_class: rec.day_class || "FULL_DAY",
-        overtime_minutes: newCalc.overtimeMinutes,
-        notes: newNotes,
-      });
     }
 
     if (itemsToAdd.length === 0) {
@@ -668,18 +640,10 @@ export default function AttendanceManager({
         
         await addBulkAttendanceAction(fdAdd);
 
-        const fdVerify = new FormData();
-        fdVerify.append("items", JSON.stringify(itemsToVerify));
-        fdVerify.append("return_path", pathname);
-        
-        await verifyBulkAttendanceAction(fdVerify);
-
         setShowJumatModal(false);
         showSuccess(`Data lembur Jumat berhasil disimpan!`);
       } catch (e: any) {
-        if (!e.message?.includes("NEXT_REDIRECT")) {
-          alert("Gagal menyimpan lembur: " + e.message);
-        }
+        alert("Gagal menyimpan lembur: " + e.message);
       }
     });
   }
