@@ -1007,8 +1007,9 @@ export async function deleteEmbarkationIssueAction(f: FormData) {
 }
 
 export async function addAttendanceAction(f: FormData) {
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
-    "/dashboard/absensi",
+    path,
     "absensi.write",
     async () => {
       const s = await createClient();
@@ -1035,8 +1036,9 @@ export async function addAttendanceAction(f: FormData) {
 }
 
 export async function addBulkAttendanceAction(f: FormData) {
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
-    "/dashboard/absensi",
+    path,
     "absensi.write",
     async () => {
       const s = await createClient();
@@ -1055,8 +1057,8 @@ export async function addBulkAttendanceAction(f: FormData) {
         day_class: it.day_class || null,
         attendance_status: it.attendance_status || "HADIR",
         overtime_minutes: Number(it.overtime_minutes || 0),
-        late_minutes: Number(it.late_minutes || 0),       // <-- INI YANG KETINGGALAN
-        late_deduction: Number(it.late_deduction || 0),   // <-- INI JUGA KETINGGALAN
+        late_minutes: Number(it.late_minutes || 0),
+        late_deduction: Number(it.late_deduction || 0),
         source: it.source || "MANUAL",
         notes: it.notes || null,
         verification_status: it.attendance_status === "HADIR" ? "DRAFT" : "TERVERIFIKASI",
@@ -1075,8 +1077,9 @@ export async function addBulkAttendanceAction(f: FormData) {
 }
 
 export async function verifyAttendanceAction(f: FormData) {
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
-    "/dashboard/absensi",
+    path,
     "absensi.write",
     async () => {
       await rpc("verify_attendance", {
@@ -1091,7 +1094,7 @@ export async function verifyAttendanceAction(f: FormData) {
 }
 
 export async function autoFixMissingOutAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
     path,
     "absensi.write",
@@ -1180,7 +1183,7 @@ export async function autoFixMissingOutAttendanceAction(f: FormData) {
 }
 
 export async function verifyBulkAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
     path,
     "absensi.write",
@@ -1260,7 +1263,7 @@ export async function verifyBulkAttendanceAction(f: FormData) {
 }
 
 export async function unverifyAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
     path,
     "absensi.write",
@@ -1284,7 +1287,7 @@ export async function unverifyAttendanceAction(f: FormData) {
 }
 
 export async function deleteAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
     path,
     "absensi.write",
@@ -1320,7 +1323,7 @@ export async function deleteAttendanceAction(f: FormData) {
 }
 
 export async function deleteBulkAttendanceAction(f: FormData) {
-  const path = "/dashboard/absensi";
+  const path = t(f, "return_path") || "/dashboard/absensi";
   await mutate(
     path,
     "absensi.write",
@@ -1515,9 +1518,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
         const halfDays = workerAtts.filter((a) => a.day_class === "HALF_DAY").length;
         const totalOtMinutes = workerAtts.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0);
         
-        // --- MULAI PERBAIKAN: Hitung Total Potongan Telat (Late Deduction) ---
         const totalLateDeduction = workerAtts.reduce((sum, a) => sum + (Number(a.late_deduction) || 0), 0);
-        // --- SELESAI PERBAIKAN ---
 
         let baseAmt = 0;
         let mealAmt = Number(it.meal_amount || 0);
@@ -1556,7 +1557,6 @@ export async function syncPayrollAdvancesAction(f: FormData) {
 
         const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
         
-        // Hitung Kasbon Perusahaan asli
         const baseKasbonP = workerAdvs
           .filter((a) => a.category === "KASBON_PERUSAHAAN")
           .reduce((sum, a) => {
@@ -1565,9 +1565,7 @@ export async function syncPayrollAdvancesAction(f: FormData) {
             return sum + (inst > 0 ? Math.min(inst, rem) : rem);
           }, 0);
 
-        // --- MULAI PERBAIKAN: Gabungkan kasbon perusahaan dengan total potongan telat ---
         const kasbonP = baseKasbonP + totalLateDeduction;
-        // --- SELESAI PERBAIKAN ---
 
         const kasbonW = workerAdvs
           .filter((a) => a.category === "KASBON_WARUNG")
@@ -2199,7 +2197,6 @@ export async function createBundlePackageAction(f: FormData) {
     "Jenis paket baru berhasil dibuat."
   );
 }
-
 
 export async function updateBundlePackageAction(f: FormData) {
   const returnPath = t(f, "return_path") || "/dashboard/bundlingIsian";
