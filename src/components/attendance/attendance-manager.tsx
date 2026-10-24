@@ -139,6 +139,9 @@ export default function AttendanceManager({
   // STATE UNTUK MODAL LEMBUR JUMAT
   const [showJumatModal, setShowJumatModal] = useState(false);
   const [jumatOutTimes, setJumatOutTimes] = useState<Record<number, string>>({});
+  
+  // STATE BARU: NOTIFIKASI BERHASIL SIMPAN
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const workerMap = useMemo(() => {
     return new Map(workers.map((w) => [w.id, w]));
@@ -302,6 +305,13 @@ export default function AttendanceManager({
     (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
   );
 
+  function showSuccess(message: string) {
+    setSuccessMsg(message);
+    setTimeout(() => {
+      setSuccessMsg(null);
+    }, 4000);
+  }
+
   function handleTabChange(tab: AttendanceStatusFilter) {
     setStatusFilter(tab);
     setSelectedIds(new Set());
@@ -377,7 +387,7 @@ export default function AttendanceManager({
     });
   }
 
-  // FUNGSI BATAL CUTOFF CEPAT (RESET LEMBUR JUMAT KE 17:00 & 0 MENIT)
+  // FUNGSI BATAL CUTOFF CEPAT
   function handleCancelCutoff(rec: (typeof enrichedRecords)[number]) {
     const workerName = rec.worker?.name || `Pekerja #${rec.worker_id}`;
     const confirmMsg = `Batalkan Lembur Cutoff (Slip Depan) untuk ${workerName} pada tanggal ${rec.attendance_date}?\n\nJam pulang akan dikembalikan ke 17:00 dan lembur menjadi 0 jam.`;
@@ -422,6 +432,7 @@ export default function AttendanceManager({
           setExpandedId(null);
           setEditForm(null);
         }
+        showSuccess(`Berhasil membatalkan cutoff lembur untuk ${workerName}`);
       } catch (e: any) {
         if (!e.message?.includes("NEXT_REDIRECT")) {
           alert("Gagal membatalkan cutoff: " + e.message);
@@ -430,7 +441,6 @@ export default function AttendanceManager({
     });
   }
 
-  // FUNGSI SIMPAN KOREKSI INDIVIDUAL (TERMASUK DATA YANG SUDAH TERVERIFIKASI / TERKUNCI PAYROLL)
   function handleSaveIndividualEdit(rec: (typeof enrichedRecords)[number]) {
     if (!editForm || editForm.id !== rec.id) return;
 
@@ -491,6 +501,7 @@ export default function AttendanceManager({
 
         setExpandedId(null);
         setEditForm(null);
+        showSuccess(`Data ${rec.worker?.name} berhasil dikoreksi`);
       } catch (e: any) {
         if (!e.message?.includes("NEXT_REDIRECT")) {
           alert("Gagal menyimpan koreksi: " + e.message);
@@ -513,6 +524,7 @@ export default function AttendanceManager({
         next.delete(id);
         setSelectedIds(next);
       }
+      showSuccess(`Data ${workerName} tanggal ${date} berhasil dihapus`);
     });
   }
 
@@ -525,6 +537,7 @@ export default function AttendanceManager({
     startTransition(async () => {
       await deleteBulkAttendanceAction(fd);
       setSelectedIds(new Set());
+      showSuccess(`Berhasil menghapus data terpilih`);
     });
   }
 
@@ -545,6 +558,7 @@ export default function AttendanceManager({
     startTransition(async () => {
       await verifyBulkAttendanceAction(fd);
       setSelectedIds(new Set());
+      showSuccess(`${items.length} Draft terpilih berhasil disahkan`);
     });
   }
 
@@ -565,6 +579,7 @@ export default function AttendanceManager({
     startTransition(async () => {
       await verifyBulkAttendanceAction(fd);
       setSelectedIds(new Set());
+      showSuccess(`Semua Draft (${items.length} data) berhasil disahkan`);
     });
   }
 
@@ -636,6 +651,7 @@ export default function AttendanceManager({
         await verifyBulkAttendanceAction(fdVerify);
 
         setShowJumatModal(false);
+        showSuccess(`Data lembur Jumat berhasil disimpan!`);
       } catch (e: any) {
         if (!e.message?.includes("NEXT_REDIRECT")) {
           alert("Gagal menyimpan lembur: " + e.message);
@@ -646,6 +662,16 @@ export default function AttendanceManager({
 
   return (
     <div className="space-y-4">
+      {/* NOTIFIKASI SUKSES (MUNCUL MENGAMBANG DI ATAS) */}
+      {successMsg && (
+        <div className="fixed top-4 right-4 z-50 animate-bounce">
+          <div className="rounded-xl bg-emerald-100 border-2 border-emerald-500 px-4 py-3 shadow-2xl flex items-center gap-3 max-w-sm">
+            <span className="text-2xl">✅</span>
+            <p className="text-sm font-black text-emerald-900">{successMsg}</p>
+          </div>
+        </div>
+      )}
+
       {/* POPUP MODAL LEMBUR JUMAT */}
       {showJumatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-all">
