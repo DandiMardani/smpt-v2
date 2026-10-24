@@ -5,11 +5,9 @@ import {
   calculateShiftOvertime,
   formatMinutesToHours,
   timeToMinutes,
-  type ShiftOvertimeResult,
 } from "@/lib/attendance/overtime-calculator";
 import {
   addBulkAttendanceAction,
-  verifyAttendanceAction,
   verifyBulkAttendanceAction,
   unverifyAttendanceAction,
   autoFixMissingOutAttendanceAction,
@@ -70,6 +68,15 @@ type Props = {
   payrollRuns?: FinalizedPayrollRun[];
 };
 
+type EditFormState = {
+  id: number;
+  actualIn: string;
+  actualOut: string;
+  dayClass: string;
+  overtimeMinutes: number;
+  notes: string;
+};
+
 function checkIsHalfDay(rec: AttendanceRecordItem): boolean {
   if (rec.day_class === "HALF_DAY") return true;
   if (rec.actual_in) {
@@ -87,6 +94,20 @@ function checkIsHalfDay(rec: AttendanceRecordItem): boolean {
     }
   }
   return false;
+}
+
+function cleanJumatNotes(notes: string | null | undefined): string {
+  if (!notes) return "";
+  return notes
+    .split("|")
+    .map((s) => s.trim())
+    .filter(
+      (s) =>
+        s &&
+        !s.toLowerCase().includes("titipan lembur jumat") &&
+        !s.toLowerCase().includes("lembur pulang")
+    )
+    .join(" | ");
 }
 
 export default function AttendanceManager({
@@ -112,6 +133,7 @@ export default function AttendanceManager({
   const [defaultDayClass, setDefaultDayClass] = useState<"FULL_DAY" | "HALF_DAY">("FULL_DAY");
   const [useAutoOvertime, setUseAutoOvertime] = useState<boolean>(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // STATE UNTUK MODAL LEMBUR JUMAT
@@ -174,7 +196,9 @@ export default function AttendanceManager({
 
   // LOGIKA PENCARIAN HARI JUMAT TERAKHIR
   const latestJumatDate = useMemo(() => {
-    const dates = [...new Set(records.map(r => r.attendance_date))].sort((a,b) => b.localeCompare(a));
+    const dates = [...new Set(records.map((r) => r.attendance_date))].sort((a, b) =>
+      b.localeCompare(a)
+    );
     for (const d of dates) {
       if (new Date(d + "T00:00:00Z").getUTCDay() === 5) return d;
     }
@@ -183,15 +207,17 @@ export default function AttendanceManager({
 
   const jumatWorkers = useMemo(() => {
     if (!latestJumatDate) return [];
-    return enrichedRecords.filter(r => r.attendance_date === latestJumatDate && r.isHadir && r.paySystem !== "BULANAN");
+    return enrichedRecords.filter(
+      (r) => r.attendance_date === latestJumatDate && r.isHadir && r.paySystem !== "BULANAN"
+    );
   }, [enrichedRecords, latestJumatDate]);
 
   // SET DEFAULT JAM PULANG SAAT MODAL DIBUKA
   useEffect(() => {
     if (showJumatModal && jumatWorkers.length > 0) {
       const initialTimes: Record<number, string> = {};
-      jumatWorkers.forEach(w => {
-        initialTimes[w.id] = w.actual_out || "17:00";
+      jumatWorkers.forEach((w) => {
+        initialTimes[w.id] = (w.actual_out || "17:00").slice(0, 5);
       });
       setJumatOutTimes(initialTimes);
     }
@@ -207,7 +233,12 @@ export default function AttendanceManager({
 
   const totalCount = currentScopedRecords.length;
   const draftCount = currentScopedRecords.filter(
-    (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn && !r.isMissingOut
+    (r) =>
+      !r.isPaid &&
+      r.verification_status !== "TERVERIFIKASI" &&
+      r.isHadir &&
+      !r.isMissingIn &&
+      !r.isMissingOut
   ).length;
   const anomalyCount = currentScopedRecords.filter(
     (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isAnomaly
@@ -242,23 +273,34 @@ export default function AttendanceManager({
       }
       if (dateFilter && rec.attendance_date !== dateFilter) return false;
       if (payTypeFilter !== "ALL" && rec.paySystem !== payTypeFilter) return false;
-      
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const wName = rec.worker?.name?.toLowerCase() || "";
         const wCode = rec.worker?.worker_code?.toLowerCase() || "";
         const fId = rec.worker?.finger_id?.toLowerCase() || "";
         const attCode = (rec.attendance_code ?? "").toLowerCase();
-        if (!wName.includes(q) && !wCode.includes(q) && !fId.includes(q) && !attCode.includes(q)) return false;
+        if (!wName.includes(q) && !wCode.includes(q) && !fId.includes(q) && !attCode.includes(q))
+          return false;
       }
       return true;
     });
   }, [enrichedRecords, statusFilter, dateFilter, payTypeFilter, searchQuery]);
 
   const selectableRecords = filteredRecords.filter((r) => !r.isPaid);
-  const isAllSelected = selectableRecords.length > 0 && selectableRecords.every((r) => selectedIds.has(r.id));
-  const selectedDrafts = filteredRecords.filter((r) => selectedIds.has(r.id) && !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn);
-  const allDraftsInFilter = filteredRecords.filter((r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn);
+  const isAllSelected =
+    selectableRecords.length > 0 && selectableRecords.every((r) => selectedIds.has(r.id));
+  const selectedDrafts = filteredRecords.filter(
+    (r) =>
+      selectedIds.has(r.id) &&
+      !r.isPaid &&
+      r.verification_status !== "TERVERIFIKASI" &&
+      r.isHadir &&
+      !r.isMissingIn
+  );
+  const allDraftsInFilter = filteredRecords.filter(
+    (r) => !r.isPaid && r.verification_status !== "TERVERIFIKASI" && r.isHadir && !r.isMissingIn
+  );
 
   function handleTabChange(tab: AttendanceStatusFilter) {
     setStatusFilter(tab);
@@ -290,8 +332,178 @@ export default function AttendanceManager({
     setSelectedIds(next);
   }
 
-  function handleDeleteSingle(id: number, workerName: string, date: string) {
-    if (!window.confirm(`Yakin ingin menghapus data absensi ${workerName} tanggal ${date}?`)) return;
+  function handleOpenExpand(rec: (typeof enrichedRecords)[number]) {
+    if (expandedId === rec.id) {
+      setExpandedId(null);
+      setEditForm(null);
+      return;
+    }
+    setExpandedId(rec.id);
+    setEditForm({
+      id: rec.id,
+      actualIn: (rec.actual_in || "08:00").slice(0, 5),
+      actualOut: (rec.actual_out || "17:00").slice(0, 5),
+      dayClass: rec.effectiveDayClass || "FULL_DAY",
+      overtimeMinutes:
+        rec.verification_status === "TERVERIFIKASI"
+          ? rec.overtime_minutes
+          : rec.calc.overtimeMinutes,
+      notes: rec.notes || (rec.isMissingOut ? "Lupa finger pulang" : ""),
+    });
+  }
+
+  function handleEditTimeChange(
+    rec: (typeof enrichedRecords)[number],
+    field: "actualIn" | "actualOut",
+    value: string
+  ) {
+    if (!editForm) return;
+    const nextIn = field === "actualIn" ? value : editForm.actualIn;
+    const nextOut = field === "actualOut" ? value : editForm.actualOut;
+
+    const recalc = calculateShiftOvertime(
+      rec.attendance_date,
+      nextIn,
+      nextOut,
+      rec.paySystem,
+      null,
+      shiftSettings
+    );
+
+    setEditForm({
+      ...editForm,
+      [field]: value,
+      overtimeMinutes: recalc.overtimeMinutes,
+    });
+  }
+
+  // FUNGSI BATAL CUTOFF CEPAT (RESET LEMBUR JUMAT KE 17:00 & 0 MENIT)
+  function handleCancelCutoff(rec: (typeof enrichedRecords)[number]) {
+    const workerName = rec.worker?.name || `Pekerja #${rec.worker_id}`;
+    const confirmMsg = `Batalkan Lembur Cutoff (Slip Depan) untuk ${workerName} pada tanggal ${rec.attendance_date}?\n\nJam pulang akan dikembalikan ke 17:00 dan lembur menjadi 0 jam.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const normalOut = (rec.schedule_out || "17:00").slice(0, 5);
+    const cleanedNotes = cleanJumatNotes(rec.notes);
+
+    const itemToAdd = {
+      worker_id: rec.worker_id,
+      attendance_date: rec.attendance_date,
+      schedule_in: rec.schedule_in,
+      schedule_out: rec.schedule_out,
+      actual_in: rec.actual_in,
+      actual_out: normalOut,
+      day_class: rec.day_class || "FULL_DAY",
+      attendance_status: rec.attendance_status,
+      overtime_minutes: 0,
+      source: "MANUAL",
+      notes: cleanedNotes || null,
+      verification_status: "TERVERIFIKASI",
+    };
+
+    const itemToVerify = {
+      id: rec.id,
+      day_class: rec.day_class || "FULL_DAY",
+      overtime_minutes: 0,
+      notes: cleanedNotes,
+    };
+
+    startTransition(async () => {
+      try {
+        const fdAdd = new FormData();
+        fdAdd.append("items", JSON.stringify([itemToAdd]));
+        await addBulkAttendanceAction(fdAdd);
+
+        const fdVerify = new FormData();
+        fdVerify.append("items", JSON.stringify([itemToVerify]));
+        await verifyBulkAttendanceAction(fdVerify);
+
+        if (expandedId === rec.id) {
+          setExpandedId(null);
+          setEditForm(null);
+        }
+      } catch (e: any) {
+        if (!e.message?.includes("NEXT_REDIRECT")) {
+          alert("Gagal membatalkan cutoff: " + e.message);
+        }
+      }
+    });
+  }
+
+  // FUNGSI SIMPAN KOREKSI INDIVIDUAL (TERMASUK DATA YANG SUDAH TERVERIFIKASI / TERKUNCI PAYROLL)
+  function handleSaveIndividualEdit(rec: (typeof enrichedRecords)[number]) {
+    if (!editForm || editForm.id !== rec.id) return;
+
+    if (rec.isPaid) {
+      const ok = window.confirm(
+        `Data ini sudah tercatat pada Payroll (${rec.matchingPayrollRun?.payroll_code || "FINAL"}).\n\nYakin ingin menyimpan koreksi data absensi ini?`
+      );
+      if (!ok) return;
+    }
+
+    const otMins = Math.max(0, Number(editForm.overtimeMinutes) || 0);
+    const d = new Date(rec.attendance_date + "T00:00:00Z");
+    const isJumat = d.getUTCDay() === 5;
+    const isHarian = rec.paySystem !== "BULANAN";
+
+    let updatedNotes = editForm.notes.trim();
+    if (otMins === 0) {
+      updatedNotes = cleanJumatNotes(updatedNotes);
+    } else if (isJumat && isHarian) {
+      const baseNotes = cleanJumatNotes(updatedNotes);
+      const otHours = +(otMins / 60).toFixed(1);
+      updatedNotes = baseNotes
+        ? `${baseNotes} | Titipan Lembur Jumat: ${otHours} Jam`
+        : `Titipan Lembur Jumat: ${otHours} Jam`;
+    }
+
+    const itemToAdd = {
+      worker_id: rec.worker_id,
+      attendance_date: rec.attendance_date,
+      schedule_in: rec.schedule_in,
+      schedule_out: rec.schedule_out,
+      actual_in: editForm.actualIn,
+      actual_out: editForm.actualOut,
+      day_class: editForm.dayClass,
+      attendance_status: rec.attendance_status,
+      overtime_minutes: otMins,
+      source: "MANUAL",
+      notes: updatedNotes || null,
+      verification_status: "TERVERIFIKASI",
+    };
+
+    const itemToVerify = {
+      id: rec.id,
+      day_class: editForm.dayClass,
+      overtime_minutes: otMins,
+      notes: updatedNotes,
+    };
+
+    startTransition(async () => {
+      try {
+        const fdAdd = new FormData();
+        fdAdd.append("items", JSON.stringify([itemToAdd]));
+        await addBulkAttendanceAction(fdAdd);
+
+        const fdVerify = new FormData();
+        fdVerify.append("items", JSON.stringify([itemToVerify]));
+        await verifyBulkAttendanceAction(fdVerify);
+
+        setExpandedId(null);
+        setEditForm(null);
+      } catch (e: any) {
+        if (!e.message?.includes("NEXT_REDIRECT")) {
+          alert("Gagal menyimpan koreksi: " + e.message);
+        }
+      }
+    });
+  }
+
+  function handleDeleteSingle(id: number, workerName: string, date: string, isPaid?: boolean) {
+    const msg = isPaid
+      ? `PERINGATAN: Data absensi ${workerName} (${date}) sudah masuk periode Payroll.\n\nYakin tetap ingin menghapus data ini?`
+      : `Yakin ingin menghapus data absensi ${workerName} tanggal ${date}?`;
+    if (!window.confirm(msg)) return;
     const fd = new FormData();
     fd.append("attendance_id", String(id));
     startTransition(async () => {
@@ -306,7 +518,8 @@ export default function AttendanceManager({
 
   function handleBulkDelete() {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`Yakin ingin menghapus ${selectedIds.size} data absensi yang dipilih?`)) return;
+    if (!window.confirm(`Yakin ingin menghapus ${selectedIds.size} data absensi yang dipilih?`))
+      return;
     const fd = new FormData();
     fd.append("attendance_ids", Array.from(selectedIds).join(","));
     startTransition(async () => {
@@ -319,8 +532,13 @@ export default function AttendanceManager({
     if (selectedDrafts.length === 0) return;
     const items = selectedDrafts.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
-      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : (row.day_class || defaultDayClass);
-      return { id: row.id, day_class: assignedDayClass, overtime_minutes: ot, notes: row.notes || undefined };
+      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : row.day_class || defaultDayClass;
+      return {
+        id: row.id,
+        day_class: assignedDayClass,
+        overtime_minutes: ot,
+        notes: row.notes || undefined,
+      };
     });
     const fd = new FormData();
     fd.append("items", JSON.stringify(items));
@@ -334,8 +552,13 @@ export default function AttendanceManager({
     if (allDraftsInFilter.length === 0) return;
     const items = allDraftsInFilter.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
-      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : (row.day_class || defaultDayClass);
-      return { id: row.id, day_class: assignedDayClass, overtime_minutes: ot, notes: row.notes || undefined };
+      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : row.day_class || defaultDayClass;
+      return {
+        id: row.id,
+        day_class: assignedDayClass,
+        overtime_minutes: ot,
+        notes: row.notes || undefined,
+      };
     });
     const fd = new FormData();
     fd.append("items", JSON.stringify(items));
@@ -345,7 +568,7 @@ export default function AttendanceManager({
     });
   }
 
-  // FUNGSI SAKTI PENYIMPAN LEMBUR JUMAT MALAM
+  // FUNGSI SAKTI PENYIMPAN & PEMBATAL LEMBUR JUMAT MALAM
   function handleSaveJumatLembur() {
     const itemsToAdd: any[] = [];
     const itemsToVerify: any[] = [];
@@ -353,7 +576,8 @@ export default function AttendanceManager({
     for (const rec of jumatWorkers) {
       let outTime = jumatOutTimes[rec.id];
       if (!outTime) outTime = "17:00";
-      if (outTime === rec.actual_out) continue; // Skip jika tidak ada perubahan jam pulang
+      const prevOut = (rec.actual_out || "17:00").slice(0, 5);
+      if (outTime === prevOut) continue;
 
       const newCalc = calculateShiftOvertime(
         rec.attendance_date,
@@ -364,9 +588,12 @@ export default function AttendanceManager({
         shiftSettings
       );
 
-      let newNotes = rec.notes || "";
-      if (newCalc.overtimeMinutes > 0 && !newNotes.includes("Lembur Jumat")) {
-        newNotes = newNotes ? `${newNotes} | Titipan Lembur Jumat: ${newCalc.overtimeHours} Jam` : `Titipan Lembur Jumat: ${newCalc.overtimeHours} Jam`;
+      const baseNotes = cleanJumatNotes(rec.notes);
+      let newNotes = baseNotes;
+      if (newCalc.overtimeMinutes > 0) {
+        newNotes = baseNotes
+          ? `${baseNotes} | Titipan Lembur Jumat: ${newCalc.overtimeHours} Jam`
+          : `Titipan Lembur Jumat: ${newCalc.overtimeHours} Jam`;
       }
 
       itemsToAdd.push({
@@ -380,20 +607,20 @@ export default function AttendanceManager({
         attendance_status: rec.attendance_status,
         overtime_minutes: newCalc.overtimeMinutes,
         source: "MANUAL",
-        notes: newNotes,
-        verification_status: "TERVERIFIKASI"
+        notes: newNotes || null,
+        verification_status: "TERVERIFIKASI",
       });
 
       itemsToVerify.push({
         id: rec.id,
         day_class: rec.day_class || "FULL_DAY",
         overtime_minutes: newCalc.overtimeMinutes,
-        notes: newNotes
+        notes: newNotes,
       });
     }
 
     if (itemsToAdd.length === 0) {
-      alert("Tidak ada jam lembur baru yang diinput.");
+      alert("Tidak ada perubahan jam pulang/lembur yang diinput.");
       setShowJumatModal(false);
       return;
     }
@@ -419,7 +646,6 @@ export default function AttendanceManager({
 
   return (
     <div className="space-y-4">
-
       {/* POPUP MODAL LEMBUR JUMAT */}
       {showJumatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-all">
@@ -427,18 +653,26 @@ export default function AttendanceManager({
             <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-3">
               <div>
                 <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                  <span>🌙</span> Input Lembur Jumat ({latestJumatDate})
+                  <span>🌙</span> Input / Edit Lembur Jumat ({latestJumatDate})
                 </h2>
-                <p className="text-[11px] text-slate-500 font-medium mt-1">Ubah jam pulang menjadi malam (misal 21:00) untuk memicu perhitungan lembur otomatis. Data gaji pokok siang tidak akan terganggu.</p>
+                <p className="text-[11px] text-slate-500 font-medium mt-1">
+                  Ubah jam pulang menjadi malam (misal 21:00) untuk lembur, atau klik <b>Reset 17:00</b> untuk membatalkan cutoff lembur.
+                </p>
               </div>
-              <button onClick={() => setShowJumatModal(false)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 text-slate-500 font-bold transition cursor-pointer">✕</button>
+              <button
+                onClick={() => setShowJumatModal(false)}
+                className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 text-slate-500 font-bold transition cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
-            
+
             <div className="overflow-y-auto pr-2 space-y-2 flex-1">
-              {jumatWorkers.map(w => {
-                const currentOut = jumatOutTimes[w.id] ?? (w.actual_out || "");
-                const isChanged = currentOut !== w.actual_out;
-                
+              {jumatWorkers.map((w) => {
+                const prevOut = (w.actual_out || "17:00").slice(0, 5);
+                const currentOut = jumatOutTimes[w.id] ?? prevOut;
+                const isChanged = currentOut !== prevOut;
+
                 const tempCalc = calculateShiftOvertime(
                   w.attendance_date,
                   w.actual_in,
@@ -449,22 +683,50 @@ export default function AttendanceManager({
                 );
 
                 return (
-                  <div key={w.id} className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 border rounded-xl gap-3 transition-colors ${isChanged ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-200'}`}>
+                  <div
+                    key={w.id}
+                    className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 border rounded-xl gap-3 transition-colors ${
+                      isChanged
+                        ? "bg-purple-50 border-purple-300"
+                        : "bg-slate-50 border-slate-200"
+                    }`}
+                  >
                     <div>
                       <p className="font-extrabold text-slate-900">{w.worker?.name}</p>
-                      <p className="text-[10px] text-slate-500 font-medium">Jam Masuk: <b className="text-slate-700">{w.actual_in || "--:--"}</b></p>
+                      <p className="text-[10px] text-slate-500 font-medium">
+                        Jam Masuk: <b className="text-slate-700">{w.actual_in || "--:--"}</b> · Jam Pulang Saat Ini:{" "}
+                        <b className="text-slate-700">{prevOut}</b>
+                      </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5">
                       <div className="flex flex-col items-end">
-                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Jam Pulang / Lembur</label>
-                        <input 
-                          type="time" 
-                          value={currentOut} 
-                          onChange={(e) => setJumatOutTimes(prev => ({...prev, [w.id]: e.target.value}))} 
-                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                        />
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+                          Jam Pulang / Lembur
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="time"
+                            value={currentOut}
+                            onChange={(e) =>
+                              setJumatOutTimes((prev) => ({ ...prev, [w.id]: e.target.value }))
+                            }
+                            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                          />
+                          {currentOut !== "17:00" && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setJumatOutTimes((prev) => ({ ...prev, [w.id]: "17:00" }))
+                              }
+                              className="rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2 py-1 text-[10px] font-bold text-rose-700 transition cursor-pointer"
+                              title="Kembalikan ke 17:00 (Batal Lembur)"
+                            >
+                              Reset 17:00
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="w-24 text-right">
+                      <div className="w-20 text-right">
                         {tempCalc.overtimeMinutes > 0 ? (
                           <span className="inline-block rounded-md bg-purple-100 px-2 py-1 text-[10px] font-black text-purple-800">
                             ⚡ {tempCalc.overtimeHours} Jam
@@ -475,14 +737,24 @@ export default function AttendanceManager({
                       </div>
                     </div>
                   </div>
-                )
+                );
               })}
             </div>
 
             <div className="border-t border-slate-200 pt-3 mt-3 flex justify-end gap-2">
-              <button disabled={isPending} onClick={() => setShowJumatModal(false)} className="rounded-xl px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer text-sm">Batal</button>
-              <button disabled={isPending} onClick={handleSaveJumatLembur} className="rounded-xl bg-purple-600 hover:bg-purple-700 px-6 py-2 font-black text-white shadow-md transition disabled:opacity-50 cursor-pointer text-sm flex items-center gap-2">
-                {isPending ? "Menyimpan..." : "💾 Simpan & Rekap Lembur"}
+              <button
+                disabled={isPending}
+                onClick={() => setShowJumatModal(false)}
+                className="rounded-xl px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer text-sm"
+              >
+                Batal
+              </button>
+              <button
+                disabled={isPending}
+                onClick={handleSaveJumatLembur}
+                className="rounded-xl bg-purple-600 hover:bg-purple-700 px-6 py-2 font-black text-white shadow-md transition disabled:opacity-50 cursor-pointer text-sm flex items-center gap-2"
+              >
+                {isPending ? "Menyimpan..." : "💾 Simpan Perubahan Lembur"}
               </button>
             </div>
           </div>
@@ -561,10 +833,10 @@ export default function AttendanceManager({
           <div className="space-y-1 z-10">
             <div className="font-black text-purple-900 flex items-center gap-1.5 text-sm">
               <span>🌙</span>
-              <span>Rekap Lembur Jumat Malam (Susulan)</span>
+              <span>Rekap / Koreksi Lembur Jumat Malam (Susulan)</span>
             </div>
             <p className="text-purple-700 text-[11px] font-medium leading-relaxed max-w-xl">
-              Input jam pulang pekerja harian yang lembur di hari Jumat ({latestJumatDate}). Data ini aman dan <b>tidak akan merusak</b> Finalisasi Payroll (Gaji Siang) yang sudah terkunci.
+              Input atau batalkan jam pulang pekerja harian yang lembur di hari Jumat ({latestJumatDate}). Data ini aman dan <b>tidak akan merusak</b> Finalisasi Payroll (Gaji Siang) yang sudah terkunci.
             </p>
           </div>
           <button
@@ -572,7 +844,7 @@ export default function AttendanceManager({
             className="shrink-0 w-full sm:w-auto rounded-xl bg-purple-600 hover:bg-purple-700 px-5 py-2.5 font-black text-white shadow-md transition active:scale-95 text-xs flex items-center justify-center gap-2 cursor-pointer z-10 ring-2 ring-purple-300 ring-offset-1"
           >
             <span>📝</span>
-            <span>Input Lembur Jumat</span>
+            <span>Input / Edit Lembur Jumat</span>
           </button>
         </div>
       )}
@@ -673,7 +945,9 @@ export default function AttendanceManager({
                 setSelectedIds(new Set());
               }}
               className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                payTypeFilter === "ALL" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                payTypeFilter === "ALL"
+                  ? "bg-white text-slate-900 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
               }`}
             >
               Semua Tipe
@@ -685,7 +959,9 @@ export default function AttendanceManager({
                 setSelectedIds(new Set());
               }}
               className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                payTypeFilter === "BULANAN" ? "bg-purple-600 text-white shadow-2xs" : "text-purple-800 hover:text-purple-950"
+                payTypeFilter === "BULANAN"
+                  ? "bg-purple-600 text-white shadow-2xs"
+                  : "text-purple-800 hover:text-purple-950"
               }`}
             >
               👔 Bulanan
@@ -697,7 +973,9 @@ export default function AttendanceManager({
                 setSelectedIds(new Set());
               }}
               className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                payTypeFilter === "HARIAN" ? "bg-blue-600 text-white shadow-2xs" : "text-blue-800 hover:text-blue-950"
+                payTypeFilter === "HARIAN"
+                  ? "bg-blue-600 text-white shadow-2xs"
+                  : "text-blue-800 hover:text-blue-950"
               }`}
             >
               👷‍♂️ Harian
@@ -710,7 +988,9 @@ export default function AttendanceManager({
             type="button"
             onClick={() => handleTabChange("DRAFT")}
             className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
-              statusFilter === "DRAFT" ? "bg-amber-500 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
+              statusFilter === "DRAFT"
+                ? "bg-amber-500 text-white shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             ⏳ Draft ({draftCount})
@@ -719,7 +999,9 @@ export default function AttendanceManager({
             type="button"
             onClick={() => handleTabChange("ANOMALI")}
             className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
-              statusFilter === "ANOMALI" ? "bg-rose-600 text-white shadow-2xs font-bold" : "text-rose-700 hover:text-rose-900"
+              statusFilter === "ANOMALI"
+                ? "bg-rose-600 text-white shadow-2xs font-bold"
+                : "text-rose-700 hover:text-rose-900"
             }`}
           >
             ⚠️ Jam Bolong ({anomalyCount})
@@ -728,7 +1010,9 @@ export default function AttendanceManager({
             type="button"
             onClick={() => handleTabChange("TERVERIFIKASI")}
             className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
-              statusFilter === "TERVERIFIKASI" ? "bg-emerald-600 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
+              statusFilter === "TERVERIFIKASI"
+                ? "bg-emerald-600 text-white shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             ✅ Terverifikasi ({verifiedCount})
@@ -737,7 +1021,9 @@ export default function AttendanceManager({
             type="button"
             onClick={() => handleTabChange("DIBAYAR")}
             className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
-              statusFilter === "DIBAYAR" ? "bg-slate-900 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
+              statusFilter === "DIBAYAR"
+                ? "bg-slate-900 text-white shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             💳 Sudah Dibayar ({paidCount})
@@ -746,7 +1032,9 @@ export default function AttendanceManager({
             type="button"
             onClick={() => handleTabChange("NON_HADIR")}
             className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
-              statusFilter === "NON_HADIR" ? "bg-purple-700 text-white shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
+              statusFilter === "NON_HADIR"
+                ? "bg-purple-700 text-white shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             🔴 Alpha/Izin ({nonHadirCount})
@@ -755,7 +1043,9 @@ export default function AttendanceManager({
             type="button"
             onClick={() => handleTabChange("ALL")}
             className={`px-2.5 py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
-              statusFilter === "ALL" ? "bg-white text-slate-900 shadow-2xs font-bold" : "text-slate-600 hover:text-slate-900"
+              statusFilter === "ALL"
+                ? "bg-white text-slate-900 shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             Semua ({totalCount})
@@ -811,8 +1101,12 @@ export default function AttendanceManager({
                 onChange={(e) => setDefaultDayClass(e.target.value as "FULL_DAY" | "HALF_DAY")}
                 className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white outline-none cursor-pointer text-xs"
               >
-                <option value="FULL_DAY" className="text-slate-900">FULL DAY (Default)</option>
-                <option value="HALF_DAY" className="text-slate-900">HALF DAY</option>
+                <option value="FULL_DAY" className="text-slate-900">
+                  FULL DAY (Default)
+                </option>
+                <option value="HALF_DAY" className="text-slate-900">
+                  HALF DAY
+                </option>
               </select>
 
               {selectedIds.size > 0 ? (
@@ -834,7 +1128,9 @@ export default function AttendanceManager({
                     className="rounded-xl bg-rose-500 hover:bg-rose-600 px-3.5 py-2 font-black text-white shadow-md transition active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                   >
                     <span>🗑️</span>
-                    <span>{isPending ? "Menghapus..." : `Hapus ${selectedIds.size} Terpilih`}</span>
+                    <span>
+                      {isPending ? "Menghapus..." : `Hapus ${selectedIds.size} Terpilih`}
+                    </span>
                   </button>
                 </>
               ) : allDraftsInFilter.length > 0 ? (
@@ -844,7 +1140,9 @@ export default function AttendanceManager({
                   onClick={handleBulkVerifyAllDrafts}
                   className="rounded-xl bg-amber-400 px-3.5 py-2 font-black text-amber-950 shadow-md hover:bg-amber-300 transition active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
-                  {isPending ? "Memproses..." : `⚡ Sahkan Semua Draft (${allDraftsInFilter.length})`}
+                  {isPending
+                    ? "Memproses..."
+                    : `⚡ Sahkan Semua Draft (${allDraftsInFilter.length})`}
                 </button>
               ) : null}
             </div>
@@ -946,8 +1244,24 @@ export default function AttendanceManager({
                         </span>
                         <span>•</span>
                         <span className="font-bold text-slate-700">
-                          Jam: <span className={rec.isHadir && (rec.isMissingIn || isTelat) ? "text-rose-600 font-black" : ""}>{rec.actual_in || "--:--"}</span> s/d{" "}
-                          <span className={rec.isHadir && rec.isMissingOut ? "text-rose-600 font-black" : ""}>{rec.actual_out || "--:--"}</span>
+                          Jam:{" "}
+                          <span
+                            className={
+                              rec.isHadir && (rec.isMissingIn || isTelat)
+                                ? "text-rose-600 font-black"
+                                : ""
+                            }
+                          >
+                            {rec.actual_in || "--:--"}
+                          </span>{" "}
+                          s/d{" "}
+                          <span
+                            className={
+                              rec.isHadir && rec.isMissingOut ? "text-rose-600 font-black" : ""
+                            }
+                          >
+                            {rec.actual_out || "--:--"}
+                          </span>
                         </span>
                         <span>•</span>
                         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
@@ -966,9 +1280,15 @@ export default function AttendanceManager({
                         )}
                       </div>
 
-                      {isTelat && (
-                        <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-orange-50 border border-orange-200 px-2 py-1 text-[11px] font-bold text-orange-800">
-                          <span>⚠️</span>
+                      {rec.notes && (
+                        <div
+                          className={`mt-1.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold border ${
+                            isTelat
+                              ? "bg-orange-50 border-orange-200 text-orange-800"
+                              : "bg-slate-50 border-slate-200 text-slate-700"
+                          }`}
+                        >
+                          <span>{isTelat ? "⚠️" : "📝"}</span>
                           <span>{rec.notes}</span>
                         </div>
                       )}
@@ -988,11 +1308,24 @@ export default function AttendanceManager({
                         <span className="rounded-full bg-blue-100 border border-blue-300 px-2.5 py-0.5 text-[11px] font-bold text-blue-900">
                           ⚡ Lembur {formatMinutesToHours(calc.overtimeMinutes)}
                         </span>
-                        
+
                         {isCutoffLembur && (
-                          <span className="rounded-full bg-purple-100 border border-purple-300 px-2.5 py-0.5 text-[11px] font-black text-purple-900 animate-pulse shadow-sm">
-                            ⏭️ Cutoff (Slip Depan)
-                          </span>
+                          <>
+                            <span className="rounded-full bg-purple-100 border border-purple-300 px-2.5 py-0.5 text-[11px] font-black text-purple-900 animate-pulse shadow-sm">
+                              ⏭️ Cutoff (Slip Depan)
+                            </span>
+                            {canWrite && (
+                              <button
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => handleCancelCutoff(rec)}
+                                className="rounded-full border border-rose-300 bg-rose-50 hover:bg-rose-100 px-2.5 py-0.5 text-[10px] font-black text-rose-700 transition cursor-pointer shadow-2xs disabled:opacity-50"
+                                title="Batalkan Lembur Cutoff dan kembalikan jam pulang ke 17:00"
+                              >
+                                ✕ Batal Cutoff
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     ) : (
@@ -1019,128 +1352,232 @@ export default function AttendanceManager({
                       </span>
                     )}
 
-                    {canWrite && !rec.isPaid ? (
+                    {canWrite ? (
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setExpandedId(expandedId === rec.id ? null : rec.id)}
-                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                          onClick={() => handleOpenExpand(rec)}
+                          className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
+                            expandedId === rec.id
+                              ? "border-slate-300 bg-slate-200 text-slate-900"
+                              : rec.isPaid
+                              ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                              : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                          }`}
                         >
-                          {expandedId === rec.id ? "Tutup ✕" : "Koreksi ▾"}
+                          {expandedId === rec.id
+                            ? "Tutup ✕"
+                            : rec.isPaid
+                            ? "🔓 Edit / Koreksi"
+                            : "Koreksi ▾"}
                         </button>
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => handleDeleteSingle(rec.id, worker?.name || `Pekerja #${rec.worker_id}`, rec.attendance_date)}
-                          className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                          title="Hapus data absensi ini"
-                        >
-                          <span>🗑️</span>
-                          <span className="hidden sm:inline">Hapus</span>
-                        </button>
+                        {!rec.isPaid && (
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() =>
+                              handleDeleteSingle(
+                                rec.id,
+                                worker?.name || `Pekerja #${rec.worker_id}`,
+                                rec.attendance_date,
+                                rec.isPaid
+                              )
+                            }
+                            className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                            title="Hapus data absensi ini"
+                          >
+                            <span>🗑️</span>
+                            <span className="hidden sm:inline">Hapus</span>
+                          </button>
+                        )}
                       </div>
                     ) : rec.isPaid ? (
-                      <span className="text-[10px] text-slate-400 font-semibold italic">Terkunci (Payroll)</span>
+                      <span className="text-[10px] text-slate-400 font-semibold italic">
+                        Terkunci (Payroll)
+                      </span>
                     ) : null}
                   </div>
                 </div>
 
-                {expandedId === rec.id && canWrite ? (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-3">
+                {/* PANEL EDIT & KOREKSI INDIVIDUAL (AKTIF UNTUK SEMUA STATUS TERMASUK PAYROLL) */}
+                {expandedId === rec.id && canWrite && editForm && editForm.id === rec.id ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
-                      <b className="text-xs font-bold text-slate-900">
-                        Koreksi Individual: {worker?.name} ({rec.attendance_date})
-                      </b>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <b className="text-xs font-bold text-slate-900">
+                          Koreksi Individual: {worker?.name} ({rec.attendance_date})
+                        </b>
+                        {rec.isPaid && (
+                          <span className="rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-extrabold text-amber-900">
+                            ⚠️ Mode Koreksi Payroll ({rec.matchingPayrollRun?.payroll_code})
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[11px] text-slate-500 font-medium">
                         Kalkulasi sistem: {calc.description}
                       </span>
                     </div>
 
-                    {!isVerified ? (
-                      <form action={verifyAttendanceAction} className="grid gap-2.5 sm:grid-cols-4 items-end">
-                        <input type="hidden" name="attendance_id" value={rec.id} />
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Klasifikasi Hari</label>
-                          <select
-                            name="day_class"
-                            defaultValue={dayClass}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-semibold"
-                          >
-                            <option value="FULL_DAY">FULL DAY</option>
-                            <option value="HALF_DAY">HALF DAY</option>
-                          </select>
-                        </div>
+                    <div className="grid gap-2.5 sm:grid-cols-5 items-end">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Jam Masuk
+                        </label>
+                        <input
+                          type="time"
+                          value={editForm.actualIn}
+                          onChange={(e) => handleEditTimeChange(rec, "actualIn", e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-bold"
+                        />
+                      </div>
 
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            Menit Lembur (Default: {calc.overtimeMinutes} mnt)
-                          </label>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Jam Pulang
+                        </label>
+                        <div className="flex items-center gap-1">
                           <input
-                            name="overtime_minutes"
+                            type="time"
+                            value={editForm.actualOut}
+                            onChange={(e) => handleEditTimeChange(rec, "actualOut", e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-bold"
+                          />
+                          {editForm.actualOut !== "17:00" && (
+                            <button
+                              type="button"
+                              onClick={() => handleEditTimeChange(rec, "actualOut", "17:00")}
+                              className="shrink-0 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-700 cursor-pointer"
+                              title="Set Pulang 17:00"
+                            >
+                              17:00
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Klasifikasi Hari
+                        </label>
+                        <select
+                          value={editForm.dayClass}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, dayClass: e.target.value })
+                          }
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-semibold"
+                        >
+                          <option value="FULL_DAY">FULL DAY</option>
+                          <option value="HALF_DAY">HALF DAY</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Menit Lembur ({formatMinutesToHours(Number(editForm.overtimeMinutes) || 0)})
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <input
                             type="number"
                             min="0"
-                            defaultValue={calc.overtimeMinutes}
+                            value={editForm.overtimeMinutes}
+                            onChange={(e) =>
+                              setEditForm({
+                                ...editForm,
+                                overtimeMinutes: Math.max(0, parseInt(e.target.value || "0", 10)),
+                              })
+                            }
                             placeholder="Menit lembur"
                             className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-bold"
                           />
+                          {editForm.overtimeMinutes > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditForm({
+                                  ...editForm,
+                                  overtimeMinutes: 0,
+                                  notes: cleanJumatNotes(editForm.notes),
+                                })
+                              }
+                              className="shrink-0 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2 py-1.5 text-[10px] font-bold text-rose-700 cursor-pointer"
+                              title="Nolkan Lembur"
+                            >
+                              0 mnt
+                            </button>
+                          )}
                         </div>
+                      </div>
 
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Catatan</label>
-                          <input
-                            name="notes"
-                            defaultValue={rec.notes || (rec.isMissingOut ? "Lupa finger pulang" : "")}
-                            placeholder="Keterangan opsional"
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
-                          />
-                        </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Catatan
+                        </label>
+                        <input
+                          type="text"
+                          value={editForm.notes}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, notes: e.target.value })
+                          }
+                          placeholder="Keterangan opsional"
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                        />
+                      </div>
+                    </div>
 
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="submit"
-                            className="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-emerald-700 transition cursor-pointer"
-                          >
-                            ✓ Sahkan
-                          </button>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {isCutoffLembur && (
                           <button
                             type="button"
                             disabled={isPending}
-                            onClick={() => handleDeleteSingle(rec.id, worker?.name || `Pekerja #${rec.worker_id}`, rec.attendance_date)}
-                            className="rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                            title="Hapus data ini"
+                            onClick={() => handleCancelCutoff(rec)}
+                            className="rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 text-xs font-black text-purple-900 transition cursor-pointer disabled:opacity-50"
                           >
-                            <span>🗑️</span>
-                            <span>Hapus</span>
+                            ⏭️ Batal Cutoff Lembur (Set Pulang 17:00)
                           </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                        <div className="text-xs text-slate-600">
-                          Data ini sudah diverifikasi dengan klasifikasi: <b>{dayClass}</b>, lembur: <b>{formatMinutesToHours(rec.overtime_minutes)}</b> ({rec.overtime_minutes} menit).
-                        </div>
-                        <div className="flex items-center gap-2">
+                        )}
+
+                        {isVerified && (
                           <form action={unverifyAttendanceAction}>
                             <input type="hidden" name="attendance_id" value={rec.id} />
                             <button
                               type="submit"
-                              className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-2xs cursor-pointer"
+                              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 transition cursor-pointer"
                             >
-                              ↺ Batalkan Verifikasi (Kembali ke DRAFT)
+                              ↺ Kembalikan ke DRAFT
                             </button>
                           </form>
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => handleDeleteSingle(rec.id, worker?.name || `Pekerja #${rec.worker_id}`, rec.attendance_date)}
-                            className="rounded-lg border border-rose-300 bg-rose-100 px-3 py-1.5 text-xs font-bold text-rose-800 hover:bg-rose-200 transition shadow-2xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                          >
-                            <span>🗑</span>
-                            <span>Hapus Data</span>
-                          </button>
-                        </div>
+                        )}
                       </div>
-                    )}
+
+                      <div className="flex items-center gap-2 ml-auto">
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() =>
+                            handleDeleteSingle(
+                              rec.id,
+                              worker?.name || `Pekerja #${rec.worker_id}`,
+                              rec.attendance_date,
+                              rec.isPaid
+                            )
+                          }
+                          className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <span>🗑️</span>
+                          <span>Hapus Data</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => handleSaveIndividualEdit(rec)}
+                          className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-black text-white shadow-sm hover:bg-emerald-700 transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isPending ? "Menyimpan..." : "💾 Simpan & Sahkan Koreksi"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </div>
