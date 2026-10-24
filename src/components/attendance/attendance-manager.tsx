@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import {
   calculateShiftOvertime,
   formatMinutesToHours,
@@ -117,6 +118,7 @@ export default function AttendanceManager({
   shiftSettings,
   payrollRuns = [],
 }: Props) {
+  const pathname = usePathname();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<AttendanceStatusFilter>("DRAFT");
   const [payTypeFilter, setPayTypeFilter] = useState<"ALL" | "BULANAN" | "HARIAN">("ALL");
@@ -422,10 +424,14 @@ export default function AttendanceManager({
       try {
         const fdAdd = new FormData();
         fdAdd.append("items", JSON.stringify([itemToAdd]));
+        fdAdd.append("return_path", pathname);
+
         await addBulkAttendanceAction(fdAdd);
 
         const fdVerify = new FormData();
         fdVerify.append("items", JSON.stringify([itemToVerify]));
+        fdVerify.append("return_path", pathname);
+
         await verifyBulkAttendanceAction(fdVerify);
 
         if (expandedId === rec.id) {
@@ -493,10 +499,14 @@ export default function AttendanceManager({
       try {
         const fdAdd = new FormData();
         fdAdd.append("items", JSON.stringify([itemToAdd]));
+        fdAdd.append("return_path", pathname);
+
         await addBulkAttendanceAction(fdAdd);
 
         const fdVerify = new FormData();
         fdVerify.append("items", JSON.stringify([itemToVerify]));
+        fdVerify.append("return_path", pathname);
+
         await verifyBulkAttendanceAction(fdVerify);
 
         setExpandedId(null);
@@ -515,8 +525,11 @@ export default function AttendanceManager({
       ? `PERINGATAN: Data absensi ${workerName} (${date}) sudah masuk periode Payroll.\n\nYakin tetap ingin menghapus data ini?`
       : `Yakin ingin menghapus data absensi ${workerName} tanggal ${date}?`;
     if (!window.confirm(msg)) return;
+    
     const fd = new FormData();
     fd.append("attendance_id", String(id));
+    fd.append("return_path", pathname);
+    
     startTransition(async () => {
       await deleteAttendanceAction(fd);
       if (selectedIds.has(id)) {
@@ -532,8 +545,11 @@ export default function AttendanceManager({
     if (selectedIds.size === 0) return;
     if (!window.confirm(`Yakin ingin menghapus ${selectedIds.size} data absensi yang dipilih?`))
       return;
+      
     const fd = new FormData();
     fd.append("attendance_ids", Array.from(selectedIds).join(","));
+    fd.append("return_path", pathname);
+    
     startTransition(async () => {
       await deleteBulkAttendanceAction(fd);
       setSelectedIds(new Set());
@@ -555,6 +571,8 @@ export default function AttendanceManager({
     });
     const fd = new FormData();
     fd.append("items", JSON.stringify(items));
+    fd.append("return_path", pathname);
+    
     startTransition(async () => {
       await verifyBulkAttendanceAction(fd);
       setSelectedIds(new Set());
@@ -576,6 +594,8 @@ export default function AttendanceManager({
     });
     const fd = new FormData();
     fd.append("items", JSON.stringify(items));
+    fd.append("return_path", pathname);
+    
     startTransition(async () => {
       await verifyBulkAttendanceAction(fd);
       setSelectedIds(new Set());
@@ -644,10 +664,14 @@ export default function AttendanceManager({
       try {
         const fdAdd = new FormData();
         fdAdd.append("items", JSON.stringify(itemsToAdd));
+        fdAdd.append("return_path", pathname);
+        
         await addBulkAttendanceAction(fdAdd);
 
         const fdVerify = new FormData();
         fdVerify.append("items", JSON.stringify(itemsToVerify));
+        fdVerify.append("return_path", pathname);
+        
         await verifyBulkAttendanceAction(fdVerify);
 
         setShowJumatModal(false);
@@ -891,6 +915,7 @@ export default function AttendanceManager({
           <form action={autoFixMissingOutAttendanceAction} className="shrink-0">
             <input type="hidden" name="start_date" value={dateFilter} />
             <input type="hidden" name="end_date" value={dateFilter} />
+            <input type="hidden" name="return_path" value={pathname} />
             <button
               type="submit"
               className="w-full sm:w-auto rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-2 font-black text-white shadow-xs transition active:scale-95 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1566,6 +1591,7 @@ export default function AttendanceManager({
                         {isVerified && (
                           <form action={unverifyAttendanceAction}>
                             <input type="hidden" name="attendance_id" value={rec.id} />
+                            <input type="hidden" name="return_path" value={pathname} />
                             <button
                               type="submit"
                               className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 transition cursor-pointer"
