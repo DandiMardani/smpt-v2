@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildXlsx, type XlsxSheet } from "@/lib/export/xlsx";
+import ExcelJS from "exceljs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -808,11 +809,12 @@ async function uangMakanWorkbook(
 // -------------------------------------------------------------
 // FORMAT 4: PEMBAYARAN UPAH HARIAN (12 KOLOM)
 // HANYA UNTUK PEKERJA HARIAN (REAL DATA SLIP MURNI)
+// MENGGUNAKAN EXCELJS DENGAN NUMBER MURNI & NUMFMT RUPIAH
 // -------------------------------------------------------------
 async function upahHarianWorkbook(
   supabase: any,
   params: URLSearchParams
-): Promise<{ sheets: XlsxSheet[]; filename: string }> {
+): Promise<{ buffer: Buffer; filename: string }> {
   const runId = positiveId(params.get("run_id"));
 
   let runQuery = supabase.from("payroll_runs").select("*");
@@ -839,25 +841,50 @@ async function upahHarianWorkbook(
     return !isBulananWorker(w, it.pay_system_snapshot);
   });
 
-  const columns = [
-    { key: "no", label: "NO", width: 6 },
-    { key: "nama", label: "NAMA", width: 22 },
-    { key: "bagian", label: "BAGIAN", width: 16 },
-    { key: "nik", label: "NIK", width: 20 },
-    { key: "hari", label: "HARI", width: 8 },
-    { key: "gaji", label: "GAJI", width: 16 },
-    { key: "um", label: "UM", width: 8 },
-    { key: "lembur_per_jam", label: "LEMBUR/JAM", width: 16 },
-    { key: "um_lembur", label: "UANG MAKAN LEMBUR", width: 18 },
-    { key: "total_jam", label: "TOTAL JAM", width: 12 },
-    { key: "total_lembur", label: "TOTAL LEMBUR", width: 16 },
-    { key: "denda_kasbon", label: "DENDA / KASBON", width: 20 },
-    { key: "total_upah", label: "TOTAL UPAH", width: 20 },
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "SMPT";
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet("Upah Harian", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  ws.columns = [
+    { key: "no", header: "NO", width: 6 },
+    { key: "nama", header: "NAMA", width: 25 },
+    { key: "bagian", header: "BAGIAN", width: 16 },
+    { key: "nik", header: "NIK", width: 20 },
+    { key: "hari", header: "HARI", width: 10 },
+    { key: "gaji", header: "GAJI", width: 18 },
+    { key: "um", header: "UM", width: 8 },
+    { key: "lembur_per_jam", header: "LEMBUR/JAM", width: 18 },
+    { key: "um_lembur", header: "UANG MAKAN LEMBUR", width: 22 },
+    { key: "total_jam", header: "TOTAL JAM", width: 14 },
+    { key: "total_lembur", header: "TOTAL LEMBUR", width: 18 },
+    { key: "denda_kasbon", header: "DENDA / KASBON", width: 20 },
+    { key: "total_upah", header: "TOTAL UPAH", width: 22 },
   ];
+
+  // Header row styling
+  const headerRow = ws.getRow(1);
+  headerRow.height = 26;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  });
+
+  const currencyFmt = '"Rp "#,##0.00';
+  const borderThin = {
+    top: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+    bottom: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+    left: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+    right: { style: "thin" as const, color: { argb: "FFE2E8F0" } },
+  };
 
   let grandTotal = 0;
 
-  const rows: Array<Record<string, any>> = dailyItems.map((it: any, idx: number) => {
+  dailyItems.forEach((it: any, idx: number) => {
     const w: any = workerMap.get(it.worker_id);
     const full = Number(it.full_days || 0);
     const half = Number(it.half_days || 0);
@@ -874,56 +901,91 @@ async function upahHarianWorkbook(
 
     const totalLembur = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
     const mealLembur = Number(it.overtime_bonus || 0);
-    
+
     // Potongan 
     const dendaKasbon = Number(it.kasbon_perusahaan_amount || 0) + Number(it.kasbon_warung_amount || 0);
     const totalUpah = (totalHari * dailyRate + totalLembur + mealLembur) - dendaKasbon;
-    
+
     grandTotal += totalUpah;
 
-    return {
+    // Nilai numerik murni tanpa string format Rupiah
+    const row = ws.addRow({
       no: idx + 1,
       nama: (it.worker_name_snapshot || w?.name || "-").toUpperCase(),
       bagian: (w?.position || w?.department || "HELPER").toUpperCase(),
       nik: w?.identity_no || w?.worker_code || "-",
-      hari: totalHari % 1 === 0 ? totalHari : totalHari.toFixed(1),
-      gaji: formatRupiah(dailyRate),
+      hari: totalHari,
+      gaji: dailyRate,
       um: "-",
-      lembur_per_jam: formatRupiah(hourlyOtRate),
-      um_lembur: mealLembur > 0 ? formatRupiah(mealLembur) : "Rp -",
+      lembur_per_jam: hourlyOtRate,
+      um_lembur: mealLembur,
       total_jam: totalOtHours,
-      total_lembur: totalLembur > 0 ? formatRupiah(totalLembur) : "Rp -",
-      denda_kasbon: dendaKasbon > 0 ? formatRupiah(dendaKasbon) : "Rp -",
-      total_upah: formatRupiah(totalUpah),
-    };
+      total_lembur: totalLembur,
+      denda_kasbon: dendaKasbon,
+      total_upah: totalUpah,
+    });
+
+    row.height = 20;
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.border = borderThin;
+      cell.font = { name: "Calibri", size: 10 };
+
+      // Atur alignment dan format number
+      if (colNumber === 1 || colNumber === 7) {
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      } else if (colNumber === 5 || colNumber === 10) {
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.numFmt = "0.0";
+      } else if ([6, 8, 9, 11, 12, 13].includes(colNumber)) {
+        cell.alignment = { horizontal: "right", vertical: "middle" };
+        cell.numFmt = currencyFmt;
+      } else {
+        cell.alignment = { horizontal: "left", vertical: "middle" };
+      }
+    });
   });
 
-  rows.push({
-    no: "",
-    nama: "",
-    bagian: "",
-    nik: "",
-    hari: "",
-    gaji: "",
-    um: "",
-    lembur_per_jam: "",
-    um_lembur: "",
-    total_jam: "",
-    total_lembur: "",
+  const lastDataRow = ws.rowCount;
+  const totalRow = ws.addRow({
     denda_kasbon: "TOTAL :",
-    total_upah: formatRupiah(grandTotal),
+    total_upah: dailyItems.length > 0 ? { formula: `SUM(M2:M${lastDataRow})`, result: grandTotal } : grandTotal,
   });
+  totalRow.height = 22;
+  const totalLabelCell = totalRow.getCell(12);
+  totalLabelCell.font = { bold: true };
+  totalLabelCell.alignment = { horizontal: "right", vertical: "middle" };
+  totalLabelCell.border = borderThin;
 
+  const totalValCell = totalRow.getCell(13);
+  totalValCell.font = { bold: true };
+  totalValCell.alignment = { horizontal: "right", vertical: "middle" };
+  totalValCell.numFmt = currencyFmt;
+  totalValCell.border = borderThin;
+
+  // Tanggal & Tanda Tangan
   const signDate = formatIndoDate(run.period_end || jakartaToday());
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: `Tangerang Selatan, ${signDate}` });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Disetujui,", total_jam: "", total_lembur: "", denda_kasbon: "Yang Mengajukan,", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "", total_jam: "", total_lembur: "", denda_kasbon: "", total_upah: "" });
-  rows.push({ no: "", nama: "", bagian: "", nik: "", hari: "", gaji: "", um: "", lembur_per_jam: "", um_lembur: "Bony Daty", total_jam: "", total_lembur: "", denda_kasbon: "Dandi Mardani", total_upah: "" });
+  ws.addRow({});
+  const dateRow = ws.addRow({ total_upah: `Tangerang Selatan, ${signDate}` });
+  dateRow.getCell(13).alignment = { horizontal: "center" };
+
+  const signTitleRow = ws.addRow({ um_lembur: "Disetujui,", denda_kasbon: "Yang Mengajukan," });
+  signTitleRow.getCell(9).alignment = { horizontal: "center" };
+  signTitleRow.getCell(12).alignment = { horizontal: "center" };
+
+  ws.addRow({});
+  ws.addRow({});
+
+  const signNamesRow = ws.addRow({ um_lembur: "Bony Daty", denda_kasbon: "Dandi Mardani" });
+  signNamesRow.getCell(9).font = { bold: true };
+  signNamesRow.getCell(9).alignment = { horizontal: "center" };
+  signNamesRow.getCell(12).font = { bold: true };
+  signNamesRow.getCell(12).alignment = { horizontal: "center" };
+
+  const rawBuffer = await wb.xlsx.writeBuffer();
+  const buffer = Buffer.from(rawBuffer);
 
   return {
-    sheets: [{ name: "Upah Harian", columns, rows, headerColor: "1E293B" }],
+    buffer,
     filename: `Pembayaran-Upah-Harian-${run.period_start || "Mingguan"}-${run.period_end || ""}.xlsx`,
   };
 }
@@ -1135,9 +1197,16 @@ export async function GET(request: NextRequest) {
         sheets = result.sheets;
         customFilename = result.filename;
       } else if (isDailyReport) {
-        const result = await upahHarianWorkbook(supabase, params);
-        sheets = result.sheets;
-        customFilename = result.filename;
+        const { buffer, filename } = await upahHarianWorkbook(supabase, params);
+        return new NextResponse(new Uint8Array(buffer), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": `attachment; filename="${filename}"`,
+            "Cache-Control": "private, no-store, max-age=0",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
       } else {
         const result = await payrollSlipsWorkbook(supabase, params);
         sheets = result.sheets;

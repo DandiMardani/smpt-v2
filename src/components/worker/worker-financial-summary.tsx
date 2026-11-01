@@ -182,9 +182,11 @@ export function WorkerFinancialSummary({
   );
   
   // Total bruto berjalan yang sudah diakumulasi real-time
-  const liveGross = isBulanan 
+  const liveGross = isBulanan
     ? (baseSalary + effectiveOtWage + effectiveBonus4h)
-    : (workedDays * (breakdown?.baseAmount || 0) + effectiveOtWage + effectiveBonus4h);
+    : (isBorongan
+        ? Number(breakdown?.baseAmount || estimatedGross || 0)
+        : (estimatedGross > 0 ? estimatedGross : (workedDays * (breakdown?.baseAmount || 0) + effectiveOtWage + effectiveBonus4h)));
 
   // Hitung Kasbon
   const totalWarung = warungDebts.reduce((acc, x) => acc + (n(x.amount) - n(x.paid_amount)), 0);
@@ -213,9 +215,13 @@ export function WorkerFinancialSummary({
     ? officialSlip.kasbonWarungAmount
     : totalWarung;
 
-  // Tanggal Periode: gunakan slip resmi jika ada, atau gunakan periode kalender berjalan (tanggal 1 s/d akhir bulan untuk bulanan)
-  const periodStartDate = officialSlip?.periodStart || currentPeriod?.start;
-  const periodEndDate = officialSlip?.periodEnd || currentPeriod?.end;
+  // Tanggal Periode: gunakan slip resmi jika sudah dibayar lunas, atau gunakan periode cut-off dinamis berjalan
+  const periodStartDate = isSlipPaid && officialSlip?.periodStart
+    ? officialSlip.periodStart
+    : (currentPeriod?.start || officialSlip?.periodStart);
+  const periodEndDate = isSlipPaid && officialSlip?.periodEnd
+    ? officialSlip.periodEnd
+    : (currentPeriod?.end || officialSlip?.periodEnd);
 
   const getWhatsAppText = () => {
     if (officialSlip) {

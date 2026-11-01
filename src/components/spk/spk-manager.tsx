@@ -66,6 +66,15 @@ export type SpkOrderItem = {
   has_checks?: boolean;
 };
 
+export type ItemAggregate = {
+  target: number;
+  allowance_qty?: number;
+  selesai: number;
+  aktif: number;
+  sisa: number;
+  reject: number;
+};
+
 export type SpkOrder = {
   id: number;
   spk_code: string;
@@ -91,6 +100,12 @@ type Props = {
   checkers: SpkChecker[];
   supervisors: SpkSupervisor[];
   orders: SpkOrder[];
+  currentUser?: {
+    id?: string;
+    email?: string;
+    displayName?: string;
+  };
+  itemAggregates?: Record<number, ItemAggregate>;
 };
 
 function num(val: unknown): number {
@@ -115,15 +130,29 @@ export function SpkManager({
   checkers,
   supervisors,
   orders,
+  currentUser,
+  itemAggregates = {},
 }: Props) {
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [detailOrder, setDetailOrder] = useState<SpkOrder | null>(null);
   const [editingOrder, setEditingOrder] = useState<SpkOrder | null>(null);
+  const [editCheckerEmail, setEditCheckerEmail] = useState<string>("");
   const [editItemQtys, setEditItemQtys] = useState<Record<number, string>>({});
   const [removedItemIds, setRemovedItemIds] = useState<Set<number>>(new Set());
   const [addWorkItemId, setAddWorkItemId] = useState<string>("");
   const [addWorkItemQty, setAddWorkItemQty] = useState<string>("100");
+
+  const handleCloseEdit = () => {
+    setEditingOrder(null);
+    setEditCheckerEmail("");
+    setEditItemQtys({});
+    setRemovedItemIds(new Set());
+    setAddWorkItemId("");
+    setAddWorkItemQty("100");
+  };
 
   // Form State
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -132,15 +161,38 @@ export function SpkManager({
   const [itemQuantities, setItemQuantities] = useState<Record<number, string>>({});
   const [publishNow, setPublishNow] = useState(false);
 
-  // Search & Filter State
+  // Search & Tab Filter State
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  type SpkTab = "PROSES" | "SELESAI" | "DIBATALKAN";
+  const [activeTab, setActiveTab] = useState<SpkTab>("PROSES");
+  const [prosesSubFilter, setProsesSubFilter] = useState<"ALL" | "AKTIF" | "DRAFT">("ALL");
 
   // Lookup Maps
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const operatorMap = useMemo(() => new Map(operators.map((o) => [o.id, o])), [operators]);
   const supervisorMap = useMemo(() => new Map(supervisors.map((s) => [s.id, s])), [supervisors]);
+
+  // Supervisor default dari session akun yang sedang login
+  const matchedSupervisor = useMemo(() => {
+    if (!currentUser) return supervisors[0] || null;
+    const name = (currentUser.displayName || "").toLowerCase().trim();
+    const email = (currentUser.email || "").toLowerCase().trim();
+    return (
+      supervisors.find((spv) => {
+        const spvName = spv.name.toLowerCase().trim();
+        return (
+          (name && (spvName === name || name.includes(spvName) || spvName.includes(name))) ||
+          (email && email.includes(spvName))
+        );
+      }) || null
+    );
+  }, [supervisors, currentUser]);
+
+  const defaultSupervisorId = matchedSupervisor ? matchedSupervisor.id : (supervisors[0]?.id ?? "");
+  const defaultSupervisorLabel = matchedSupervisor
+    ? `${matchedSupervisor.name} (${matchedSupervisor.worker_code})`
+    : currentUser?.displayName || currentUser?.email || "Supervisor (Akun Login)";
 
   // Filtered Products for selected project
   const availableProducts = useMemo(() => {
@@ -169,14 +221,11 @@ export function SpkManager({
     return { total, draft, aktif, selesai, batal };
   }, [orders]);
 
-  // Filtered Orders List
-  const filteredOrders = useMemo(() => {
+  // 1. Filtered by search term across all SPK data
+  const searchedOrders = useMemo(() => {
+    if (!searchTerm.trim()) return orders;
+    const term = searchTerm.toLowerCase().trim();
     return orders.filter((order) => {
-      const matchStatus = statusFilter === "ALL" || order.status === statusFilter;
-      if (!matchStatus) return false;
-
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase();
       const code = (order.spk_code || "").toLowerCase();
       const proj = (projectMap.get(order.project_id)?.name || "").toLowerCase();
       const prod = (productMap.get(order.product_id)?.name || "").toLowerCase();
@@ -190,7 +239,38 @@ export function SpkManager({
         checker.includes(term)
       );
     });
-  }, [orders, statusFilter, searchTerm, projectMap, productMap, operatorMap]);
+  }, [orders, searchTerm, projectMap, productMap, operatorMap]);
+
+  // 2. Pre-filter into distinct status groups before render
+  const activeOrders = useMemo(() => {
+    return searchedOrders.filter((order) => {
+      if (prosesSubFilter === "AKTIF") return order.status === "AKTIF";
+      if (prosesSubFilter === "DRAFT") return order.status === "DRAFT";
+      return order.status === "AKTIF" || order.status === "DRAFT";
+    });
+  }, [searchedOrders, prosesSubFilter]);
+
+  const completedOrders = useMemo(() => {
+    return searchedOrders.filter((order) => order.status === "SELESAI");
+  }, [searchedOrders]);
+
+  const cancelledOrders = useMemo(() => {
+    return searchedOrders.filter((order) => order.status === "DIBATALKAN");
+  }, [searchedOrders]);
+
+  // 3. Current active list to render based on selected Tab
+  const displayedOrders = useMemo(() => {
+    switch (activeTab) {
+      case "PROSES":
+        return activeOrders;
+      case "SELESAI":
+        return completedOrders;
+      case "DIBATALKAN":
+        return cancelledOrders;
+      default:
+        return activeOrders;
+    }
+  }, [activeTab, activeOrders, completedOrders, cancelledOrders]);
 
   // Toggle item checkbox
   const handleToggleItem = (itemId: number) => {
@@ -200,13 +280,15 @@ export function SpkManager({
         next.delete(itemId);
       } else {
         next.add(itemId);
-        // Default quantity jika belum diisi
-        if (!itemQuantities[itemId]) {
-          const selectedProduct = productMap.get(Number(selectedProductId));
-          const target = Number(selectedProduct?.target_production || 0);
+        // Default quantity dari sisa kuota yang belum ditugaskan
+        if (itemQuantities[itemId] === undefined) {
+          const item = availableWorkItems.find((w) => w.id === itemId);
+          const agg = itemAggregates[itemId];
+          const allowance = Number((item as any)?.allowance_qty ?? agg?.allowance_qty ?? 0);
+          const sisa = agg ? Math.max(0, (agg.target + allowance) - (agg.selesai + agg.aktif)) : 0;
           setItemQuantities((q) => ({
             ...q,
-            [itemId]: target > 0 ? String(target) : "100",
+            [itemId]: sisa > 0 ? String(sisa) : "100",
           }));
         }
       }
@@ -222,11 +304,12 @@ export function SpkManager({
       const allIds = new Set(availableWorkItems.map((w) => w.id));
       setCheckedItemIds(allIds);
       const newQuantities: Record<number, string> = { ...itemQuantities };
-      const selectedProduct = productMap.get(Number(selectedProductId));
-      const target = Number(selectedProduct?.target_production || 0);
       availableWorkItems.forEach((w) => {
-        if (!newQuantities[w.id]) {
-          newQuantities[w.id] = target > 0 ? String(target) : "100";
+        if (newQuantities[w.id] === undefined) {
+          const agg = itemAggregates[w.id];
+          const allowance = Number((w as any)?.allowance_qty ?? agg?.allowance_qty ?? 0);
+          const sisa = agg ? Math.max(0, (agg.target + allowance) - (agg.selesai + agg.aktif)) : 0;
+          newQuantities[w.id] = sisa > 0 ? String(sisa) : "100";
         }
       });
       setItemQuantities(newQuantities);
@@ -382,13 +465,16 @@ export function SpkManager({
 
   return (
     <div className="space-y-4">
-      {/* 1. KPI Summary Cards (Identik dengan V1 spkSummary) */}
+      {/* 1. KPI Summary Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div
-          onClick={() => setStatusFilter("ALL")}
+          onClick={() => {
+            setActiveTab("PROSES");
+            setProsesSubFilter("ALL");
+          }}
           className={`cursor-pointer rounded-2xl border p-4 shadow-xs transition ${
-            statusFilter === "ALL"
-              ? "border-blue-500 bg-blue-50/50"
+            activeTab === "PROSES" && prosesSubFilter === "ALL"
+              ? "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20"
               : "border-slate-200/80 bg-white hover:border-slate-300"
           }`}
         >
@@ -397,10 +483,13 @@ export function SpkManager({
         </div>
 
         <div
-          onClick={() => setStatusFilter("DRAFT")}
+          onClick={() => {
+            setActiveTab("PROSES");
+            setProsesSubFilter("DRAFT");
+          }}
           className={`cursor-pointer rounded-2xl border p-4 shadow-xs transition ${
-            statusFilter === "DRAFT"
-              ? "border-amber-500 bg-amber-50/50"
+            activeTab === "PROSES" && prosesSubFilter === "DRAFT"
+              ? "border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20"
               : "border-slate-200/80 bg-white hover:border-slate-300"
           }`}
         >
@@ -409,10 +498,13 @@ export function SpkManager({
         </div>
 
         <div
-          onClick={() => setStatusFilter("AKTIF")}
+          onClick={() => {
+            setActiveTab("PROSES");
+            setProsesSubFilter("AKTIF");
+          }}
           className={`cursor-pointer rounded-2xl border p-4 shadow-xs transition ${
-            statusFilter === "AKTIF"
-              ? "border-emerald-500 bg-emerald-50/50"
+            activeTab === "PROSES" && prosesSubFilter === "AKTIF"
+              ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20"
               : "border-slate-200/80 bg-white hover:border-slate-300"
           }`}
         >
@@ -421,10 +513,12 @@ export function SpkManager({
         </div>
 
         <div
-          onClick={() => setStatusFilter("SELESAI")}
+          onClick={() => {
+            setActiveTab("SELESAI");
+          }}
           className={`cursor-pointer rounded-2xl border p-4 shadow-xs transition ${
-            statusFilter === "SELESAI"
-              ? "border-blue-500 bg-blue-50/50"
+            activeTab === "SELESAI"
+              ? "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20"
               : "border-slate-200/80 bg-white hover:border-slate-300"
           }`}
         >
@@ -433,10 +527,12 @@ export function SpkManager({
         </div>
 
         <div
-          onClick={() => setStatusFilter("DIBATALKAN")}
+          onClick={() => {
+            setActiveTab("DIBATALKAN");
+          }}
           className={`cursor-pointer rounded-2xl border p-4 shadow-xs transition ${
-            statusFilter === "DIBATALKAN"
-              ? "border-rose-500 bg-rose-50/50"
+            activeTab === "DIBATALKAN"
+              ? "border-rose-500 bg-rose-50/50 ring-2 ring-rose-500/20"
               : "border-slate-200/80 bg-white hover:border-slate-300"
           }`}
         >
@@ -445,65 +541,204 @@ export function SpkManager({
         </div>
       </div>
 
-      {/* 2. Main Action Header & Toolbar */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Daftar Surat Perintah Kerja (SPK)</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Penugasan borongan dari Supervisor kepada satu operator untuk satu proyek & produk.
-            </p>
+      {/* 2. Main Action Header & Toolbar with Status Tabs */}
+      <div className="rounded-2xl border border-slate-200/80 bg-white shadow-xs overflow-hidden">
+        <div className="p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Daftar Surat Perintah Kerja (SPK)</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Penugasan borongan dari Supervisor kepada satu operator untuk satu proyek & produk.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              {canWrite ? (
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition active:scale-95"
+                >
+                  + Buat SPK Baru
+                </button>
+              ) : null}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {canWrite ? (
-              <button
-                type="button"
-                onClick={handleOpenCreateModal}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition active:scale-95"
-              >
-                + Buat SPK Baru
-              </button>
-            ) : null}
+          {/* Search Bar */}
+          <div className="mt-4">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="🔍 Cari No. SPK, proyek, produk, operator, atau checker..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-xs text-slate-800 shadow-2xs focus:border-blue-500 focus:bg-white focus:outline-none"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Toolbar Pencarian & Filter */}
-        <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-t border-slate-100 pt-3.5">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="🔍 Cari No. SPK, proyek, operator, atau checker..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-xs text-slate-800 shadow-2xs focus:border-blue-500 focus:bg-white focus:outline-none"
-            />
+        {/* Status Navigation Tabs Bar */}
+        <div className="flex flex-wrap items-center justify-between border-t border-slate-200 bg-slate-50/80 px-4 sm:px-5">
+          <div className="flex items-center gap-2 overflow-x-auto py-2">
+            {/* Tab 1: Proses / Aktif */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("PROSES")}
+              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs ${
+                activeTab === "PROSES"
+                  ? "bg-blue-600 text-white shadow-blue-200"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <span>⚡ Proses / Aktif</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                  activeTab === "PROSES"
+                    ? "bg-blue-700 text-white"
+                    : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {stats.aktif + stats.draft}
+              </span>
+            </button>
+
+            {/* Tab 2: Selesai */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("SELESAI")}
+              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs ${
+                activeTab === "SELESAI"
+                  ? "bg-emerald-600 text-white shadow-emerald-200"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <span>✅ Selesai</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                  activeTab === "SELESAI"
+                    ? "bg-emerald-700 text-white"
+                    : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {stats.selesai}
+              </span>
+            </button>
+
+            {/* Tab 3: Dibatalkan */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("DIBATALKAN")}
+              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-2xs ${
+                activeTab === "DIBATALKAN"
+                  ? "bg-rose-600 text-white shadow-rose-200"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <span>❌ Dibatalkan</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                  activeTab === "DIBATALKAN"
+                    ? "bg-rose-700 text-white"
+                    : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {stats.batal}
+              </span>
+            </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs focus:border-blue-500 focus:outline-none"
-            >
-              <option value="ALL">Semua Status ({orders.length})</option>
-              <option value="DRAFT">Draft ({stats.draft})</option>
-              <option value="AKTIF">Aktif ({stats.aktif})</option>
-              <option value="SELESAI">Selesai ({stats.selesai})</option>
-              <option value="DIBATALKAN">Dibatalkan ({stats.batal})</option>
-            </select>
-          </div>
+          {/* Sub-filter for Tab Proses */}
+          {activeTab === "PROSES" ? (
+            <div className="flex items-center gap-1.5 py-2">
+              <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Tampilkan:</span>
+              <button
+                type="button"
+                onClick={() => setProsesSubFilter("ALL")}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                  prosesSubFilter === "ALL"
+                    ? "bg-blue-100 text-blue-800 border border-blue-300"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                Semua ({stats.aktif + stats.draft})
+              </button>
+              <button
+                type="button"
+                onClick={() => setProsesSubFilter("AKTIF")}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                  prosesSubFilter === "AKTIF"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-emerald-50"
+                }`}
+              >
+                Aktif ({stats.aktif})
+              </button>
+              <button
+                type="button"
+                onClick={() => setProsesSubFilter("DRAFT")}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                  prosesSubFilter === "DRAFT"
+                    ? "bg-amber-100 text-amber-800 border border-amber-300"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-amber-50"
+                }`}
+              >
+                Draft ({stats.draft})
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
       {/* 3. Daftar SPK Table */}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-        {filteredOrders.length === 0 ? (
+        {/* Contextual Header per Status Tab */}
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-extrabold text-slate-900">
+                {activeTab === "PROSES" && "Tabel SPK Sedang Berjalan & Persiapan"}
+                {activeTab === "SELESAI" && "Tabel Riwayat SPK Selesai"}
+                {activeTab === "DIBATALKAN" && "Tabel SPK Dibatalkan"}
+              </h4>
+              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                {displayedOrders.length} SPK
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {activeTab === "PROSES" && "Penugasan borongan yang sedang dalam pengerjaan (Aktif) atau masih draft."}
+              {activeTab === "SELESAI" && "Penugasan borongan yang seluruh kuotanya telah tuntas disetorkan & disahkan."}
+              {activeTab === "DIBATALKAN" && "Penugasan borongan yang telah dibatalkan oleh supervisor."}
+            </p>
+          </div>
+        </div>
+
+        {displayedOrders.length === 0 ? (
           <div className="py-12 text-center text-xs text-slate-400">
-            {searchTerm || statusFilter !== "ALL"
-              ? "Tidak ada SPK yang sesuai dengan filter pencarian."
-              : "Belum ada Surat Perintah Kerja yang dibuat. Klik tombol '+ Buat SPK Baru' di atas untuk memulai."}
+            {searchTerm ? (
+              <div>
+                <p className="font-semibold text-slate-600 text-sm">Tidak ada SPK yang cocok</p>
+                <p className="mt-1 text-slate-400">
+                  Tidak ditemukan data untuk pencarian &ldquo;{searchTerm}&rdquo; pada status ini.
+                </p>
+              </div>
+            ) : (
+              <div>
+                {activeTab === "PROSES" && "Tidak ada SPK yang sedang berjalan atau draft saat ini."}
+                {activeTab === "SELESAI" && "Belum ada Surat Perintah Kerja yang berstatus Selesai."}
+                {activeTab === "DIBATALKAN" && "Tidak ada Surat Perintah Kerja yang dibatalkan."}
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -519,7 +754,7 @@ export function SpkManager({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {filteredOrders.map((order) => {
+                {displayedOrders.map((order) => {
                   const proj = projectMap.get(order.project_id);
                   const prod = productMap.get(order.product_id);
                   const op = operatorMap.get(order.operator_worker_id);
@@ -604,6 +839,7 @@ export function SpkManager({
                               type="button"
                               onClick={() => {
                                 setEditingOrder(order);
+                                setEditCheckerEmail(order.checker_email || "");
                                 const initialQtys: Record<number, string> = {};
                                 (order.items ?? []).forEach((it) => {
                                   initialQtys[it.id] = String(it.assigned_qty);
@@ -752,6 +988,7 @@ export function SpkManager({
                       onChange={(e) => {
                         setSelectedProductId(e.target.value);
                         setCheckedItemIds(new Set());
+                        setItemQuantities({});
                       }}
                       disabled={!selectedProjectId || availableProducts.length === 0}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none disabled:bg-slate-100"
@@ -811,11 +1048,15 @@ export function SpkManager({
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Supervisor (Pembuat)
                     </label>
+                    <input type="hidden" name="supervisor_worker_id" value={defaultSupervisorId} />
                     <select
-                      name="supervisor_worker_id"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                      disabled
+                      value={defaultSupervisorId}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs cursor-not-allowed opacity-90"
                     >
-                      <option value="">Mengikuti Akun Login</option>
+                      <option value={defaultSupervisorId}>
+                        {defaultSupervisorLabel} (Akun Login)
+                      </option>
                       {supervisors.map((spv) => (
                         <option key={spv.id} value={spv.id}>
                           {spv.name} ({spv.worker_code})
@@ -889,6 +1130,16 @@ export function SpkManager({
                   <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                     {availableWorkItems.map((item) => {
                       const isChecked = checkedItemIds.has(item.id);
+                      const agg = itemAggregates[item.id] || {
+                        target: (Number(productMap.get(Number(selectedProductId))?.target_production) || 0) * (Number(item.qty_per_product) || 1),
+                        allowance_qty: 0,
+                        selesai: 0,
+                        aktif: 0,
+                        sisa: (Number(productMap.get(Number(selectedProductId))?.target_production) || 0) * (Number(item.qty_per_product) || 1),
+                        reject: 0,
+                      };
+                      const allowanceQty = Number((item as any).allowance_qty ?? (item as any).cadangan_qty ?? agg.allowance_qty ?? 0);
+                      const sisaKuotaMaks = Math.max(0, (agg.target + allowanceQty) - (agg.selesai + agg.aktif));
                       return (
                         <div
                           key={item.id}
@@ -908,16 +1159,34 @@ export function SpkManager({
                                 onChange={() => handleToggleItem(item.id)}
                                 className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                               />
-                              <div>
+                              <div className="flex-1">
                                 <div className="font-bold text-slate-900 text-xs">
                                   #{item.display_order || 0} · {item.name}
                                 </div>
-                                <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                                <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
                                   <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
                                     Tarif: {money(item.operator_price)} / {item.unit}
                                   </span>
                                   <span>·</span>
                                   <span>Qty/Tas: {qtyFmt(item.qty_per_product)}</span>
+                                </div>
+
+                                {/* UI Transparansi Agregasi Kuota SPK */}
+                                <div className="mt-1 text-[11px] text-slate-600 bg-slate-100/80 rounded-lg px-2 py-1 font-medium flex flex-wrap items-center gap-1.5 border border-slate-200/60">
+                                  <span>
+                                    📊 Target: <b>{agg.target.toLocaleString("id-ID")}</b>
+                                    {allowanceQty > 0 ? (
+                                      <span className="text-slate-500 font-normal"> (+{allowanceQty.toLocaleString("id-ID")} Cadangan)</span>
+                                    ) : null}
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+                                  <span>Selesai: <b className="text-emerald-700">{agg.selesai.toLocaleString("id-ID")}</b></span>
+                                  <span className="text-slate-300">|</span>
+                                  <span>SPK Aktif: <b className="text-blue-700">{agg.aktif.toLocaleString("id-ID")}</b></span>
+                                  <span className="text-slate-300">|</span>
+                                  <span>Sisa Kuota Maks: <b className={sisaKuotaMaks > 0 ? "text-amber-700 font-bold" : "text-slate-500"}>{sisaKuotaMaks.toLocaleString("id-ID")}</b></span>
+                                  <span className="text-slate-300">|</span>
+                                  <span>Reject: <b className={agg.reject > 0 ? "text-rose-600" : "text-slate-500"}>{agg.reject.toLocaleString("id-ID")}</b></span>
                                 </div>
                               </div>
                             </label>
@@ -930,15 +1199,17 @@ export function SpkManager({
                                     type="number"
                                     name={`qty_${item.id}`}
                                     min="0.01"
+                                    max={sisaKuotaMaks > 0 ? sisaKuotaMaks : undefined}
                                     step="any"
                                     required={isChecked}
-                                    value={itemQuantities[item.id] || ""}
-                                    onChange={(e) =>
-                                      setItemQuantities({
-                                        ...itemQuantities,
-                                        [item.id]: e.target.value,
-                                      })
-                                    }
+                                    value={itemQuantities[item.id] ?? (sisaKuotaMaks > 0 ? String(sisaKuotaMaks) : "")}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setItemQuantities((prev) => ({
+                                        ...prev,
+                                        [item.id]: val,
+                                      }));
+                                    }}
                                     className="w-24 rounded-l-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:border-blue-500 focus:outline-none"
                                     placeholder="0"
                                   />
@@ -1110,7 +1381,7 @@ export function SpkManager({
               </div>
               <button
                 type="button"
-                onClick={() => setEditingOrder(null)}
+                onClick={handleCloseEdit}
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
                 ✕
@@ -1144,8 +1415,55 @@ export function SpkManager({
               </div>
             </div>
 
-            <form action={editSpkAction} className="mt-4 space-y-4">
+            <form
+              action={async (formData) => {
+                setIsSubmittingEdit(true);
+                try {
+                  // Pastikan field checker_email terpasang valid di formData
+                  if (editCheckerEmail) {
+                    formData.set("checker_email", editCheckerEmail);
+                  }
+                  const res = await editSpkAction(formData);
+                  if (res?.success) {
+                    handleCloseEdit();
+                    window.location.reload();
+                  }
+                } catch (err: any) {
+                  if (err?.digest?.startsWith("NEXT_REDIRECT") || err?.message === "NEXT_REDIRECT") {
+                    throw err;
+                  }
+                  alert(err instanceof Error ? err.message : "Gagal memperbarui SPK.");
+                } finally {
+                  setIsSubmittingEdit(false);
+                }
+              }}
+              className="mt-4 space-y-4"
+            >
               <input type="hidden" name="order_id" value={editingOrder.id} />
+
+              {/* Reassign Checker */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-800">
+                  Checker (Pemeriksa Hasil Kerja)
+                </label>
+                <select
+                  name="checker_email"
+                  value={editCheckerEmail}
+                  onChange={(e) => setEditCheckerEmail(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Pilih Checker...</option>
+                  {checkers.map((c) => (
+                    <option key={c.user_id} value={c.email}>
+                      {c.display_name || c.email} ({c.email})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500">
+                  Ganti Checker di atas jika pemeriksaan hasil kerja SPK ini dialihkan ke staf Checker lain.
+                </p>
+              </div>
 
               {/* Rincian Item Pekerjaan */}
               <div>
@@ -1190,13 +1508,14 @@ export function SpkManager({
                                 <input
                                   type="number"
                                   name={`item_qty_${it.id}`}
-                                  value={editItemQtys[it.id] ?? it.assigned_qty}
-                                  onChange={(e) =>
+                                  value={editItemQtys[it.id] ?? String(it.assigned_qty ?? "")}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
                                     setEditItemQtys((prev) => ({
                                       ...prev,
-                                      [it.id]: e.target.value,
-                                    }))
-                                  }
+                                      [it.id]: val,
+                                    }));
+                                  }}
                                   min="1"
                                   className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-center font-bold text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   required
@@ -1286,16 +1605,19 @@ export function SpkManager({
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setEditingOrder(null)}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                  disabled={isSubmittingEdit}
+                  onClick={handleCloseEdit}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs disabled:opacity-50"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shadow-2xs flex items-center gap-1.5"
+                  disabled={isSubmittingEdit}
+                  className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  <span>💾</span> Simpan Perubahan SPK
+                  <span>{isSubmittingEdit ? "⏳" : "💾"}</span>{" "}
+                  {isSubmittingEdit ? "Menyimpan..." : "Simpan Perubahan SPK"}
                 </button>
               </div>
             </form>

@@ -41,17 +41,52 @@ function getRunPaymentStatus(
   return "BELUM DIBAYAR";
 }
 
+function formatIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function getDynamicPeriod(paySystem: string, refDate = new Date()): { start: string; end: string } {
+  const y = refDate.getFullYear();
+  const m = refDate.getMonth();
+  const d = refDate.getDay();
+
+  if (paySystem === "BULANAN") {
+    // 1 bulan penuh (awal bulan s/d akhir bulan berjalan)
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0);
+    return { start: formatIsoDate(start), end: formatIsoDate(end) };
+  }
+
+  if (paySystem === "HARIAN") {
+    // Siklus SABTU s/d JUMAT (Hitung dari hari Sabtu terdekat di minggu sebelumnya, sampai hari Jumat di minggu ini)
+    const diffToSat = (d + 1) % 7;
+    const start = new Date(y, m, refDate.getDate() - diffToSat);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    return { start: formatIsoDate(start), end: formatIsoDate(end) };
+  }
+
+  if (paySystem === "BORONGAN") {
+    // Siklus JUMAT s/d KAMIS (Hitung dari hari Jumat terdekat di minggu sebelumnya, sampai hari Kamis di minggu ini)
+    const diffToFri = (d + 2) % 7;
+    const start = new Date(y, m, refDate.getDate() - diffToFri);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    return { start: formatIsoDate(start), end: formatIsoDate(end) };
+  }
+
+  const start = new Date(y, m, 1);
+  const end = new Date(y, m + 1, 0);
+  return { start: formatIsoDate(start), end: formatIsoDate(end) };
+}
+
 export default async function Page() {
   await requirePermission("pekerjaan_saya.view");
   const s = await createClient();
 
   const now = new Date();
-  const currYear = now.getFullYear();
-  const currMonth = now.getMonth();
-  const firstDayOfMonth = `${currYear}-${String(currMonth + 1).padStart(2, "0")}-01`;
-  const lastDate = new Date(currYear, currMonth + 1, 0).getDate();
-  const lastDayOfMonth = `${currYear}-${String(currMonth + 1).padStart(2, "0")}-${String(lastDate).padStart(2, "0")}`;
-  const currentPeriod = { start: firstDayOfMonth, end: lastDayOfMonth };
+  let currentPeriod = getDynamicPeriod("BULANAN", now);
 
   // TAHAP 1: Fetch Worker ID & Settings terlebih dahulu
   const [wr, setRes] = await Promise.all([
@@ -84,35 +119,11 @@ export default async function Page() {
   let checks: any[] = [];
 
   if (workerId) {
-    // TAHAP 2: Fetch data profil pekerja & production_orders (worker-scoped)
-    const [rpcProfRes, wRes, advRes, attRes, pSlipRes, opSlipRes, ordersRes] = await Promise.all([
+    // TAHAP 2: Fetch data profil pekerja untuk menentukan sistem upah & rentang periode dinamis
+    const [rpcProfRes, wRes] = await Promise.all([
       s.rpc("smpt_get_my_worker_profile"),
       s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department,phone").eq("id", workerId).maybeSingle(),
-      s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
-      s.from("attendance_records").select("id,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status").eq("worker_id", workerId).gte("attendance_date", firstDayOfMonth).lte("attendance_date", lastDayOfMonth),
-      s.from("payroll_run_items").select("*, payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(10),
-      s.from("operator_payroll_items").select("*, operator_payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(30),
-      s.from("production_orders").select("*").eq("operator_worker_id", workerId).order("order_date", { ascending: false })
     ]);
-
-    if (ordersRes.error) throw new Error(ordersRes.error.message);
-    orders = ordersRes.data || [];
-
-    // TAHAP 3: Fetch order items berdasarkan orderIds
-    const orderIds = orders.map((o: any) => o.id);
-    if (orderIds.length > 0) {
-      const itemsRes = await s.from("production_order_items").select("*").in("order_id", orderIds);
-      if (itemsRes.error) throw new Error(itemsRes.error.message);
-      items = itemsRes.data || [];
-
-      // TAHAP 4: Fetch checks berdasarkan itemIds
-      const itemIds = items.map((i: any) => i.id);
-      if (itemIds.length > 0) {
-        const checksRes = await s.from("production_checks").select("*").eq("status", "AKTIF").in("order_item_id", itemIds);
-        if (checksRes.error) throw new Error(checksRes.error.message);
-        checks = checksRes.data || [];
-      }
-    }
 
     const rpcWorker = rpcProfRes.data && rpcProfRes.data.length > 0 ? rpcProfRes.data[0] : null;
     const directWorker = wRes.data || null;
@@ -124,6 +135,46 @@ export default async function Page() {
       daily_wage: directWorker?.daily_wage ?? rpcWorker?.daily_wage ?? 0,
       pay_system: directWorker?.pay_system ?? rpcWorker?.pay_system ?? "HARIAN",
     };
+
+    // Tentukan rentang tanggal periode cut-off dinamis sesuai pay_system
+    currentPeriod = getDynamicPeriod(workerData.pay_system, now);
+
+    // Lookback 7 hari sebelum currentPeriod.start untuk mengambil data absensi/lembur dengan status Cutoff (Slip Depan)
+    const pStartDt = new Date(currentPeriod.start + "T00:00:00Z");
+    pStartDt.setUTCDate(pStartDt.getUTCDate() - 7);
+    const searchStartDate = formatIsoDate(new Date(pStartDt.toISOString().slice(0, 10)));
+
+    // TAHAP 3: Fetch absensi, kasbon, slip payroll & SPK dengan filter periode dinamis
+    const [advRes, attRes, pSlipRes, opSlipRes, ordersRes] = await Promise.all([
+      s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
+      s.from("attendance_records").select("id,attendance_code,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status,notes,actual_in,actual_out,payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))").eq("worker_id", workerId).gte("attendance_date", searchStartDate).lte("attendance_date", currentPeriod.end),
+      s.from("payroll_run_items").select("*, payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(10),
+      s.from("operator_payroll_items").select("*, operator_payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(30),
+      s.from("production_orders").select("*").eq("operator_worker_id", workerId).order("order_date", { ascending: false })
+    ]);
+
+    if (ordersRes.error) throw new Error(ordersRes.error.message);
+    orders = ordersRes.data || [];
+
+    // TAHAP 4: Fetch order items berdasarkan orderIds
+    const orderIds = orders.map((o: any) => o.id);
+    if (orderIds.length > 0) {
+      const itemsRes = await s.from("production_order_items").select("*").in("order_id", orderIds);
+      if (itemsRes.error) throw new Error(itemsRes.error.message);
+      items = itemsRes.data || [];
+
+      // TAHAP 5: Fetch checks / setoran SPK dengan filter periode dinamis (untuk Borongan)
+      const itemIds = items.map((i: any) => i.id);
+      if (itemIds.length > 0) {
+        let checksQuery = s.from("production_checks").select("*").eq("status", "AKTIF").in("order_item_id", itemIds);
+        if (workerData.pay_system === "BORONGAN") {
+          checksQuery = checksQuery.gte("check_date", currentPeriod.start).lte("check_date", currentPeriod.end);
+        }
+        const checksRes = await checksQuery;
+        if (checksRes.error) throw new Error(checksRes.error.message);
+        checks = checksRes.data || [];
+      }
+    }
 
     const isBulananWorker = workerData.pay_system === "BULANAN";
 
@@ -139,10 +190,52 @@ export default async function Page() {
     let sundayCount = 0;
 
     for (const a of attList) {
+      // 1. Kondisi unfinalized: abaikan jika absen sudah terikat ke payroll_run_details (atau relasi payroll_id)
+      const linkedRuns = Array.isArray((a as any).payroll_run_details)
+        ? (a as any).payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean)
+        : [];
+      const hasFinalizedRun = linkedRuns.some(
+        (r: any) => r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR"
+      );
+      const isFinalized = Boolean((a as any).payroll_id) || hasFinalizedRun;
+      if (isFinalized) continue;
       if (a.verification_status === "DITOLAK") continue;
+
+      // 2. Evaluasi tanggal vs Cutoff (Slip Depan):
+      const isWithinCurrentPeriod = a.attendance_date >= currentPeriod.start && a.attendance_date <= currentPeriod.end;
+
+      if (!isWithinCurrentPeriod) {
+        // Cek apakah data tanggal sebelum startDate memiliki status/flag Cutoff untuk periode gaji aktif saat ini
+        const d = new Date(a.attendance_date + "T00:00:00Z");
+        const isJumat = d.getUTCDay() === 5;
+        const isHarian = workerData.pay_system !== "BULANAN";
+        const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+        const isFridayCutoff = isJumat && isHarian && rawDayOt > 0;
+
+        const noteStr = String(a.notes || "").toLowerCase();
+        const hasCutoffNote =
+          noteStr.includes("cutoff") ||
+          noteStr.includes("slip depan") ||
+          noteStr.includes("titipan lembur");
+
+        // Cek apakah terikat via foreign key ke active payroll run periode ini
+        const isLinkedToActiveRun = linkedRuns.some(
+          (r: any) => r.period_start === currentPeriod.start || r.id === (officialSlip as any)?.payrollRunId
+        );
+
+        const isQualifyingCutoff = isFridayCutoff || hasCutoffNote || isLinkedToActiveRun;
+        if (!isQualifyingCutoff) {
+          continue; // Abaikan data dari tanggal sebelum periode jika bukan cutoff untuk periode ini
+        }
+      }
+
+      // 3. Status DRAFT & TERVERIFIKASI: hitung kehadiran HADIR (default FULL_DAY jika null/draft)
       if (a.attendance_status === "HADIR") {
-        if (a.day_class === "FULL_DAY") fullDays += 1;
-        else if (a.day_class === "HALF_DAY") halfDays += 1;
+        if (a.day_class === "HALF_DAY") {
+          halfDays += 1;
+        } else {
+          fullDays += 1;
+        }
       }
 
       let isSunday = false;
@@ -216,6 +309,7 @@ export default async function Page() {
         };
       } else if (workerData.pay_system === "BULANAN") {
         const baseAmount = n(workerData.monthly_salary);
+        const dailyWage = n(workerData.daily_wage);
         const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
         const otHourlyRate = baseAmount > 0 ? baseAmount / Math.max(1, otDiv) : 0;
         const overtimeWage = Math.round((otMins / 60) * otHourlyRate);
@@ -225,7 +319,7 @@ export default async function Page() {
         estimatedGross = baseAmount + overtimeWage + bonus4h;
 
         breakdown = {
-          baseAmount,
+          baseAmount: dailyWage > 0 ? dailyWage : baseAmount,
           overtimeWage,
           bonus4h,
           sundayMealOrBonus: 0,
@@ -247,7 +341,7 @@ export default async function Page() {
         estimatedGross = baseAmount + overtimeWage + bonus4h + sundayMealOrBonus;
 
         breakdown = {
-          baseAmount,
+          baseAmount: dailyWage > 0 ? dailyWage : baseAmount,
           overtimeWage,
           bonus4h,
           sundayMealOrBonus,
@@ -265,19 +359,23 @@ export default async function Page() {
       let latestWeeklyMealItem: any = null;
       latestMealSlip = null;
 
+      const validSlips = (pSlipRes.data ?? []).filter(
+        (it: any) => it.payroll_runs && it.payroll_runs.status !== "DIBATALKAN"
+      );
+
       if (workerData.pay_system === "BULANAN") {
         // Staf Bulanan: Slip resmi bulanan hanya berasal dari payroll khusus tipe BULANAN
-        officialSlipItem = (pSlipRes.data ?? []).find(
+        officialSlipItem = validSlips.find(
           (it: any) => it.payroll_runs?.payroll_type === "BULANAN"
         ) || null;
 
         // Ambil riwayat slip uang makan mingguan staf terakhir jika ada
-        latestWeeklyMealItem = (pSlipRes.data ?? []).find(
+        latestWeeklyMealItem = validSlips.find(
           (it: any) => it.payroll_runs?.payroll_type === "MINGGUAN"
         ) || null;
       } else {
-        // Pekerja Harian: Menggunakan slip payroll run mingguan terakhir
-        officialSlipItem = pSlipRes.data && pSlipRes.data[0] ? pSlipRes.data[0] : null;
+        // Pekerja Harian: Menggunakan slip payroll run mingguan terakhir yang valid
+        officialSlipItem = validSlips.length > 0 ? validSlips[0] : null;
       }
 
       if (latestWeeklyMealItem) {
@@ -421,10 +519,13 @@ export default async function Page() {
             count4h,
           };
         } else {
-          estimatedGross = officialSlip.grossAmount;
+          const slipWorkedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
+          workedDays = slipWorkedDays > 0 ? slipWorkedDays : workedDays;
+          estimatedGross = officialSlip.grossAmount > 0 ? officialSlip.grossAmount : estimatedGross;
           const totalOtMins = (officialSlip.overtimeMinutes || 0) + ((officialSlip.manualOvertimeHours || 0) * 60);
-          overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
-          workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
+          if (totalOtMins > 0) {
+            overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
+          }
 
           const totalOtWage = (officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0);
           const sundayAmt = officialSlip.holidayBonus || 0;

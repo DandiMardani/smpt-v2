@@ -72,8 +72,9 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
   ];
   const mrWuLocationIds = mrWuLocations.map((l: any) => Number(l.id));
 
-  const [stockRes, fgRes, setRes, transRes, packingRes, embShipRes, embTargetRes, embRes] = await Promise.all([
+  const [stockRes, packageBalancesRes, fgRes, setRes, transRes, packageTransRes, packagesRes, packingRes, embShipRes, embTargetRes, embRes] = await Promise.all([
     s.from("logistics_stock_balances").select("*").in("location_id", mrWuLocationIds),
+    s.from("bundle_package_balances").select("*").in("location_id", mrWuLocationIds),
     s.from("finished_goods").select("*"),
     s.from("product_sets").select("*").eq("status", "AKTIF"),
     s
@@ -82,6 +83,13 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
       .in("destination_location_id", mrWuLocationIds)
       .order("transfer_date", { ascending: false })
       .limit(300),
+    s
+      .from("bundle_package_transfers")
+      .select("*")
+      .in("destination_location_id", mrWuLocationIds)
+      .order("transfer_date", { ascending: false })
+      .limit(300),
+    s.from("bundle_packages").select("id, package_code, name"),
     s
       .from("packing_runs")
       .select("*")
@@ -98,16 +106,35 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
     s.from("embarkations").select("id, embarkation_code, short_code, name"),
   ]);
 
+  const transferReadError = [packageBalancesRes.error, packageTransRes.error, packagesRes.error].find(Boolean);
+  if (transferReadError) throw new Error(transferReadError.message);
+
   const locMap = new Map(mrWuLocations.map((x: any) => [Number(x.id), x]));
   const fgMap = new Map((fgRes.data ?? []).map((x: any) => [Number(x.id), x]));
   const setMap = new Map((setRes.data ?? []).map((x: any) => [Number(x.id), x]));
+  const packageMap = new Map((packagesRes.data ?? []).map((x: any) => [Number(x.id), x]));
   const embMap = new Map((embRes.data ?? []).map((x: any) => [x.id, x]));
   const targetMap = new Map((embTargetRes.data ?? []).map((x: any) => [x.id, x]));
   const productSets = setRes.data ?? [];
   const recentPackingRuns = packingRes.data ?? [];
 
+  const packageBalances = (packageBalancesRes.data ?? []).filter((b: any) => Number(b.quantity) > 0);
   const balances = (stockRes.data ?? []).filter((b: any) => Number(b.quantity) > 0);
-  const transfers = transRes.data ?? [];
+  const transfers = [
+    ...(transRes.data ?? []).map((x: any) => ({
+      ...x,
+      transfer_kind: "FINISHED_GOOD",
+      delivery_status: x.delivery_status || (x.status === "DIBATALKAN" ? "DIBATALKAN" : "DIKIRIM"),
+    })),
+    ...(packageTransRes.data ?? []).map((x: any) => ({
+      ...x,
+      transfer_kind: "PACKAGE",
+      delivery_status: x.status,
+    })),
+  ].sort((a: any, b: any) =>
+    String(b.transfer_date).localeCompare(String(a.transfer_date)) ||
+    Number(b.id) - Number(a.id)
+  );
 
   const mrWuShipments: ShipmentItem[] = (embShipRes.data ?? []).map((x: any) => {
     const target = targetMap.get(x.target_id);
@@ -143,7 +170,9 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
   });
 
   // Summary Metrics
-  const pendingTransfers = transfers.filter((t: any) => t.delivery_status !== "DITERIMA");
+  const pendingTransfers = transfers.filter(
+    (t: any) => t.delivery_status !== "DITERIMA" && t.delivery_status !== "DIBATALKAN",
+  );
   const receivedTransfers = transfers.filter((t: any) => t.delivery_status === "DITERIMA");
 
   const canConfirm =
@@ -192,6 +221,21 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
     }
   });
 
+  packageBalances.forEach((b: any) => {
+    const entry = stockByLoc.get(Number(b.location_id));
+    const pkg = packageMap.get(Number(b.package_id));
+    if (entry && pkg) {
+      entry.items.push({
+        ...b,
+        id: `package-${b.id}`,
+        item_kind: "PACKAGE",
+        name: pkg.name,
+        code: pkg.package_code,
+        unit: "Paket",
+      });
+    }
+  });
+
   return (
     <PageShell
       eyebrow="Mitra Rekanan"
@@ -234,6 +278,10 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
           const name = String(fg?.name || "").toUpperCase();
           return name.includes("ISIAN") || name.includes("BUNDLE");
         }).forEach((b: any) => {
+          const cur = isianBalancesByLoc.get(Number(b.location_id)) || 0;
+          isianBalancesByLoc.set(Number(b.location_id), cur + Number(b.quantity || 0));
+        });
+        packageBalances.forEach((b: any) => {
           const cur = isianBalancesByLoc.get(Number(b.location_id)) || 0;
           isianBalancesByLoc.set(Number(b.location_id), cur + Number(b.quantity || 0));
         });
@@ -533,13 +581,16 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
         ) : (
           <div className="space-y-4">
             {transfers.map((t: any) => {
-              const fg = fgMap.get(t.finished_good_id);
+              const isPackage = t.transfer_kind === "PACKAGE";
+              const item = isPackage
+                ? packageMap.get(Number(t.package_id))
+                : fgMap.get(Number(t.finished_good_id));
               const destLoc = locMap.get(t.destination_location_id);
               const isReceived = t.delivery_status === "DITERIMA";
 
               return (
                 <div
-                  key={t.id}
+                  key={`${t.transfer_kind}-${t.id}`}
                   className={`rounded-2xl border p-5 shadow-xs transition hover:shadow-sm ${
                     isReceived ? "border-gray-200 bg-white" : "border-amber-300 bg-amber-50/20"
                   }`}
@@ -560,7 +611,7 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
                         </b>
                       </div>
                       <p className="mt-1 text-xs text-gray-600">
-                        Barang: <b className="text-gray-900">{fg?.name || `Barang #${t.finished_good_id}`}</b> · Tanggal: <b className="text-gray-900">{t.transfer_date}</b>
+                        {isPackage ? "Paket" : "Barang"}: <b className="text-gray-900">{item?.name || `${isPackage ? "Paket" : "Barang"} #${isPackage ? t.package_id : t.finished_good_id}`}</b> · Tanggal: <b className="text-gray-900">{t.transfer_date}</b>
                       </p>
                     </div>
 
@@ -568,15 +619,16 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
                       <MrWuTransferConfirmModal
                         transfer={{
                           id: t.id,
+                          transfer_kind: isPackage ? "PACKAGE" : "FINISHED_GOOD",
                           transfer_code: t.transfer_code,
                           document_no: t.document_no,
                           transfer_date: t.transfer_date,
                           quantity: Number(t.quantity),
                           notes: t.notes,
-                          finished_good_name: fg?.name || "Barang Jadi",
+                          finished_good_name: item?.name || (isPackage ? "Paket Isian" : "Barang Jadi"),
                           source_location_name: "Pabrik Pusat SMPT",
                           destination_location_name: destLoc?.name || "Gudang MR WU",
-                          delivery_status: t.delivery_status || "DITERIMA",
+                          delivery_status: t.delivery_status || "DIKIRIM",
                           received_qty: t.received_qty,
                           reject_qty: t.reject_qty,
                           damaged_qty: t.damaged_qty,
@@ -601,12 +653,14 @@ export default async function MitraMrWuPage({ searchParams }: Props) {
                   <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2 md:grid-cols-4 bg-gray-50/70 p-3 rounded-xl border border-gray-100">
                     <div>
                       <span className="text-gray-500 block">Jumlah Dikirim:</span>
-                      <span className="font-bold text-gray-900 text-sm">{qty(t.quantity)} Unit/Pcs</span>
+                      <span className="font-bold text-gray-900 text-sm">{qty(t.quantity)} {isPackage ? "Paket" : "Unit/Pcs"}</span>
                     </div>
                     <div>
                       <span className="text-gray-500 block">Status Diterima:</span>
                       <span className="font-semibold text-gray-800">
-                        {isReceived ? `${qty(t.received_qty)} Unit Diterima` : "Belum Konfirmasi"}
+                        {isReceived
+                          ? `${qty(t.received_qty)} ${isPackage ? "Paket" : "Unit"} Diterima`
+                          : "Belum Konfirmasi"}
                       </span>
                     </div>
                     <div>

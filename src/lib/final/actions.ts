@@ -4,7 +4,21 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createStandaloneClient } from "@supabase/supabase-js";
 import { logActionFailure } from "@/lib/logger";
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serverKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serverKey) return null;
+  return createStandaloneClient(url, serverKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
 
 function t(f: FormData, k: string) {
   return String(f.get(k) ?? "").trim();
@@ -525,7 +539,6 @@ export async function transferFinishedGoodAction(f: FormData) {
     "/dashboard/transferBarangJadi",
     "transfer_barang_jadi.write",
     async () => {
-      const s = await createClient();
       const ref = t(f, "item_ref") || (f.get("finished_good_id") ? `FINISHED_GOOD:${t(f, "finished_good_id")}` : "");
       const [kind, rawId] = ref.split(":");
       const itemId = Number(rawId);
@@ -547,81 +560,28 @@ export async function transferFinishedGoodAction(f: FormData) {
       if (quantity === null || quantity <= 0) throw new Error("Jumlah quantity tidak valid.");
 
       const notes = t(f, "notes") || null;
-      const transferCode = `TRF-${transferDate.replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
 
       if (kind === "PACKAGE") {
-        const { data: curBal } = await s
-          .from("bundle_package_balances")
-          .select("quantity")
-          .eq("package_id", itemId)
-          .eq("location_id", srcLoc)
-          .maybeSingle();
-
-        const currentQty = Number(curBal?.quantity || 0);
-        await s
-          .from("bundle_package_balances")
-          .upsert({
-            package_id: itemId,
-            location_id: srcLoc,
-            quantity: Math.max(0, currentQty - quantity),
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "package_id,location_id" });
-
-        const { error: insErr } = await s
-          .from("finished_goods_transfers")
-          .insert({
-            transfer_code: transferCode,
-            transfer_date: transferDate,
-            item_kind: "PACKAGE",
-            package_id: itemId,
-            source_location_id: srcLoc,
-            destination_location_id: destLoc,
-            quantity: quantity,
-            notes: notes,
-            status: "DIKIRIM",
-            delivery_status: "DIKIRIM",
-          });
-
-        if (insErr) throw insErr;
+        await rpc("transfer_bundle_package", {
+          p_date: transferDate,
+          p_package_id: itemId,
+          p_source_location_id: srcLoc,
+          p_destination_location_id: destLoc,
+          p_quantity: quantity,
+          p_notes: notes,
+        });
       } else {
-        const { data: curBal } = await s
-          .from("logistics_stock_balances")
-          .select("quantity")
-          .eq("finished_good_id", itemId)
-          .eq("location_id", srcLoc)
-          .eq("item_kind", "FINISHED_GOOD")
-          .maybeSingle();
-
-        const currentQty = Number(curBal?.quantity || 0);
-        await s
-          .from("logistics_stock_balances")
-          .update({
-            quantity: Math.max(0, currentQty - quantity),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("finished_good_id", itemId)
-          .eq("location_id", srcLoc)
-          .eq("item_kind", "FINISHED_GOOD");
-
-        const { error: insErr } = await s
-          .from("finished_goods_transfers")
-          .insert({
-            transfer_code: transferCode,
-            transfer_date: transferDate,
-            item_kind: "FINISHED_GOOD",
-            finished_good_id: itemId,
-            source_location_id: srcLoc,
-            destination_location_id: destLoc,
-            quantity: quantity,
-            notes: notes,
-            status: "DIKIRIM",
-            delivery_status: "DIKIRIM",
-          });
-
-        if (insErr) throw insErr;
+        await rpc("transfer_finished_good", {
+          p_date: transferDate,
+          p_finished_good_id: itemId,
+          p_source_location_id: srcLoc,
+          p_destination_location_id: destLoc,
+          p_quantity: quantity,
+          p_notes: notes,
+        });
       }
     },
-    "Transfer barang berhasil disimpan dan stok gudang asal telah dipotong."
+    "Transfer tersimpan. Saldo tujuan untuk paket bertambah setelah penerimaan dikonfirmasi."
   );
 }
 
@@ -668,12 +628,28 @@ export async function processBundlingIsianAction(f: FormData) {
     "bundling_isian.write",
     async () => {
       const componentsRaw = t(f, "components_json");
-      let components = [];
+      let components: any[] = [];
       try {
-        components = JSON.parse(componentsRaw || "[]");
+        const parsed = JSON.parse(componentsRaw || "[]");
+        if (!Array.isArray(parsed)) throw new Error();
+        components = parsed;
       } catch {
         throw new Error("Data komponen bundling tidak valid.");
       }
+
+      if (components.length > 100) {
+        throw new Error("Maksimal 100 komponen per transaksi bundling.");
+      }
+
+      const validatedComponents = components.map((c: any) => {
+        if (!c || typeof c !== "object") throw new Error("Struktur data komponen bundling tidak valid.");
+        const compId = Number(c.component_finished_good_id || c.finished_good_id);
+        const qty = Number(c.qty_used || c.qty || c.qty_per_bundle);
+        if (!Number.isSafeInteger(compId) || compId <= 0 || !Number.isFinite(qty) || qty <= 0) {
+          throw new Error("Komponen bundling memuat ID atau kuantiti yang tidak valid.");
+        }
+        return { ...c, component_finished_good_id: compId, qty_used: qty };
+      });
 
       await rpc("process_bundling_isian", {
         p_date: date(f, "bundling_date"),
@@ -681,7 +657,7 @@ export async function processBundlingIsianAction(f: FormData) {
         p_location_id: id(f, "location_id") || 1, 
         p_bundle_qty: num(f, "bundle_qty"),
         p_notes: t(f, "notes") || null,
-        p_components: components,
+        p_components: validatedComponents,
       });
     },
     "Bundling Isian berhasil! Komponen satuan terpotong dan stok Paket Isian Koper bertambah di Pabrik Pusat."
@@ -697,9 +673,11 @@ export async function saveBundleRecipeAction(f: FormData) {
       const s = await createClient();
       const bundleFgId = id(f, "bundle_finished_good_id");
       const itemsRaw = t(f, "recipe_items_json");
-      let items: Array<{ component_finished_good_id: number; qty_per_bundle: number }> = [];
+      let items: any[] = [];
       try {
-        items = JSON.parse(itemsRaw || "[]");
+        const parsed = JSON.parse(itemsRaw || "[]");
+        if (!Array.isArray(parsed)) throw new Error();
+        items = parsed;
       } catch {
         throw new Error("Format data komponen resep tidak valid.");
       }
@@ -708,17 +686,29 @@ export async function saveBundleRecipeAction(f: FormData) {
         throw new Error("Pilih minimal satu barang komponen untuk dimasukkan ke resep paket.");
       }
 
+      if (items.length > 100) {
+        throw new Error("Maksimal 100 komponen per resep paket.");
+      }
+
       const { error: delErr } = await s
         .from("bundle_recipes")
         .delete()
         .eq("bundle_finished_good_id", bundleFgId);
       if (delErr) throw delErr;
 
-      const payload = items.map((it) => ({
-        bundle_finished_good_id: bundleFgId,
-        component_finished_good_id: it.component_finished_good_id,
-        qty_per_bundle: it.qty_per_bundle,
-      }));
+      const payload = items.map((it: any) => {
+        if (!it || typeof it !== "object") throw new Error("Struktur komponen resep tidak valid.");
+        const compId = Number(it.component_finished_good_id);
+        const qty = Number(it.qty_per_bundle);
+        if (!Number.isSafeInteger(compId) || compId <= 0 || !Number.isFinite(qty) || qty <= 0) {
+          throw new Error("Komponen resep memuat ID atau kuantiti yang tidak valid.");
+        }
+        return {
+          bundle_finished_good_id: bundleFgId,
+          component_finished_good_id: compId,
+          qty_per_bundle: qty,
+        };
+      });
 
       const { error: insErr } = await s.from("bundle_recipes").insert(payload);
       if (insErr) throw insErr;
@@ -1040,26 +1030,47 @@ export async function addBulkAttendanceAction(f: FormData) {
   const s = await createClient();
   const raw = f.get("items");
   if (!raw || typeof raw !== "string") throw new Error("Data absensi tidak valid.");
-  const items = JSON.parse(raw);
-  if (!Array.isArray(items) || items.length === 0) return;
+  let items: any[] = [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error();
+    items = parsed;
+  } catch {
+    throw new Error("Format JSON data absensi tidak valid.");
+  }
+  if (items.length === 0) return;
+  if (items.length > 500) {
+    throw new Error("Maksimal 500 baris data absensi dalam satu kali pengiriman.");
+  }
 
-  const payload = items.map((it: any) => ({
-    worker_id: it.worker_id,
-    attendance_date: it.attendance_date,
-    schedule_in: it.schedule_in || null,
-    schedule_out: it.schedule_out || null,
-    actual_in: it.actual_in || null,
-    actual_out: it.actual_out || null,
-    day_class: it.day_class || null,
-    attendance_status: it.attendance_status || "HADIR",
-    overtime_minutes: Number(it.overtime_minutes || 0),
-    late_minutes: Number(it.late_minutes || 0),
-    late_deduction: Number(it.late_deduction || 0),
-    source: it.source || "MANUAL",
-    notes: it.notes || null,
-    // FIX: Gunakan status verifikasi bawaan dari array, supaya tidak otomatis reset ke DRAFT!
-    verification_status: it.verification_status || (it.attendance_status === "HADIR" ? "DRAFT" : "TERVERIFIKASI"),
-  }));
+  const payload = items.map((it: any, idx: number) => {
+    if (!it || typeof it !== "object") {
+      throw new Error(`Data absensi baris ke-${idx + 1} tidak valid.`);
+    }
+    const workerId = Number(it.worker_id);
+    if (!Number.isSafeInteger(workerId) || workerId <= 0) {
+      throw new Error(`Baris ke-${idx + 1}: ID pekerja (worker_id) tidak valid.`);
+    }
+    if (!it.attendance_date || typeof it.attendance_date !== "string") {
+      throw new Error(`Baris ke-${idx + 1}: tanggal absensi tidak valid.`);
+    }
+    return {
+      worker_id: workerId,
+      attendance_date: it.attendance_date,
+      schedule_in: it.schedule_in || null,
+      schedule_out: it.schedule_out || null,
+      actual_in: it.actual_in || null,
+      actual_out: it.actual_out || null,
+      day_class: it.day_class || null,
+      attendance_status: it.attendance_status || "HADIR",
+      overtime_minutes: Number(it.overtime_minutes || 0),
+      late_minutes: Number(it.late_minutes || 0),
+      late_deduction: Number(it.late_deduction || 0),
+      source: it.source || "MANUAL",
+      notes: it.notes || null,
+      verification_status: it.verification_status || (it.attendance_status === "HADIR" ? "DRAFT" : "TERVERIFIKASI"),
+    };
+  });
 
   for (let i = 0; i < payload.length; i += 100) {
     const chunk = payload.slice(i, i + 100);
@@ -1180,9 +1191,19 @@ export async function verifyBulkAttendanceAction(f: FormData) {
 
   if (rawItems) {
     try {
-      itemsToVerify = JSON.parse(rawItems);
+      const parsed = JSON.parse(rawItems);
+      if (!Array.isArray(parsed)) throw new Error();
+      itemsToVerify = parsed;
     } catch {
       throw new Error("Format data verifikasi massal tidak valid.");
+    }
+    if (itemsToVerify.length > 500) {
+      throw new Error("Maksimal 500 data absensi dalam sekali verifikasi massal.");
+    }
+    for (const it of itemsToVerify) {
+      if (!it || typeof it !== "object" || !Number.isSafeInteger(Number(it.id)) || Number(it.id) <= 0) {
+        throw new Error("Data verifikasi memuat ID absensi yang tidak valid.");
+      }
     }
   } else {
     const rawIds = t(f, "attendance_ids");
@@ -1298,14 +1319,64 @@ export async function finalizePayrollAction(f: FormData) {
     "/dashboard/payroll",
     "payroll.write",
     async () => {
-      await rpc("finalize_general_payroll", {
-        p_type: t(f, "payroll_type"),
-        p_start: date(f, "period_start"),
-        p_end: date(f, "period_end"),
-        p_notes: t(f, "notes") || null,
-      });
+      const s = await createClient();
+      const pType = t(f, "payroll_type");
+      const pStart = date(f, "period_start");
+      const pEnd = date(f, "period_end");
+      const pNotes = t(f, "notes") || null;
+
+      let runId: number | null = null;
+
+      try {
+        const res = await rpc("finalize_general_payroll", {
+          p_type: pType,
+          p_start: pStart,
+          p_end: pEnd,
+          p_notes: pNotes,
+        });
+        if (res) runId = Number(res);
+      } catch (err) {
+        const errMsg = err && typeof err === "object" && "message" in err ? String(err.message) : String(err || "");
+        if (
+          errMsg.includes("payroll_runs_period_uq") ||
+          errMsg.includes("duplicate key") ||
+          errMsg.includes("Payroll periode ini sudah ada")
+        ) {
+          // Logika UPSERT jika payroll_run untuk periode tersebut sudah ada
+          const { data: existing } = await s
+            .from("payroll_runs")
+            .select("id, status")
+            .eq("payroll_type", pType)
+            .eq("period_start", pStart)
+            .eq("period_end", pEnd)
+            .neq("status", "DIBATALKAN")
+            .order("id", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (existing?.id) {
+            runId = existing.id;
+            await s
+              .from("payroll_runs")
+              .update({
+                notes: pNotes,
+                status: "FINAL",
+                finalized_at: new Date().toISOString(),
+              })
+              .eq("id", runId);
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+
+      if (runId) {
+        await syncPayrollAdvancesCore(Number(runId));
+      }
     },
-    "Payroll berhasil dibuat dari absensi terverifikasi."
+    "Payroll berhasil dibuat dan disinkronkan dari absensi terverifikasi."
   );
 }
 
@@ -1372,159 +1443,266 @@ export async function updatePayrollItemAction(f: FormData) {
   );
 }
 
+export async function syncPayrollAdvancesCore(runId: number) {
+  const s = await createClient();
+
+  const { data: run, error: rErr } = await s
+    .from("payroll_runs")
+    .select("*")
+    .eq("id", runId)
+    .single();
+  if (rErr || !run) throw new Error("Data payroll run tidak ditemukan.");
+
+  const { data: runItems, error: itemsErr } = await s
+    .from("payroll_run_items")
+    .select("*")
+    .eq("payroll_run_id", runId);
+
+  if (itemsErr || !runItems || !runItems.length) {
+    throw new Error(itemsErr?.message || "Rincian payroll tidak ditemukan.");
+  }
+
+  const workerIds = runItems.map((i) => i.worker_id);
+
+  const { data: workersList } = await s
+    .from("workers")
+    .select("*")
+    .in("id", workerIds);
+
+  const workerMap = new Map((workersList ?? []).map((w: any) => [w.id, w]));
+
+  // 1. Ambil ID absensi yang sudah terikat via foreign key payroll_run_details
+  const { data: runDetails } = await s
+    .from("payroll_run_details")
+    .select("attendance_id")
+    .eq("payroll_run_id", runId);
+
+  const linkedAttIds = (runDetails ?? []).map((d: any) => d.attendance_id);
+
+  // 2. Lookback 7 hari sebelum run.period_start untuk menyertakan absensi/lembur dengan status Cutoff (Slip Depan)
+  const runStartDt = new Date(run.period_start + "T00:00:00Z");
+  runStartDt.setUTCDate(runStartDt.getUTCDate() - 7);
+  const searchStart = runStartDt.toISOString().slice(0, 10);
+
+  // 3. Query absensi: Jangan gunakan strict date filtering (tanggal >= run.period_start AND tanggal <= run.period_end) saja,
+  // melainkan perluas rentang tanggal (lookback cutoff) dan gabungkan dengan validasi foreign key ID payroll_run_details
+  const { data: attRecords } = await s
+    .from("attendance_records")
+    .select(
+      "id, worker_id, day_class, overtime_minutes, manual_overtime_hours, attendance_date, attendance_status, late_deduction, notes, verification_status, payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))"
+    )
+    .gte("attendance_date", searchStart)
+    .lte("attendance_date", run.period_end)
+    .neq("verification_status", "DITOLAK");
+
+  let extraLinkedAtts: any[] = [];
+  if (linkedAttIds.length > 0) {
+    const missingIds = linkedAttIds.filter((aid: number) => !(attRecords ?? []).some((a) => a.id === aid));
+    if (missingIds.length > 0) {
+      const { data: extra } = await s
+        .from("attendance_records")
+        .select(
+          "id, worker_id, day_class, overtime_minutes, manual_overtime_hours, attendance_date, attendance_status, late_deduction, notes, verification_status, payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))"
+        )
+        .in("id", missingIds)
+        .neq("verification_status", "DITOLAK");
+      extraLinkedAtts = extra ?? [];
+    }
+  }
+
+  const attList = [...(attRecords ?? []), ...extraLinkedAtts];
+
+  const { data: advances } = await s
+    .from("cash_advances")
+    .select("id, worker_id, amount, paid_amount, category, installment_amount, status")
+    .in("worker_id", workerIds)
+    .eq("status", "AKTIF");
+
+  const advList = advances ?? [];
+  let totalRunGross = 0;
+  let totalRunDeduction = 0;
+  let totalRunNet = 0;
+  const allQualifyingAtts: any[] = [];
+
+  for (const it of runItems) {
+    const w = workerMap.get(it.worker_id);
+    const paySystem = String(w?.pay_system || it.pay_system_snapshot || "").toUpperCase();
+
+    const workerAtts = attList.filter((a) => {
+      if (a.worker_id !== it.worker_id || a.attendance_status !== "HADIR") return false;
+      if (a.verification_status === "DITOLAK") return false;
+
+      // Validasi foreign key ID periode penggajian secara eksplisit
+      const linkedRuns = Array.isArray(a.payroll_run_details)
+        ? a.payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean)
+        : [];
+      const isLinkedToThisRun =
+        linkedAttIds.includes(a.id) ||
+        linkedRuns.some((r: any) => r.id === run.id || r.period_start === run.period_start);
+
+      if (isLinkedToThisRun) return true;
+
+      // Data dalam periode berjalan
+      if (a.attendance_date >= run.period_start && a.attendance_date <= run.period_end) return true;
+
+      // Cek status Cutoff (Slip Depan) dari tanggal sebelum run.period_start
+      const d = new Date(a.attendance_date + "T00:00:00Z");
+      const isJumat = d.getUTCDay() === 5;
+      const isHarian = paySystem !== "BULANAN";
+      const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+      const isFridayCutoff = isJumat && isHarian && rawDayOt > 0;
+      const noteStr = String(a.notes || "").toLowerCase();
+      const hasCutoffNote =
+        noteStr.includes("cutoff") ||
+        noteStr.includes("slip depan") ||
+        noteStr.includes("titipan lembur");
+
+      return isFridayCutoff || hasCutoffNote;
+    });
+
+    allQualifyingAtts.push(...workerAtts);
+
+    // Pisahkan absensi periode berjalan untuk hari kerja vs data cutoff untuk lembur
+    const currentPeriodAtts = workerAtts.filter(
+      (a) => a.attendance_date >= run.period_start && a.attendance_date <= run.period_end
+    );
+
+    // Hari kerja hanya dihitung dari kehadiran di periode berjalan (agar upah pokok hari Jumat cutoff tidak dobel)
+    const fullDays = currentPeriodAtts.filter((a) => a.day_class === "FULL_DAY").length;
+    const halfDays = currentPeriodAtts.filter((a) => a.day_class === "HALF_DAY").length;
+
+    // Total menit lembur dihitung dari kehadiran periode berjalan + lembur cutoff (Slip Depan)
+    const totalOtMinutes = workerAtts.reduce(
+      (sum, a) => sum + (Number(a.overtime_minutes) || 0) + (Number(a.manual_overtime_hours || 0) * 60),
+      0
+    );
+
+    const totalLateDeduction = workerAtts.reduce((sum, a) => sum + (Number(a.late_deduction) || 0), 0);
+
+    let baseAmt = 0;
+    let mealAmt = Number(it.meal_amount || 0);
+    let otAmt = 0;
+    let otBonus = 0;
+    let holidayBonus = 0;
+
+    if (paySystem === "BULANAN") {
+      if (run.payroll_type === "BULANAN") {
+        baseAmt = Number(w?.monthly_salary ?? w?.base_salary ?? it.base_amount ?? 0);
+      } else {
+        baseAmt = 0;
+        mealAmt = fullDays * 50000;
+      }
+      const hourlyRate = baseAmt > 0 ? Math.round((baseAmt / 190) * 100) / 100 : 0;
+      otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
+
+      const count4hBulanan = workerAtts.filter((a) => {
+        const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+        return rawDayOt >= 240;
+      }).length;
+      otBonus = count4hBulanan * 17500;
+    } else {
+      const dailyRate = Number(w?.daily_salary ?? w?.daily_rate ?? w?.rate_per_day ?? it.daily_wage_snapshot ?? 0);
+      if (fullDays > 0 || halfDays > 0) {
+        baseAmt = Math.round((fullDays + halfDays * 0.5) * dailyRate);
+      } else {
+        baseAmt = 0;
+      }
+
+      const hourlyRate = dailyRate > 0 ? Math.round((dailyRate / 8) * 100) / 100 : 0;
+      otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
+
+      const count4hHarian = workerAtts.filter((a) => {
+        const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+        return rawDayOt >= 240;
+      }).length;
+      otBonus = count4hHarian * 5000;
+
+      const sundayCount = currentPeriodAtts.filter((a) => {
+        const d = new Date(a.attendance_date + "T00:00:00Z");
+        return d.getUTCDay() === 0;
+      }).length;
+      holidayBonus = sundayCount * 20000;
+    }
+
+    const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
+
+    const baseKasbonP = workerAdvs
+      .filter((a) => a.category === "KASBON_PERUSAHAAN")
+      .reduce((sum, a) => {
+        const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
+        const inst = Number(a.installment_amount || 0);
+        return sum + (inst > 0 ? Math.min(inst, rem) : rem);
+      }, 0);
+
+    const kasbonP = baseKasbonP + totalLateDeduction;
+
+    const kasbonW = workerAdvs
+      .filter((a) => a.category === "KASBON_WARUNG")
+      .reduce((sum, a) => sum + Math.max(0, Number(a.amount) - Number(a.paid_amount)), 0);
+
+    const gross = baseAmt + mealAmt + otAmt + Number(it.manual_overtime_amount || 0) + otBonus + holidayBonus;
+    const deduction = kasbonP + kasbonW;
+    const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
+
+    totalRunGross += gross;
+    totalRunDeduction += deduction;
+    totalRunNet += net;
+
+    await s
+      .from("payroll_run_items")
+      .update({
+        full_days: fullDays,
+        half_days: halfDays,
+        overtime_minutes: totalOtMinutes,
+        base_amount: baseAmt,
+        meal_amount: mealAmt,
+        overtime_amount: otAmt,
+        overtime_bonus: otBonus,
+        holiday_bonus: holidayBonus,
+        kasbon_perusahaan_amount: kasbonP,
+        kasbon_warung_amount: kasbonW,
+        deduction_amount: deduction,
+        net_amount: net,
+      })
+      .eq("id", it.id);
+  }
+
+  // Rekam relasi foreign key absensi ke payroll_run_details
+  if (allQualifyingAtts.length > 0) {
+    const detailPayloads = allQualifyingAtts.map((a) => ({
+      payroll_run_id: runId,
+      attendance_id: a.id,
+      worker_id: a.worker_id,
+      attendance_date: a.attendance_date,
+      attendance_status: a.attendance_status || "HADIR",
+      day_class: a.day_class || "FULL_DAY",
+      overtime_approved_minutes: Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60),
+      source_hash: `${runId}-${a.id}-${a.attendance_date}`,
+    }));
+    await s.from("payroll_run_details").upsert(detailPayloads, { onConflict: "payroll_run_id,attendance_id" });
+  }
+
+  await s
+    .from("payroll_runs")
+    .update({
+      total_gross: totalRunGross,
+      total_deduction: totalRunDeduction,
+      total_net: totalRunNet,
+    })
+    .eq("id", runId);
+}
+
 export async function syncPayrollAdvancesAction(f: FormData) {
   const path = "/dashboard/payroll";
   await mutate(
     path,
     "payroll.write",
     async () => {
-      const s = await createClient();
       const runId = id(f, "run_id");
-
-      const { data: run, error: rErr } = await s
-        .from("payroll_runs")
-        .select("*")
-        .eq("id", runId)
-        .single();
-      if (rErr || !run) throw new Error("Data payroll run tidak ditemukan.");
-
-      const { data: runItems, error: itemsErr } = await s
-        .from("payroll_run_items")
-        .select("*")
-        .eq("payroll_run_id", runId);
-
-      if (itemsErr || !runItems || !runItems.length) {
-        throw new Error(itemsErr?.message || "Rincian payroll tidak ditemukan.");
-      }
-
-      const workerIds = runItems.map((i) => i.worker_id);
-
-      const { data: workersList } = await s
-        .from("workers")
-        .select("*")
-        .in("id", workerIds);
-
-      const workerMap = new Map((workersList ?? []).map((w: any) => [w.id, w]));
-
-      const { data: attRecords } = await s
-        .from("attendance_records")
-        .select("worker_id, day_class, overtime_minutes, attendance_date, attendance_status, late_deduction")
-        .gte("attendance_date", run.period_start)
-        .lte("attendance_date", run.period_end)
-        .eq("verification_status", "TERVERIFIKASI");
-
-      const attList = attRecords ?? [];
-
-      const { data: advances } = await s
-        .from("cash_advances")
-        .select("id, worker_id, amount, paid_amount, category, installment_amount, status")
-        .in("worker_id", workerIds)
-        .eq("status", "AKTIF");
-
-      const advList = advances ?? [];
-      let totalRunGross = 0;
-      let totalRunDeduction = 0;
-      let totalRunNet = 0;
-
-      for (const it of runItems) {
-        const w = workerMap.get(it.worker_id);
-        const paySystem = String(w?.pay_system || it.pay_system_snapshot || "").toUpperCase();
-
-        const workerAtts = attList.filter((a) => a.worker_id === it.worker_id && a.attendance_status === "HADIR");
-        const fullDays = workerAtts.filter((a) => a.day_class === "FULL_DAY").length;
-        const halfDays = workerAtts.filter((a) => a.day_class === "HALF_DAY").length;
-        const totalOtMinutes = workerAtts.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0);
-        
-        const totalLateDeduction = workerAtts.reduce((sum, a) => sum + (Number(a.late_deduction) || 0), 0);
-
-        let baseAmt = 0;
-        let mealAmt = Number(it.meal_amount || 0);
-        let otAmt = 0;
-        let otBonus = 0;
-        let holidayBonus = 0;
-
-        if (paySystem === "BULANAN") {
-          if (run.payroll_type === "BULANAN") {
-            baseAmt = Number(w?.monthly_salary ?? w?.base_salary ?? it.base_amount ?? 0);
-          } else {
-            baseAmt = 0;
-            mealAmt = fullDays * 50000;
-          }
-          const hourlyRate = baseAmt > 0 ? Math.round((baseAmt / 190) * 100) / 100 : 0;
-          otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
-          if (totalOtMinutes >= 240) otBonus = 17500;
-        } else {
-          const dailyRate = Number(w?.daily_salary ?? w?.daily_rate ?? w?.rate_per_day ?? it.daily_wage_snapshot ?? 0);
-          if (fullDays > 0 || halfDays > 0) {
-            baseAmt = Math.round((fullDays + halfDays * 0.5) * dailyRate);
-          } else {
-            baseAmt = 0;
-          }
-
-          const hourlyRate = dailyRate > 0 ? Math.round((dailyRate / 8) * 100) / 100 : 0;
-          otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
-          if (totalOtMinutes >= 240) otBonus = 5000;
-
-          const sundayCount = workerAtts.filter((a) => {
-            const d = new Date(a.attendance_date + "T00:00:00Z");
-            return d.getUTCDay() === 0;
-          }).length;
-          holidayBonus = sundayCount * 20000;
-        }
-
-        const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
-        
-        const baseKasbonP = workerAdvs
-          .filter((a) => a.category === "KASBON_PERUSAHAAN")
-          .reduce((sum, a) => {
-            const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
-            const inst = Number(a.installment_amount || 0);
-            return sum + (inst > 0 ? Math.min(inst, rem) : rem);
-          }, 0);
-
-        const kasbonP = baseKasbonP + totalLateDeduction;
-
-        const kasbonW = workerAdvs
-          .filter((a) => a.category === "KASBON_WARUNG")
-          .reduce((sum, a) => sum + Math.max(0, Number(a.amount) - Number(a.paid_amount)), 0);
-
-        const gross = baseAmt + mealAmt + otAmt + Number(it.manual_overtime_amount || 0) + otBonus + holidayBonus;
-        const deduction = kasbonP + kasbonW;
-        const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
-
-        totalRunGross += gross;
-        totalRunDeduction += deduction;
-        totalRunNet += net;
-
-        await s
-          .from("payroll_run_items")
-          .update({
-            full_days: fullDays,
-            half_days: halfDays,
-            overtime_minutes: totalOtMinutes,
-            base_amount: baseAmt,
-            meal_amount: mealAmt,
-            overtime_amount: otAmt,
-            overtime_bonus: otBonus,
-            holiday_bonus: holidayBonus,
-            kasbon_perusahaan_amount: kasbonP,
-            kasbon_warung_amount: kasbonW,
-            deduction_amount: deduction,
-            net_amount: net,
-          })
-          .eq("id", it.id);
-      }
-
-      await s
-        .from("payroll_runs")
-        .update({
-          total_gross: totalRunGross,
-          total_deduction: totalRunDeduction,
-          total_net: totalRunNet,
-        })
-        .eq("id", runId);
+      if (!runId) throw new Error("ID run tidak valid.");
+      await syncPayrollAdvancesCore(runId);
     },
-    "Sinkronisasi berhasil: data kehadiran, potongan telat, uang makan, dan kasbon telah dihitung ulang."
+    "Sinkronisasi berhasil: data kehadiran, lembur cutoff (Slip Depan), potongan telat, uang makan, dan kasbon telah dihitung ulang."
   );
 }
 
@@ -1767,53 +1945,84 @@ export async function addPettyCashAction(f: FormData) {
     async () => {
       const s = await createClient();
 
-      const file = (f.get("receipt_file") as File | null) || (f.get("receipt_file_gallery") as File | null);
-      const base64Data = t(f, "receipt_base64");
+      // 1. Ekstraksi FormData: tangkap berbagai variasi nama input file / base64
+      const file =
+        (f.get("receipt_file") as File | null) ||
+        (f.get("receipt") as File | null) ||
+        (f.get("file") as File | null) ||
+        (f.get("receipt_file_gallery") as File | null) ||
+        (f.get("nota") as File | null);
+      const base64Data = t(f, "receipt_base64") || t(f, "base64");
       let receiptUrl: string | null = null;
 
-      if (base64Data && base64Data.startsWith("data:image")) {
-        const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-        if (matches && matches.length === 3) {
-          const contentType = matches[1];
-          const buffer = Buffer.from(matches[2], "base64");
-          const ext = contentType.split("/")[1] || "jpg";
-          const filePath = `nota_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+      const ALLOWED_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
+      const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB
 
+      // Fungsi pembantu upload ke bucket yang tersedia ('petty-cash' atau fallback 'nota-kas-kecil')
+      const uploadNota = async (filePath: string, fileData: Buffer | File, mimeType: string): Promise<string> => {
+        const candidateBuckets = ["petty-cash", "nota-kas-kecil"];
+        let lastError: any = null;
+
+        for (const bucket of candidateBuckets) {
           const { error: uploadError } = await s.storage
-            .from("nota-kas-kecil")
-            .upload(filePath, buffer, {
-              contentType,
-              upsert: false,
+            .from(bucket)
+            .upload(filePath, fileData, {
+              contentType: mimeType,
+              upsert: true,
             });
 
           if (!uploadError) {
             const { data: publicUrlData } = s.storage
-              .from("nota-kas-kecil")
+              .from(bucket)
               .getPublicUrl(filePath);
-            receiptUrl = publicUrlData.publicUrl;
+            return publicUrlData.publicUrl;
+          }
+
+          lastError = uploadError;
+          // Lanjutkan coba bucket berikutnya jika error karena bucket not found
+          if (!uploadError.message?.toLowerCase().includes("not found")) {
+            break;
           }
         }
-      }
 
-      if (!receiptUrl && file && typeof file === "object" && file.size > 0 && file.name) {
-        const ext = file.name.split(".").pop() || "jpg";
-        const filePath = `nota_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+        // Wajib batalkan simpan ke database jika upload gagal
+        throw new Error("Gagal mengunggah foto nota: " + (lastError?.message || "Storage upload failed"));
+      };
 
-        const { error: uploadError } = await s.storage
-          .from("nota-kas-kecil")
-          .upload(filePath, file, {
-            contentType: file.type || "image/jpeg",
-            upsert: false,
-          });
+      // 2. Upload jika user mengirim foto format base64
+      if (base64Data && base64Data.startsWith("data:image")) {
+        const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          const contentType = matches[1].toLowerCase();
+          if (!ALLOWED_IMAGE_MIMES.includes(contentType)) {
+            throw new Error("Format foto nota tidak valid. Hanya JPG, PNG, atau WEBP yang diperbolehkan.");
+          }
+          const buffer = Buffer.from(matches[2], "base64");
+          if (buffer.length > MAX_UPLOAD_SIZE) {
+            throw new Error("Ukuran foto nota melebihi batas maksimal 5MB.");
+          }
+          const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+          const filePath = `nota_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
 
-        if (!uploadError) {
-          const { data: publicUrlData } = s.storage
-            .from("nota-kas-kecil")
-            .getPublicUrl(filePath);
-          receiptUrl = publicUrlData.publicUrl;
+          receiptUrl = await uploadNota(filePath, buffer, contentType);
         }
       }
 
+      // 3. Upload jika user mengirim file langsung (binary File)
+      if (!receiptUrl && file && typeof file === "object" && file.size > 0 && file.name) {
+        if (!ALLOWED_IMAGE_MIMES.includes(file.type)) {
+          throw new Error("Format file nota tidak valid. Hanya file gambar JPG, PNG, atau WEBP yang diperbolehkan.");
+        }
+        if (file.size > MAX_UPLOAD_SIZE) {
+          throw new Error("Ukuran file nota melebihi batas maksimal 5MB.");
+        }
+        const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+        const filePath = `nota_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+
+        receiptUrl = await uploadNota(filePath, file, file.type || "image/jpeg");
+      }
+
+      // 4. Mapping Database: Pastikan receipt_url tersimpan ke petty_cash_transactions
       const { error } = await s.from("petty_cash_transactions").insert({
         transaction_date: date(f, "transaction_date"),
         direction: t(f, "direction"),
@@ -1993,15 +2202,40 @@ export async function confirmTransferReceiptAction(f: FormData) {
       const damagedQty = num(f, "damaged_qty") || 0;
       const notes = t(f, "received_notes") || null;
       const photoUrl = t(f, "surat_jalan_photo_url") || null;
+      const initialPhotoUrl = t(f, "initial_surat_jalan_photo_url") || null;
+      const photoWasUpdated = t(f, "photo_was_updated") === "true";
 
-      await rpc("confirm_transfer_receipt", {
-        p_transfer_id: transferId,
-        p_received_qty: receivedQty,
-        p_reject_qty: rejectQty,
-        p_damaged_qty: damagedQty,
-        p_notes: notes,
-        p_photo_url: photoUrl,
-      });
+      if (t(f, "transfer_kind") === "PACKAGE") {
+        await rpc("confirm_bundle_package_transfer", {
+          p_transfer_id: transferId,
+          p_received_qty: receivedQty,
+          p_reject_qty: rejectQty,
+          p_damaged_qty: damagedQty,
+          p_notes: notes,
+          p_photo_url: photoUrl,
+        });
+        if (!photoUrl && (initialPhotoUrl || photoWasUpdated)) {
+          await rpc("update_bundle_package_transfer_photo", {
+            p_transfer_id: transferId,
+            p_photo_url: null,
+          });
+        }
+      } else {
+        await rpc("confirm_transfer_receipt", {
+          p_transfer_id: transferId,
+          p_received_qty: receivedQty,
+          p_reject_qty: rejectQty,
+          p_damaged_qty: damagedQty,
+          p_notes: notes,
+          p_photo_url: photoUrl,
+        });
+        if (!photoUrl && (initialPhotoUrl || photoWasUpdated)) {
+          await rpc("update_finished_good_transfer_photo", {
+            p_transfer_id: transferId,
+            p_photo_url: null,
+          });
+        }
+      }
     },
     "Penerimaan barang dan foto surat jalan berhasil dikonfirmasi!"
   );
@@ -2011,7 +2245,7 @@ export async function updateShipmentSuratJalanPhotoAction(f: FormData) {
   const returnPath = t(f, "return_path") || "/dashboard/pengirimanEmbarkasi";
   await mutate(
     returnPath,
-    "pengiriman_embarkasi.view",
+    "pengiriman_embarkasi.operate",
     async () => {
       const shipmentId = id(f, "shipment_id");
       const photoUrl = t(f, "surat_jalan_photo_url");
@@ -2031,12 +2265,28 @@ export async function processBundlePackagePackingAction(f: FormData) {
     "bundling_isian.write",
     async () => {
       const componentsRaw = t(f, "components_json");
-      let components = [];
+      let components: any[] = [];
       try {
-        components = JSON.parse(componentsRaw || "[]");
+        const parsed = JSON.parse(componentsRaw || "[]");
+        if (!Array.isArray(parsed)) throw new Error();
+        components = parsed;
       } catch {
         throw new Error("Data komponen packing tidak valid.");
       }
+
+      if (components.length > 100) {
+        throw new Error("Maksimal 100 komponen per transaksi packing.");
+      }
+
+      const validatedComponents = components.map((c: any) => {
+        if (!c || typeof c !== "object") throw new Error("Struktur komponen packing tidak valid.");
+        const fgId = Number(c.finished_good_id || c.component_finished_good_id);
+        const qty = Number(c.qty_used || c.qty || c.qty_per_bundle);
+        if (!Number.isSafeInteger(fgId) || fgId <= 0 || !Number.isFinite(qty) || qty <= 0) {
+          throw new Error("Komponen packing memuat ID barang atau kuantiti yang tidak valid.");
+        }
+        return { ...c, finished_good_id: fgId, qty_used: qty };
+      });
 
       await rpc("process_bundle_package_packing", {
         p_date: date(f, "packing_date"),
@@ -2044,7 +2294,7 @@ export async function processBundlePackagePackingAction(f: FormData) {
         p_location_id: id(f, "location_id") || 1, // Gudang Pusat
         p_quantity: num(f, "quantity"),
         p_notes: t(f, "notes") || null,
-        p_components: components,
+        p_components: validatedComponents,
       });
     },
     "Hasil packing harian berhasil disimpan! Stok komponen satuan terpotong dan stok Paket Isian bertambah di Gudang Pusat."
@@ -2060,9 +2310,11 @@ export async function savePackageRecipeAction(f: FormData) {
       const s = await createClient();
       const packageId = id(f, "package_id");
       const itemsRaw = t(f, "recipe_items_json");
-      let items: Array<{ finished_good_id: number; qty_per_bundle: number }> = [];
+      let items: any[] = [];
       try {
-        items = JSON.parse(itemsRaw || "[]");
+        const parsed = JSON.parse(itemsRaw || "[]");
+        if (!Array.isArray(parsed)) throw new Error();
+        items = parsed;
       } catch {
         throw new Error("Format data resep tidak valid.");
       }
@@ -2071,17 +2323,29 @@ export async function savePackageRecipeAction(f: FormData) {
         throw new Error("Pilih minimal satu barang untuk dimasukkan ke resep paket.");
       }
 
+      if (items.length > 100) {
+        throw new Error("Maksimal 100 barang per resep paket.");
+      }
+
       const { error: delErr } = await s
         .from("bundle_package_recipes")
         .delete()
         .eq("package_id", packageId);
       if (delErr) throw delErr;
 
-      const payload = items.map((it) => ({
-        package_id: packageId,
-        finished_good_id: it.finished_good_id,
-        qty_per_bundle: it.qty_per_bundle,
-      }));
+      const payload = items.map((it: any) => {
+        if (!it || typeof it !== "object") throw new Error("Struktur item resep tidak valid.");
+        const fgId = Number(it.finished_good_id);
+        const qty = Number(it.qty_per_bundle);
+        if (!Number.isSafeInteger(fgId) || fgId <= 0 || !Number.isFinite(qty) || qty <= 0) {
+          throw new Error("Item resep memuat ID barang atau kuantiti yang tidak valid.");
+        }
+        return {
+          package_id: packageId,
+          finished_good_id: fgId,
+          qty_per_bundle: qty,
+        };
+      });
 
       const { error: insErr } = await s.from("bundle_package_recipes").insert(payload);
       if (insErr) throw insErr;
@@ -2337,10 +2601,78 @@ export async function deletePayrollRunAction(f: FormData) {
     const s = await createClient();
     const runId = id(f, "run_id");
 
-    const { error: errItems } = await s.from("payroll_run_items").delete().eq("payroll_run_id", runId);
-    if (errItems) throw new Error("Gagal menghapus rincian payroll: " + errItems.message);
+    // Bersihkan detail absensi terikat dan rincian payroll
+    await s.from("payroll_run_details").delete().eq("payroll_run_id", runId);
+    await s.from("payroll_run_items").delete().eq("payroll_run_id", runId);
 
-    const { error: errRun } = await s.from("payroll_runs").delete().eq("id", runId);
-    if (errRun) throw new Error("Gagal menghapus data induk payroll: " + errRun.message);
-  }, "Draft Payroll berhasil dibatalkan dan dihapus secara permanen.");
+    // Tandai status DIBATALKAN dan hapus record
+    await s.from("payroll_runs").update({ status: "DIBATALKAN" }).eq("id", runId);
+    await s.from("payroll_runs").delete().eq("id", runId);
+
+    revalidatePath("/dashboard/payroll");
+  }, "Payroll berhasil dibatalkan.");
+}
+
+export async function deleteOperatorPayrollItemAction(f: FormData) {
+  await requirePermission("payroll.write");
+  const s = await createClient();
+  const admin = getAdminClient();
+  const db = admin || s;
+
+  const runId = f.get("run_id");
+  const itemId = f.get("item_id");
+
+  if (runId) {
+    const numRunId = Number(runId);
+    // 1. Hapus terlebih dahulu seluruh relasi data anak di operator_payroll_items agar foreign key tidak terlanggar
+    const { error: errItems } = await db.from("operator_payroll_items").delete().eq("run_id", numRunId);
+    if (errItems) throw new Error("Gagal membatalkan item payroll operator: " + errItems.message);
+
+    // 2. Update status run dan hapus record di operator_payroll_runs
+    await db.from("operator_payroll_runs").update({ status: "DIBATALKAN" }).eq("id", numRunId);
+    const { error: errRun } = await db.from("operator_payroll_runs").delete().eq("id", numRunId);
+    if (errRun) throw new Error("Gagal menghapus batch payroll operator: " + errRun.message);
+  } else if (itemId) {
+    const numItemId = Number(itemId);
+    const { error } = await db.from("operator_payroll_items").delete().eq("id", numItemId);
+    if (error) throw new Error("Gagal membatalkan item payroll operator: " + error.message);
+  }
+
+  revalidatePath("/dashboard/payroll");
+
+  return {
+    success: true,
+    message: "Seluruh item borongan pada batch payroll operator berhasil dibatalkan.",
+  };
+}
+
+export async function deleteOperatorPayrollRunAction(f: FormData) {
+  await requirePermission("payroll.write");
+  const s = await createClient();
+  const admin = getAdminClient();
+  const db = admin || s;
+
+  const runId = id(f, "run_id");
+
+  // 1. HAPUS RELASI ANAK TERLEBIH DAHULU:
+  // Hapus seluruh baris rincian di tabel operator_payroll_items yang terhubung dengan run_id ini
+  // agar foreign key constraint (on delete restrict) tidak terlanggar saat operator_payroll_runs dihapus.
+  const { error: errItems } = await db.from("operator_payroll_items").delete().eq("run_id", runId);
+  if (errItems) {
+    throw new Error("Gagal menghapus relasi rincian item payroll operator: " + errItems.message);
+  }
+
+  // 2. Update status parent menjadi DIBATALKAN, kemudian hapus record dari operator_payroll_runs
+  await db.from("operator_payroll_runs").update({ status: "DIBATALKAN" }).eq("id", runId);
+  const { error: errRun } = await db.from("operator_payroll_runs").delete().eq("id", runId);
+  if (errRun) {
+    throw new Error("Gagal membatalkan batch payroll operator: " + errRun.message);
+  }
+
+  revalidatePath("/dashboard/payroll");
+
+  return {
+    success: true,
+    message: "Batch Payroll Operator dan seluruh rincian item borongannya berhasil dibatalkan.",
+  };
 }

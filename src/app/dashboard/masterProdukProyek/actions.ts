@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requirePermission } from "@/lib/access/current-user";
+import { requirePermission, getCurrentAccessContext } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createStandaloneClient } from "@supabase/supabase-js";
 import {
   errorMessage,
   getId,
@@ -14,6 +15,19 @@ import {
 
 const PATH = "/dashboard/masterProdukProyek";
 const STATUSES = ["AKTIF", "NONAKTIF"] as const;
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serverKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serverKey) return null;
+  return createStandaloneClient(url, serverKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
 
 export async function createProjectProduct(formData: FormData) {
   await requirePermission("master_produk_proyek.write");
@@ -56,50 +70,103 @@ export async function createProjectProduct(formData: FormData) {
   redirectWithMessage(PATH, redirectType, message);
 }
 
-export async function updateProjectProduct(formData: FormData) {
-  await requirePermission("master_produk_proyek.write");
+export async function updateProjectProductAction(formData: FormData) {
+  // 1. Validasi Hak Akses:
+  // Role ADMIN / SUPERADMIN / ADMINISTRATOR / OWNER secara otomatis memiliki akses bypass.
+  // Pengguna lain wajib memiliki permission master_produk_proyek.write.
+  const access = await getCurrentAccessContext();
+  const roleName = String(access.role || "").toUpperCase();
+  const isAdmin = ["ADMIN", "ADMINISTRATOR", "SUPERADMIN", "OWNER"].includes(roleName);
+  const hasPermission = access.permissionCodes.includes("master_produk_proyek.write");
 
-  let redirectType: "success" | "error" = "success";
-  let message = "";
-
-  try {
-    const id = getId(formData, "id");
-    const projectId = getId(formData, "project_id");
-    const name = getText(formData, "name");
-    const targetProduction = getNumber(formData, "target_production", { min: 0.0001 });
-    const unit = getText(formData, "unit") || "pcs";
-    const status = requireOneOf(
-      getText(formData, "status") || "AKTIF",
-      STATUSES,
-      "Status Produk",
-    );
-    const notes = getText(formData, "notes");
-
-    if (!name) throw new Error("Nama Produk wajib diisi.");
-
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("project_products")
-      .update({
-        project_id: projectId,
-        name,
-        target_production: targetProduction,
-        unit,
-        status,
-        notes: notes || null,
-      })
-      .eq("id", id);
-
-    if (error) throw error;
-    message = "Produk berhasil diperbarui.";
-  } catch (error) {
-    redirectType = "error";
-    message = errorMessage(error, "Gagal memperbarui Produk.");
+  if (!isAdmin && !hasPermission) {
+    throw new Error("Anda tidak memiliki izin untuk mengubah produk proyek.");
   }
 
+  const s = await createClient();
+  const admin = getAdminClient();
+  const db = admin || s;
+
+  const id = getId(formData, "id");
+  const projectId = getId(formData, "project_id");
+  const name = getText(formData, "name");
+  const productCode = getText(formData, "product_code");
+  const targetProduction = getNumber(formData, "target_production", { min: 0.0001 });
+  const unit = getText(formData, "unit") || "pcs";
+  const status = requireOneOf(
+    getText(formData, "status") || "AKTIF",
+    STATUSES,
+    "Status Produk",
+  );
+  const notes = getText(formData, "notes");
+
+  if (!id) throw new Error("ID Produk tidak valid.");
+  if (!projectId) throw new Error("Pilihan Proyek Induk wajib dipilih.");
+  if (!name) throw new Error("Nama Produk wajib diisi.");
+
+  // Fetch data produk saat ini untuk memverifikasi keberadaan dan mendeteksi perubahan proyek induk
+  const { data: currentProduct, error: fetchErr } = await db
+    .from("project_products")
+    .select("id, project_id, product_code, name")
+    .eq("id", id)
+    .single();
+
+  if (fetchErr || !currentProduct) {
+    throw new Error("Data produk tidak ditemukan: " + (fetchErr?.message || "Not found"));
+  }
+
+  const payload: Record<string, any> = {
+    project_id: projectId,
+    name,
+    target_production: targetProduction,
+    unit,
+    status,
+    notes: notes || null,
+  };
+
+  if (productCode && productCode.trim()) {
+    payload.product_code = productCode.trim().toUpperCase();
+  }
+
+  // 2. Eksekusi Update pada tabel project_products
+  const { data: updatedRows, error: updErr } = await db
+    .from("project_products")
+    .update(payload)
+    .eq("id", id)
+    .select("id, project_id, product_code, name");
+
+  if (updErr) {
+    throw new Error("Gagal memperbarui data produk: " + updErr.message);
+  }
+
+  if (!updatedRows || updatedRows.length === 0) {
+    throw new Error("Gagal memperbarui data produk. Tidak ada baris yang ter-update di database.");
+  }
+
+  // 3. Foreign Key Safety Handling:
+  // Jika produk dipindahkan ke Proyek Induk yang berbeda, pastikan relasi data turunan
+  // (BOM, Ongkos Jahit, Komponen Potong) tetap sinkron dan utuh tanpa merusak relasi.
+  if (currentProduct.project_id !== projectId) {
+    await db.from("bom_requirements").update({ project_id: projectId }).eq("product_id", id);
+    await db.from("work_items").update({ project_id: projectId }).eq("product_id", id);
+    await db.from("cutting_components").update({ project_id: projectId }).eq("product_id", id);
+  }
+
+  // 4. Invalidation Cache
   revalidatePath(PATH);
-  redirectWithMessage(PATH, redirectType, message);
+  revalidatePath("/dashboard/masterProdukProyek");
+  revalidatePath("/dashboard/masterKebutuhan");
+  revalidatePath("/dashboard/cutting");
+  revalidatePath("/dashboard/masterItem");
+  revalidatePath("/dashboard/spk");
+
+  return {
+    success: true,
+    message: `Produk ${name} (${productCode || currentProduct.product_code}) berhasil diperbarui.`,
+  };
 }
+
+export const updateProjectProduct = updateProjectProductAction;
 
 export async function deleteProjectProduct(formData: FormData) {
   await requirePermission("master_produk_proyek.write");

@@ -30,6 +30,8 @@ export type AttendanceRecordItem = {
   overtime_minutes: number;
   verification_status: string;
   notes?: string | null;
+  payroll_id?: number | null;
+  payroll_run_details?: Array<{ payroll_run_id: number }>;
 };
 
 export type WorkerItem = {
@@ -168,17 +170,19 @@ export default function AttendanceManager({
       const isAnomaly = (isMissingIn || isMissingOut) && isHadir;
       const isHalfDay = isHadir && checkIsHalfDay(rec);
 
-      const matchingPayrollRun = (payrollRuns || []).find((run) => {
-        const isTypeMatch =
-          (run.payroll_type === "MINGGUAN" && paySystem === "HARIAN") ||
-          (run.payroll_type === "BULANAN" && paySystem === "BULANAN");
-        return (
-          isTypeMatch &&
-          rec.attendance_date >= run.period_start &&
-          rec.attendance_date <= run.period_end
-        );
-      });
-      const isPaid = Boolean(matchingPayrollRun);
+      // Menentukan status pembayaran murni dari relasi spesifik (payroll_id atau payroll_run_details),
+      // BUKAN mengecek apakah attendance_date berada di dalam rentang tanggal period_start s/d period_end!
+      const linkedPayrollId =
+        rec.payroll_id ??
+        (Array.isArray(rec.payroll_run_details) && rec.payroll_run_details.length > 0
+          ? rec.payroll_run_details[0].payroll_run_id
+          : null);
+
+      const matchingPayrollRun = linkedPayrollId
+        ? (payrollRuns || []).find((run) => run.id === linkedPayrollId) || null
+        : null;
+
+      const isPaid = Boolean(matchingPayrollRun || linkedPayrollId);
 
       return {
         ...rec,

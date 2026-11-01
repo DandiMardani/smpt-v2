@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useMemo } from "react";
 import * as payrollActions from "@/lib/final/actions";
+import { AdaptivePayrollDetail } from "./payroll-accordion-table";
+import type { PayrollSettingsMap } from "./payroll-settings-modal";
 
 export interface WorkerInfo {
   id?: number;
@@ -79,6 +81,7 @@ export interface OperatorItemRow {
   spk_no?: string;
   order_no?: string;
   work_item_name?: string;
+  work_item_name_snapshot?: string;
   item_name?: string;
   qty_assigned?: number | string;
   qty_approved?: number | string;
@@ -90,11 +93,26 @@ export interface OperatorItemRow {
   submissionValue?: number | string;
   notes?: string;
   workers?: WorkerInfo;
+  work_items?: { id: number; name: string; item_code?: string };
   [key: string]: any;
 }
 
 export type OperatorItem = OperatorItemRow;
 export type OperatorRun = PayrollRunRow;
+
+export interface CashAdvanceRow {
+  id: number;
+  worker_id: number;
+  amount: number;
+  paid_amount: number;
+  category: "KASBON_PERUSAHAAN" | "KASBON_WARUNG" | string;
+  warung_name?: string | null;
+  installment_amount?: number | null;
+  installment_count?: number | null;
+  installments_paid?: number | null;
+  status: string;
+  notes?: string | null;
+}
 
 export interface Props {
   runs?: any[];
@@ -102,12 +120,32 @@ export interface Props {
   items?: any[];
   operatorRuns?: any[];
   operatorItems?: any[];
+  settings?: PayrollSettingsMap;
+  activeAdvances?: CashAdvanceRow[];
+  workers?: WorkerInfo[];
   [key: string]: any;
 }
 
 export type PayrollSlipManagerProps = Props;
 
+function normalizePhone(phone?: string | null): string {
+  if (!phone) return "";
+  let clean = phone.replace(/\D/g, "");
+  if (clean.startsWith("0")) {
+    clean = "62" + clean.slice(1);
+  } else if (!clean.startsWith("62") && clean.length >= 8) {
+    clean = "62" + clean;
+  }
+  return clean;
+}
+
 // Ikon Native SVG
+const ChevronRight = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+  </svg>
+);
+
 const Users = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -202,7 +240,24 @@ const Utensils = ({ className = "w-4 h-4" }: { className?: string }) => (
 );
 
 export function PayrollSlipManager(props: Props) {
-  const { runs = [], currentRunId, items = [], operatorRuns = [], operatorItems = [] } = props;
+  const {
+    runs = [],
+    currentRunId,
+    items = [],
+    operatorRuns = [],
+    operatorItems = [],
+    settings,
+    activeAdvances = [],
+    workers = [],
+  } = props;
+
+  const workerMap = useMemo(() => {
+    const map = new Map<number, WorkerInfo>();
+    for (const w of workers) {
+      if (w && w.id) map.set(w.id, w);
+    }
+    return map;
+  }, [workers]);
   const [isPending, startTransition] = useTransition();
 
   // Tab: Default ke GAJI BULANAN agar sinkron dengan tabel atas
@@ -211,6 +266,24 @@ export function PayrollSlipManager(props: Props) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [viewingSlipItem, setViewingSlipItem] = useState<PayrollItemRow | null>(null);
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<number>>(new Set());
+
+  const toggleCard = (id: number) => {
+    setExpandedCardIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleAllCards = () => {
+    if (expandedCardIds.size === filteredItems.length) {
+      setExpandedCardIds(new Set());
+    } else {
+      setExpandedCardIds(new Set(filteredItems.map((i) => i.id)));
+    }
+  };
 
   const activeRun = runs.find((r) => r.id === selectedRunId) || runs[0];
   const isPaid =
@@ -250,7 +323,7 @@ export function PayrollSlipManager(props: Props) {
   const filteredOpItems = allOperatorItems.filter((op) => {
     const name = String(op.worker_name_snapshot || op.worker_name || op.workers?.name || "");
     const spk = String(op.spk_no || op.order_no || "");
-    const item = String(op.work_item_name || op.item_name || "");
+    const item = String(op.work_item_name || op.work_item_name_snapshot || op.work_items?.name || op.item_name || "");
     return (
       name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       spk.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -258,9 +331,79 @@ export function PayrollSlipManager(props: Props) {
     );
   });
 
+  interface WorkerBoronganGroup {
+    workerKey: string;
+    workerId?: number;
+    workerName: string;
+    workerCode?: string;
+    items: OperatorItemRow[];
+    subtotalQty: number;
+    subtotalValue: number;
+  }
+
+  const groupedBorongan: WorkerBoronganGroup[] = useMemo(() => {
+    const map = new Map<string, WorkerBoronganGroup>();
+
+    for (const op of filteredOpItems) {
+      const opName = String(op.worker_name_snapshot || op.worker_name || op.workers?.name || "Operator").trim();
+      const key = op.worker_id ? `id_${op.worker_id}` : `name_${opName.toLowerCase()}`;
+
+      const qty = Number(op.qty_approved || 0);
+      const price = Number(op.operator_price_snapshot || (op as any).operator_price || 0);
+      const opVal = Number(op.operator_value ?? (op as any).operatorValue ?? (qty * price));
+
+      if (!map.has(key)) {
+        map.set(key, {
+          workerKey: key,
+          workerId: op.worker_id,
+          workerName: opName,
+          workerCode: op.workers?.worker_code || (op.workers as any)?.code,
+          items: [],
+          subtotalQty: 0,
+          subtotalValue: 0,
+        });
+      }
+
+      const grp = map.get(key)!;
+      grp.items.push(op);
+      grp.subtotalQty += qty;
+      grp.subtotalValue += opVal;
+    }
+
+    return Array.from(map.values());
+  }, [filteredOpItems]);
+
+  const [expandedWorkerKeys, setExpandedWorkerKeys] = useState<Set<string>>(new Set());
+
+  const toggleWorkerExpand = (key: string) => {
+    setExpandedWorkerKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const handleExpandAll = () => {
+    if (expandedWorkerKeys.size === groupedBorongan.length) {
+      setExpandedWorkerKeys(new Set());
+    } else {
+      setExpandedWorkerKeys(new Set(groupedBorongan.map((g) => g.workerKey)));
+    }
+  };
+
   const countBulanan = runItems.filter((i) => String(i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() === "BULANAN").length;
   const countHarian = runItems.filter((i) => String(i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() !== "BULANAN").length;
   const countBorongan = filteredOpItems.length;
+  const totalBoronganQty = filteredOpItems.reduce((acc, op) => acc + Number(op.qty_approved || 0), 0);
+  const totalBoronganVal = filteredOpItems.reduce((acc, op) => {
+    const qty = Number(op.qty_approved || 0);
+    const price = Number(op.operator_price_snapshot || (op as any).operator_price || 0);
+    return acc + Number(op.operator_value ?? (op as any).operatorValue ?? (qty * price));
+  }, 0);
 
   const formatRupiah = (val: number | string) => {
     const num = Number(val || 0);
@@ -269,6 +412,139 @@ export function PayrollSlipManager(props: Props) {
       currency: "IDR",
       maximumFractionDigits: 0,
     }).format(num);
+  };
+
+  const buildItemWhatsAppUrl = (
+    item: PayrollItemRow,
+    workerName: string,
+    code: string,
+    base: number,
+    overtime: number,
+    gross: number,
+    kp: number,
+    kw: number,
+    denda: number,
+    totalDed: number,
+    bulananNet: number,
+    mealAmt: number,
+    totalDays: number
+  ) => {
+    const matchedWorker = (item.worker_id ? workerMap.get(item.worker_id) : null) || item.workers;
+    const phone = normalizePhone(matchedWorker?.phone);
+
+    // Ambil data kasbon pekerja
+    const workerAdvances = (activeAdvances || []).filter(
+      (adv) => Number(adv.worker_id) === Number(item.worker_id)
+    );
+
+    // 1. DETAIL KASBON KANTOR (ANGSURAN)
+    const companyAdvances = workerAdvances.filter(
+      (adv) => adv.category === "KASBON_PERUSAHAAN" || (!adv.category && !adv.warung_name)
+    );
+    const compAdv =
+      companyAdvances.find((a) => Number(a.installment_count || 1) > 1) || companyAdvances[0];
+    const instCount = compAdv ? Number(compAdv.installment_count || 1) : 1;
+    const instPaid = compAdv ? Number(compAdv.installments_paid || 0) : 0;
+
+    let kantorLine = `Pot. Kasbon Kantor: -${formatRupiah(kp)}`;
+    if (instCount > 1) {
+      const currentInst = isPaid ? Math.max(1, instPaid) : Math.min(instPaid + 1, instCount);
+      kantorLine = `Pot. Kasbon Kantor (Angsuran ke-${currentInst} dari ${instCount}): -${formatRupiah(kp)}`;
+    }
+
+    // 2. DETAIL KASBON WARUNG (MAP/LOOP ARRAY RINCIAN PER WARUNG)
+    const warungAdvances = workerAdvances.filter(
+      (adv) => adv.category === "KASBON_WARUNG" || Boolean(adv.warung_name)
+    );
+    const warungGroupMap = new Map<string, number>();
+    for (const adv of warungAdvances) {
+      const wName = (adv.warung_name || "Warung").trim();
+      const remaining = Math.max(0, Number(adv.amount || 0) - Number(adv.paid_amount || 0));
+      const instAmt = Number(adv.installment_amount || 0);
+      const targetAmt = instAmt > 0 && instAmt < remaining ? instAmt : remaining;
+      const nominal = targetAmt > 0 ? targetAmt : Number(adv.amount || 0);
+      warungGroupMap.set(wName, (warungGroupMap.get(wName) || 0) + nominal);
+    }
+
+    let warungLines: string[] = [];
+    if (warungGroupMap.size > 0) {
+      const entries = Array.from(warungGroupMap.entries());
+      if (entries.length === 1 && kw > 0) {
+        warungLines = [`Pot. ${entries[0][0]}: -${formatRupiah(kw)}`];
+      } else {
+        const totalMap = entries.reduce((acc, [, val]) => acc + val, 0);
+        warungLines = entries.map(([wName, wAmt]) => {
+          const displayAmt =
+            totalMap > 0 && kw > 0 && totalMap !== kw ? Math.round((wAmt / totalMap) * kw) : wAmt;
+          return `Pot. ${wName}: -${formatRupiah(displayAmt)}`;
+        });
+      }
+    } else if (kw > 0) {
+      warungLines = [`Pot. Kasbon Warung: -${formatRupiah(kw)}`];
+    } else {
+      warungLines = [`Pot. Kasbon Warung: -Rp 0`];
+    }
+
+    let noteMsg = "";
+    if (activeTab === "BULANAN") {
+      const lines = [
+        `*SLIP GAJI RESMI PT. KREASI DINAMIKA MAJI BERSAMA*`,
+        `Periode: ${activeRun?.period_start || "-"} s/d ${activeRun?.period_end || "-"}`,
+        `Nama: ${workerName} (${code})`,
+        `--------------------------------`,
+        `Gaji Pokok: ${formatRupiah(base)}`,
+        `Lembur: ${formatRupiah(overtime)}`,
+        `Total Bruto: ${formatRupiah(gross)}`,
+        kantorLine,
+        ...warungLines,
+        ...(denda > 0 ? [`Pot. Denda/Keterlambatan: -${formatRupiah(denda)}`] : []),
+        `Total Potongan: -${formatRupiah(totalDed)}`,
+        `--------------------------------`,
+        `*GAJI BERSIH (THP): ${formatRupiah(bulananNet)}*`,
+        ``,
+        `Status: ${isPaid ? "LUNAS / TELAH DITRANSFER" : "DALAM PROSES"}`,
+      ];
+      noteMsg = lines.join("\n");
+    } else if (activeTab === "HARIAN") {
+      const harianNet = item.net_amount !== undefined ? Number(item.net_amount) : bulananNet;
+      const lines = [
+        `*SLIP GAJI RESMI PT. KREASI DINAMIKA MAJI BERSAMA*`,
+        `Jenis: UPAH HARIAN`,
+        `Periode: ${activeRun?.period_start || "-"} s/d ${activeRun?.period_end || "-"}`,
+        `Nama: ${workerName} (${code})`,
+        `--------------------------------`,
+        `Upah Pokok (${totalDays} Hari): ${formatRupiah(base)}`,
+        `Lembur: ${formatRupiah(overtime)}`,
+        `Total Bruto: ${formatRupiah(gross)}`,
+        kantorLine,
+        ...warungLines,
+        ...(denda > 0 ? [`Pot. Denda/Keterlambatan: -${formatRupiah(denda)}`] : []),
+        `Total Potongan: -${formatRupiah(totalDed)}`,
+        `--------------------------------`,
+        `*GAJI BERSIH (THP): ${formatRupiah(harianNet)}*`,
+        ``,
+        `Status: ${isPaid ? "LUNAS / TELAH DITRANSFER" : "DALAM PROSES"}`,
+      ];
+      noteMsg = lines.join("\n");
+    } else if (activeTab === "UANG_MAKAN") {
+      const lines = [
+        `*SLIP UANG MAKAN PT. KREASI DINAMIKA MAJI BERSAMA*`,
+        `Periode: ${activeRun?.period_start || "-"} s/d ${activeRun?.period_end || "-"}`,
+        `Nama: ${workerName} (${code})`,
+        `--------------------------------`,
+        `Kehadiran: ${totalDays} hari × Rp 50.000`,
+        `*TOTAL DITERIMA: ${formatRupiah(mealAmt)}* (Bebas Potongan Kasbon)`,
+        ``,
+        `Status: ${isPaid ? "LUNAS / TELAH DITRANSFER" : "DALAM PROSES"}`,
+      ];
+      noteMsg = lines.join("\n");
+    } else {
+      noteMsg = `Halo ${workerName}, slip gaji periode ${activeRun?.period_start || "-"} s/d ${activeRun?.period_end || "-"}: Total Bersih ${formatRupiah(Number(item.net_amount || 0))}.`;
+    }
+
+    return phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(noteMsg)}`
+      : `https://wa.me/?text=${encodeURIComponent(noteMsg)}`;
   };
 
   const handleToggleStatus = () => {
@@ -446,9 +722,26 @@ export function PayrollSlipManager(props: Props) {
         />
       </div>
 
-      {/* DAFTAR PEKERJA: BULANAN / UANG MAKAN / HARIAN */}
+      {/* DAFTAR PEKERJA: BULANAN / UANG MAKAN / HARIAN (ACCORDION INTERAKTIF) */}
       {activeTab !== "BORONGAN" && (
         <div className="space-y-3">
+          {/* Bar Kontrol Accordion Masal */}
+          {filteredItems.length > 0 && (
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold text-slate-500">
+                Menampilkan {filteredItems.length} Pekerja ({activeTab === "BULANAN" ? "Bulanan" : activeTab === "UANG_MAKAN" ? "Uang Makan" : "Harian"})
+              </span>
+              <button
+                type="button"
+                onClick={handleToggleAllCards}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${expandedCardIds.size === filteredItems.length ? "rotate-90 text-blue-600" : ""}`} />
+                <span>{expandedCardIds.size === filteredItems.length ? "Tutup Semua Rincian" : "Buka Semua Rincian (Accordion)"}</span>
+              </button>
+            </div>
+          )}
+
           {filteredItems.length === 0 ? (
             <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-2">
               <Users className="w-8 h-8 text-slate-300 mx-auto" />
@@ -467,151 +760,152 @@ export function PayrollSlipManager(props: Props) {
                 Number(item.overtime_bonus || 0);
               const kp = Number(item.kasbon_perusahaan_amount || 0);
               const kw = Number(item.kasbon_warung_amount || 0);
-              const totalDed = kp + kw;
+              const denda = Number(
+                item.late_deduction_amount ||
+                  item.denda_amount ||
+                  item.late_deduction ||
+                  0
+              );
+              const totalDed = Number(item.deduction_amount ?? (kp + kw + denda));
               const gross = base + overtime;
               const bulananNet = Math.max(0, gross - totalDed);
 
               // Mode Uang Makan
               const mealAmt = Number(item.meal_amount || 0);
               const totalDays = mealAmt > 0 ? Math.round((mealAmt / 50000) * 10) / 10 : 0;
+              const netThp = activeTab === "UANG_MAKAN" ? mealAmt : (item.net_amount !== undefined ? Number(item.net_amount) : bulananNet);
+
+              // HIDE KARTU KOSONG (ZERO STATE):
+              // Pada render daftar slip gaji pekerja, beri logika filter. Jika nilai Gaji Pokok == 0 DAN Total Lembur == 0 DAN Gaji Bersih (THP) == 0, jangan render kartu tersebut (return null).
+              if (base === 0 && overtime === 0 && netThp === 0) {
+                return null;
+              }
+
+              const isExpanded = expandedCardIds.has(item.id);
 
               return (
                 <div
                   key={item.id}
-                  className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-3 hover:border-slate-300 transition-all"
+                  className={`bg-white rounded-3xl border transition-all ${
+                    isExpanded
+                      ? "border-blue-300 shadow-md ring-2 ring-blue-100"
+                      : "border-slate-200 shadow-sm hover:border-slate-300"
+                  }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-sm text-slate-800">{workerName}</span>
-                        <span
-                          className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                            activeTab === "BULANAN"
-                              ? "bg-blue-100 text-blue-700"
+                  {/* HEADER KARTU (ACCORDION TOGGLE) */}
+                  <div
+                    onClick={() => toggleCard(item.id)}
+                    className="p-4 sm:p-5 cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCard(item.id);
+                        }}
+                        className={`p-1.5 rounded-xl border transition-all cursor-pointer ${
+                          isExpanded
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                        }`}
+                        title={isExpanded ? "Tutup rincian perhitungan" : "Buka rincian perhitungan adaptif"}
+                      >
+                        <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? "rotate-90 text-white" : ""}`} />
+                      </button>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-sm text-slate-800">{workerName}</span>
+                          <span
+                            className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                              activeTab === "BULANAN"
+                                ? "bg-blue-100 text-blue-700"
+                                : activeTab === "UANG_MAKAN"
+                                ? "bg-purple-100 text-purple-700"
+                                : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {activeTab === "BULANAN"
+                              ? "GAJI BULANAN"
                               : activeTab === "UANG_MAKAN"
-                              ? "bg-purple-100 text-purple-700"
-                              : "bg-emerald-100 text-emerald-700"
-                          }`}
-                        >
-                          {activeTab === "BULANAN"
-                            ? "GAJI BULANAN"
-                            : activeTab === "UANG_MAKAN"
-                            ? "UANG MAKAN MINGGUAN"
-                            : "HARIAN"}
+                              ? "UANG MAKAN MINGGUAN"
+                              : "HARIAN"}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-400 block">
+                          {dept} • {code}
                         </span>
                       </div>
-                      <span className="text-[11px] font-bold text-slate-400 block">
-                        {dept} • {code}
-                      </span>
                     </div>
 
-                    <div className="text-right">
-                      <span className="text-[9px] font-bold text-slate-400 block uppercase">
-                        {activeTab === "UANG_MAKAN" ? "Uang Makan Net" : "Gaji Bersih (THP)"}
-                      </span>
-                      <span className="text-base font-black text-emerald-600">
-                        {formatRupiah(activeTab === "UANG_MAKAN" ? mealAmt : bulananNet)}
-                      </span>
+                    <div className="flex items-center justify-between sm:justify-end gap-4 pl-10 sm:pl-0">
+                      {!isExpanded && (
+                        <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-500 font-medium border-r border-slate-100 pr-4">
+                          <div>Pokok: <b className="text-slate-800">{formatRupiah(activeTab === "UANG_MAKAN" ? mealAmt : base)}</b></div>
+                          <div>Lembur: <b className="text-slate-800">{formatRupiah(overtime)}</b></div>
+                          <div>Pot: <b className="text-rose-600">-{formatRupiah(totalDed)}</b></div>
+                        </div>
+                      )}
+                      <div className="text-right">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">
+                          {activeTab === "UANG_MAKAN" ? "Uang Makan Net" : "Gaji Bersih (THP)"}
+                        </span>
+                        <span className="text-base font-black text-emerald-600">
+                          {formatRupiah(netThp)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* KARTU RINCIAN DATA SESUAI TAB */}
-                  {activeTab === "BULANAN" ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Gaji Pokok:</span>
-                        <span className="font-bold text-slate-800">{formatRupiah(base)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Lembur:</span>
-                        <span className="font-bold text-slate-800">{formatRupiah(overtime)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Kasbon Kantor:</span>
-                        <span className={`font-bold ${kp > 0 ? "text-rose-600" : "text-slate-600"}`}>
-                          {kp > 0 ? `-${formatRupiah(kp)}` : "Rp 0"}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Kasbon Warung:</span>
-                        <span className={`font-bold ${kw > 0 ? "text-amber-600" : "text-slate-600"}`}>
-                          {kw > 0 ? `-${formatRupiah(kw)}` : "Rp 0"}
-                        </span>
-                      </div>
-                    </div>
-                  ) : activeTab === "UANG_MAKAN" ? (
-                    <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-3 text-xs space-y-1.5">
-                      <div className="flex justify-between font-bold text-purple-900">
-                        <span>Kehadiran: {totalDays} Hari Aktif</span>
-                        <span>{formatRupiah(mealAmt)}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        Uang Makan (Rp 35.000) + Insentif (Rp 15.000) = Rp 50.000/hari. Bebas potongan kasbon.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Upah Pokok Hadir:</span>
-                        <span className="font-bold text-slate-800">{formatRupiah(base)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Lembur:</span>
-                        <span className="font-bold text-slate-800">{formatRupiah(overtime)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Potongan Kasbon:</span>
-                        <span className="font-bold text-rose-600">-{formatRupiah(Number(item.deduction_amount || 0))}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Bersih:</span>
-                        <span className="font-bold text-emerald-600">{formatRupiah(Number(item.net_amount || 0))}</span>
+                  {/* KONTEN RINCIAN PERHITUNGAN ADAPTIF (ACCORDION BODY) */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 bg-slate-50/60 p-4 sm:p-5 space-y-4 rounded-b-3xl">
+                      <AdaptivePayrollDetail
+                        item={item}
+                        worker={item.workers}
+                        settings={settings || activeRun?.config_snapshot}
+                        type={activeTab as any}
+                      />
+
+                      {/* AKSI CETAK & SHARE WA */}
+                      <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-200/60">
+                        <button
+                          type="button"
+                          onClick={() => setViewingSlipItem(item)}
+                          className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 shadow-2xs transition-all cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>{activeTab === "BULANAN" ? "Cetak Slip Gaji" : "Cetak Bukti"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const waUrl = buildItemWhatsAppUrl(
+                              item,
+                              workerName,
+                              code,
+                              base,
+                              overtime,
+                              gross,
+                              kp,
+                              kw,
+                              denda,
+                              totalDed,
+                              bulananNet,
+                              mealAmt,
+                              totalDays
+                            );
+                            window.open(waUrl, "_blank");
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition-all cursor-pointer"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Kirim WA</span>
+                        </button>
                       </div>
                     </div>
                   )}
-
-                  {/* AKSI CETAK & SHARE WA */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setViewingSlipItem(item)}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all cursor-pointer"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>{activeTab === "BULANAN" ? "Cetak Slip Gaji" : "Cetak Bukti"}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        let noteMsg = "";
-                        if (activeTab === "BULANAN") {
-                          noteMsg = `*SLIP GAJI RESMI CV. SMPT*\n` +
-                            `Periode: ${activeRun?.period_start} s/d ${activeRun?.period_end}\n` +
-                            `Nama: ${workerName} (${code})\n` +
-                            `--------------------------------\n` +
-                            `Gaji Pokok: ${formatRupiah(base)}\n` +
-                            `Lembur: ${formatRupiah(overtime)}\n` +
-                            `Total Bruto: ${formatRupiah(gross)}\n` +
-                            `Pot. Kasbon Kantor: -${formatRupiah(kp)}\n` +
-                            `Pot. Kasbon Warung: -${formatRupiah(kw)}\n` +
-                            `Total Potongan: -${formatRupiah(totalDed)}\n` +
-                            `--------------------------------\n` +
-                            `*GAJI BERSIH (THP): ${formatRupiah(bulananNet)}*\n\n` +
-                            `Status: ${isPaid ? "LUNAS / TELAH DITRANSFER" : "DALAM PROSES"}`;
-                        } else if (activeTab === "UANG_MAKAN") {
-                          noteMsg = `Halo ${workerName}, berikut rincian Uang Makan periode ${activeRun?.period_start} s/d ${activeRun?.period_end}: Kehadiran ${totalDays} hari × Rp 50.000 = Total Diterima ${formatRupiah(mealAmt)} (Bebas Potongan Kasbon).`;
-                        } else {
-                          noteMsg = `Halo ${workerName}, slip upah harian periode ${activeRun?.period_start} s/d ${activeRun?.period_end}: Total Bersih ${formatRupiah(Number(item.net_amount || 0))}.`;
-                        }
-                        window.open(`https://wa.me/?text=${encodeURIComponent(noteMsg)}`, "_blank");
-                      }}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all cursor-pointer"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Kirim WA</span>
-                    </button>
-                  </div>
                 </div>
               );
             })
@@ -621,72 +915,315 @@ export function PayrollSlipManager(props: Props) {
 
       {/* DAFTAR PEKERJA: BORONGAN */}
       {activeTab === "BORONGAN" && (
-        <div className="space-y-3">
-          {filteredOpItems.length === 0 ? (
+        <div className="space-y-4">
+          {/* Header & Statistik Khusus Pekerja Borongan */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-amber-200/60 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-lg bg-amber-600 px-2.5 py-0.5 text-xs font-black text-white">
+                    BORONGAN
+                  </span>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    Tabel Rekapitulasi Pekerja Borongan
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  Perhitungan resmi berdasarkan <b>Qty Sah Checker × Tarif Harga Operator</b> (Bebas dari Harga Pengajuan).
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {groupedBorongan.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleExpandAll}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-900 shadow-2xs hover:bg-amber-100 transition cursor-pointer"
+                  >
+                    <span>{expandedWorkerKeys.size === groupedBorongan.length ? "Tutup Semua Rincian" : "Buka Semua Rincian"}</span>
+                  </button>
+                )}
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Upah Operator</span>
+                  <span className="text-lg sm:text-xl font-black text-amber-700">{formatRupiah(totalBoronganVal)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+              <div className="rounded-xl border border-amber-200/80 bg-white p-2.5">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Total Operator</span>
+                <span className="text-sm font-black text-slate-800">{groupedBorongan.length} Pekerja</span>
+              </div>
+              <div className="rounded-xl border border-amber-200/80 bg-white p-2.5">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Total Item / SPK</span>
+                <span className="text-sm font-black text-slate-800">{filteredOpItems.length} Catatan</span>
+              </div>
+              <div className="rounded-xl border border-amber-200/80 bg-white p-2.5">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Total Qty Disetor</span>
+                <span className="text-sm font-black text-slate-800">{totalBoronganQty.toLocaleString("id-ID")} PCS</span>
+              </div>
+              <div className="col-span-2 sm:col-span-1 rounded-xl border border-amber-200/80 bg-white p-2.5">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Dasar Tarif</span>
+                <span className="text-sm font-black text-emerald-700">100% Harga Operator</span>
+              </div>
+            </div>
+          </div>
+
+          {groupedBorongan.length === 0 ? (
             <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-2">
               <Wrench className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-xs font-bold text-slate-600">Tidak ada item operator borongan</p>
+              <p className="text-xs font-bold text-slate-600">Tidak ada data rincian pekerjaan borongan untuk filter ini.</p>
             </div>
           ) : (
-            filteredOpItems.map((op) => {
-              const opName = op.worker_name_snapshot || op.worker_name || op.workers?.name || "Operator";
-              const spk = op.spk_no || op.order_no || "SPK-REGULER";
-              const itemWork = op.work_item_name || op.item_name || "Pekerjaan Borongan";
-              const qty = Number(op.qty_approved || 0);
-              const price = Number(op.operator_price_snapshot || 0);
-              const opVal = Number(op.operator_value ?? op.operatorValue ?? qty * price);
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase font-extrabold text-[10px] tracking-wider">
+                  <tr>
+                    <th className="px-3 py-3 text-center w-12">Rincian</th>
+                    <th className="px-3.5 py-3 text-center w-12">No</th>
+                    <th className="px-3.5 py-3">Nama Pekerja (Operator)</th>
+                    <th className="px-3.5 py-3 text-center">Jumlah Item SPK</th>
+                    <th className="px-3.5 py-3 text-right">Sub-Total Qty Sah</th>
+                    <th className="px-3.5 py-3 text-right">Sub-Total Upah Operator</th>
+                    <th className="px-3.5 py-3 text-center w-28">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {groupedBorongan.map((group, idx) => {
+                    const isExpanded = expandedWorkerKeys.has(group.workerKey);
 
-              return (
-                <div
-                  key={op.id}
-                  className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-3 hover:border-slate-300 transition-all"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-sm text-slate-800">{opName}</span>
-                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                          BORONGAN
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-bold text-slate-400 block">
-                        {spk} • {itemWork}
-                      </span>
-                    </div>
+                    return (
+                      <React.Fragment key={group.workerKey}>
+                        {/* Baris Utama / Ringkasan per Pekerja */}
+                        <tr
+                          onClick={() => toggleWorkerExpand(group.workerKey)}
+                          className={`cursor-pointer transition-colors ${
+                            isExpanded ? "bg-amber-50/40 hover:bg-amber-50/60" : "hover:bg-slate-50/80"
+                          }`}
+                        >
+                          <td className="px-3 py-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleWorkerExpand(group.workerKey);
+                              }}
+                              className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                isExpanded
+                                  ? "bg-amber-100 border-amber-300 text-amber-900"
+                                  : "bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                              }`}
+                              title={isExpanded ? "Tutup rincian SPK" : "Buka rincian SPK"}
+                            >
+                              <ChevronRight
+                                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                  isExpanded ? "rotate-90 text-amber-700" : ""
+                                }`}
+                              />
+                            </button>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="px-3.5 py-2.5 font-bold text-slate-900">
+                            <div className="flex items-center gap-2">
+                              <span>{group.workerName}</span>
+                              {group.workerCode ? (
+                                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                                  {group.workerCode}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-center">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
+                              📑 {group.items.length} Item SPK
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-black text-slate-800">
+                            {group.subtotalQty.toLocaleString("id-ID")} PCS
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-black text-amber-700 bg-amber-50/40 text-sm">
+                            {formatRupiah(group.subtotalValue)}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const opWorker = group.workerId ? workerMap.get(group.workerId) : null;
+                                const phone = normalizePhone(opWorker?.phone);
+                                const summaryText =
+                                  `*SLIP UPAH BORONGAN — PT. KREASI DINAMIKA MAJI BERSAMA*\n` +
+                                  `Nama Operator: ${group.workerName}\n` +
+                                  `Periode: ${activeRun?.period_start || "-"} s/d ${activeRun?.period_end || "-"}\n` +
+                                  `--------------------------------\n` +
+                                  group.items
+                                    .map(
+                                      (it, i) =>
+                                        `${i + 1}. [${it.spk_no || it.order_no || "SPK"}] ${
+                                          it.work_item_name ||
+                                          it.work_item_name_snapshot ||
+                                          it.work_items?.name ||
+                                          it.item_name ||
+                                          "Item SPK"
+                                        }: ${Number(it.qty_approved || 0).toLocaleString("id-ID")} PCS @ ${formatRupiah(
+                                          Number(it.operator_price_snapshot || (it as any).operator_price || 0)
+                                        )} = ${formatRupiah(
+                                          Number(
+                                            it.operator_value ??
+                                              (it as any).operatorValue ??
+                                              Number(it.qty_approved || 0) * Number(it.operator_price_snapshot || 0)
+                                          )
+                                        )}`
+                                    )
+                                    .join("\n") +
+                                  `\n--------------------------------\n` +
+                                  `*TOTAL QTY: ${group.subtotalQty.toLocaleString("id-ID")} PCS*\n` +
+                                  `*TOTAL UPAH: ${formatRupiah(group.subtotalValue)}*\n\n` +
+                                  `Status: ${isPaid ? "LUNAS / TELAH DITRANSFER" : "DALAM PROSES"}`;
+                                const waUrl = phone
+                                  ? `https://wa.me/${phone}?text=${encodeURIComponent(summaryText)}`
+                                  : `https://wa.me/?text=${encodeURIComponent(summaryText)}`;
+                                window.open(waUrl, "_blank");
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95 transition-all cursor-pointer"
+                              title="Kirim Rekapitulasi via WhatsApp"
+                            >
+                              <Send className="w-3 h-3" />
+                              <span>Kirim WA</span>
+                            </button>
+                          </td>
+                        </tr>
 
-                    <div className="text-right">
-                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Total Borongan</span>
-                      <span className="text-base font-black text-amber-600">{formatRupiah(opVal)}</span>
-                    </div>
-                  </div>
+                        {/* Baris Expandable: Rincian Item Pekerjaan Asli dari SPK */}
+                        {isExpanded && (
+                          <tr className="bg-amber-50/20">
+                            <td colSpan={7} className="p-0">
+                              <div className="px-4 py-3 sm:px-6 border-y border-amber-200/60 bg-amber-50/30">
+                                <div className="rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+                                  <div className="bg-slate-50 px-3.5 py-2 border-b border-slate-200 flex items-center justify-between">
+                                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                                      🔧 Rincian Item SPK Borongan ({group.items.length} item) — <b className="text-amber-800">{group.workerName}</b>
+                                    </span>
+                                    <span className="text-[10px] font-medium text-slate-500">
+                                      Sub-Total: <b className="text-amber-700">{formatRupiah(group.subtotalValue)}</b> ({group.subtotalQty.toLocaleString("id-ID")} PCS)
+                                    </span>
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                      <thead className="bg-slate-100/70 text-[10px] font-bold uppercase text-slate-600 border-b border-slate-200">
+                                        <tr>
+                                          <th className="px-3 py-2 text-center w-8">#</th>
+                                          <th className="px-3 py-2 w-32">No. SPK</th>
+                                          <th className="px-3 py-2">Item Pekerjaan</th>
+                                          <th className="px-3 py-2 text-right">Qty Sah</th>
+                                          <th className="px-3 py-2 text-right">Harga Satuan</th>
+                                          <th className="px-3 py-2 text-right">Nilai Operator</th>
+                                          <th className="px-3 py-2 text-center w-20">Aksi</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 font-medium">
+                                        {group.items.map((op, itemIdx) => {
+                                          const spk = op.spk_no || op.order_no || "SPK-REGULER";
+                                          const itemWork =
+                                            op.work_item_name ||
+                                            op.work_item_name_snapshot ||
+                                            op.work_items?.name ||
+                                            op.item_name ||
+                                            (op.work_item_id ? `Item #${op.work_item_id}` : "Item SPK");
+                                          const itemQty = Number(op.qty_approved || 0);
+                                          const itemPrice = Number(op.operator_price_snapshot || (op as any).operator_price || 0);
+                                          const itemVal = Number(
+                                            op.operator_value ?? (op as any).operatorValue ?? itemQty * itemPrice
+                                          );
 
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Qty Sah Checker:</span>
-                      <span className="font-black text-slate-700">{qty.toLocaleString("id-ID")} PCS</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Tarif Satuan:</span>
-                      <span className="font-black text-slate-700">{formatRupiah(price)} / PCS</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const text = `Halo ${opName}, slip borongan ${spk} (${itemWork}): Qty Sah ${qty} PCS @ ${formatRupiah(price)} = Total ${formatRupiah(opVal)}.`;
-                        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-                      }}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all cursor-pointer"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Share WA</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+                                          return (
+                                            <tr key={op.id ?? itemIdx} className="hover:bg-amber-50/30 transition-colors">
+                                              <td className="px-3 py-2 text-center text-slate-400 font-bold">{itemIdx + 1}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">
+                                                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 border border-slate-200">
+                                                  {spk}
+                                                </span>
+                                              </td>
+                                              <td className="px-3 py-2 font-semibold text-slate-800">
+                                                {itemWork}
+                                              </td>
+                                              <td className="px-3 py-2 text-right font-black text-slate-900 whitespace-nowrap">
+                                                {itemQty.toLocaleString("id-ID")} PCS
+                                              </td>
+                                              <td className="px-3 py-2 text-right font-medium text-slate-600 whitespace-nowrap">
+                                                {formatRupiah(itemPrice)}
+                                              </td>
+                                              <td className="px-3 py-2 text-right font-black text-amber-700 bg-amber-50/20 whitespace-nowrap">
+                                                {formatRupiah(itemVal)}
+                                              </td>
+                                              <td className="px-3 py-2 text-center whitespace-nowrap">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const opWorker = group.workerId ? workerMap.get(group.workerId) : null;
+                                                    const phone = normalizePhone(opWorker?.phone);
+                                                    const text = `Halo ${group.workerName}, rincian SPK ${spk} (${itemWork}): Qty Sah ${itemQty.toLocaleString("id-ID")} PCS @ ${formatRupiah(itemPrice)} = Total Upah ${formatRupiah(itemVal)}.`;
+                                                    const waUrl = phone
+                                                      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+                                                      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+                                                    window.open(waUrl, "_blank");
+                                                  }}
+                                                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-2xs hover:bg-emerald-700 active:scale-95 transition-all cursor-pointer"
+                                                  title="Kirim rincian item ini via WhatsApp"
+                                                >
+                                                  <Send className="w-2.5 h-2.5" />
+                                                  <span>WA</span>
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                      <tfoot className="bg-slate-50 font-bold text-slate-800 border-t border-slate-200 text-[11px]">
+                                        <tr>
+                                          <td colSpan={3} className="px-3 py-1.5 text-slate-600 uppercase text-[10px]">
+                                            Sub-Total ({group.items.length} item)
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right text-slate-400 font-normal">
+                                            -
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right text-slate-400">-</td>
+                                          <td className="px-3 py-1.5 text-right font-black text-amber-800">
+                                            {formatRupiah(group.subtotalValue)}
+                                          </td>
+                                          <td></td>
+                                        </tr>
+                                      </tfoot>
+                                    </table>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-slate-100/90 font-black text-slate-900 border-t-2 border-slate-300">
+                  <tr>
+                    <td colSpan={3} className="px-3.5 py-3 uppercase text-[11px] tracking-wider text-slate-600">
+                      TOTAL ({groupedBorongan.length} Operator · {filteredOpItems.length} Item Borongan)
+                    </td>
+                    <td className="px-3.5 py-3 text-center text-xs text-slate-600">
+                      {filteredOpItems.length} Catatan
+                    </td>
+                    <td className="px-3.5 py-3 text-right text-slate-900">
+                      {totalBoronganQty.toLocaleString("id-ID")} PCS
+                    </td>
+                    <td className="px-3.5 py-3 text-right text-amber-800 text-sm bg-amber-100/70">
+                      {formatRupiah(totalBoronganVal)}
+                    </td>
+                    <td className="px-3.5 py-3 text-center">-</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -697,7 +1234,7 @@ export function PayrollSlipManager(props: Props) {
           <div className="bg-white w-full max-w-md rounded-3xl p-6 space-y-4 shadow-xl border border-slate-200">
             <div className="text-center border-b pb-3 space-y-1">
               <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 block">
-                CV. SISTEM MANAJEMEN PRODUKSI TERPADU
+                PT. KREASI DINAMIKA MAJI BERSAMA
               </span>
               <h3 className="font-black text-base text-slate-900">
                 {activeTab === "BULANAN"

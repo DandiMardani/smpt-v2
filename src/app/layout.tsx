@@ -9,6 +9,7 @@ import ProjectProductAuto from "@/components/master/project-product-auto";
 import { InlineFormValidation } from "@/components/inline-form-validation";
 import { GlobalNumberAutoFormat } from "@/components/forms/global-number-auto-format";
 import { GlobalActionFeedback } from "@/components/global-action-feedback";
+import { ToastProvider } from "@/components/ui/toast";
 import AutoUpdateChecker from "@/components/auto-update-checker"; // <-- IMPORT KOMPONEN SILUMAN
 import "./globals.css";
 
@@ -48,7 +49,9 @@ export default function RootLayout({
         <ProjectProductAuto />
         <InlineFormValidation />
         <GlobalNumberAutoFormat />
-        {children}
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

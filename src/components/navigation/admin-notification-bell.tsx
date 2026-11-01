@@ -6,6 +6,12 @@ import { useRouter } from "next/navigation";
 import type { NotificationItem } from "@/app/api/notifications/route";
 
 export function AdminNotificationBell({ userRole }: { userRole?: string }) {
+  // Hanya role ADMIN, MANAGER, SPV, atau CHECKER yang dapat melihat notifikasi & lacak input
+  const role = (userRole || "").toUpperCase();
+  const isAllowed = ["ADMIN", "ADMINISTRATOR", "MANAGER", "SPV", "SUPERVISOR", "CHECKER"].some(
+    (allowed) => role === allowed || role.includes(allowed)
+  );
+
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [lastReadTimestamp, setLastReadTimestamp] = useState<number>(0);
@@ -16,6 +22,7 @@ export function AdminNotificationBell({ userRole }: { userRole?: string }) {
 
   // Load last read timestamp from localStorage
   useEffect(() => {
+    if (!isAllowed) return;
     try {
       const stored = localStorage.getItem("smpt_last_notif_read");
       if (stored) setLastReadTimestamp(Number(stored));
@@ -25,6 +32,7 @@ export function AdminNotificationBell({ userRole }: { userRole?: string }) {
   }, []);
 
   const fetchNotifications = async () => {
+    if (!isAllowed) return;
     try {
       setLoading(true);
       const res = await fetch("/api/notifications");
@@ -41,11 +49,12 @@ export function AdminNotificationBell({ userRole }: { userRole?: string }) {
   };
 
   useEffect(() => {
+    if (!isAllowed) return;
     fetchNotifications();
     // Poll every 45s for live updates
     const interval = setInterval(fetchNotifications, 45000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAllowed]);
 
   // Close when clicked outside
   useEffect(() => {
@@ -101,6 +110,10 @@ export function AdminNotificationBell({ userRole }: { userRole?: string }) {
         return "📌";
     }
   };
+
+  if (!isAllowed) {
+    return null;
+  }
 
   return (
     <div className="relative" ref={popoverRef}>

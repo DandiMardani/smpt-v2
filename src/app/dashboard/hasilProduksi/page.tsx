@@ -20,6 +20,7 @@ import { param, type SearchParams } from "@/lib/master/page-utils";
 import { createClient } from "@/lib/supabase/server";
 import { cancelManualResultAction, recordManualResultAction } from "./actions";
 import { ManualResultFields } from "./manual-result-fields";
+import { ItemAccordionList, type ProductionHistoryItem } from "./item-accordion-list";
 
 type Progress = {
   project_id: number;
@@ -79,6 +80,7 @@ type WorkerRef = {
 };
 type ManualResult = {
   id: number;
+  work_item_id?: number | null;
   result_code: string;
   result_date: string;
   project_name_snapshot: string;
@@ -100,6 +102,22 @@ type ManualResult = {
   cancellation_reason: string | null;
 };
 
+type CheckRow = {
+  id: number;
+  check_code?: string;
+  check_date?: string;
+  order_item_id: number;
+  good_qty: number | string;
+  reject_qty?: number | string;
+  status: string;
+  notes?: string | null;
+};
+
+type OrderItemRow = {
+  id: number;
+  work_item_id: number;
+};
+
 type Props = { searchParams: Promise<SearchParams> };
 
 export default async function Page({ searchParams }: Props) {
@@ -108,7 +126,18 @@ export default async function Page({ searchParams }: Props) {
   const q = await searchParams;
   const s = await createClient();
 
-  const [progressResult, projectResult, productResult, anomalyResult, orderResult, workItemResult, workerResult, manualResult] = await Promise.all([
+  const [
+    progressResult,
+    projectResult,
+    productResult,
+    anomalyResult,
+    orderResult,
+    workItemResult,
+    workerResult,
+    manualResult,
+    checksResult,
+    orderItemsResult,
+  ] = await Promise.all([
     s.rpc("smpt_get_equivalent_progress", { p_project_id: null, p_product_id: null }),
     s.from("projects").select("id,project_code,name,status").order("name").limit(300),
     s.from("project_products").select("id,project_id,product_code,name,status").order("name").limit(1000),
@@ -116,7 +145,9 @@ export default async function Page({ searchParams }: Props) {
     s.from("production_orders").select("id,status").neq("status", "DIBATALKAN").limit(500),
     s.from("work_items").select("id,project_id,product_id,item_code,name,unit,proposed_price,executor_scope,submission_category,status").eq("status", "AKTIF").order("name").limit(1500),
     s.from("workers").select("id,worker_code,name,department,position,pay_system,status").eq("status", "AKTIF").ilike("pay_system", "HARIAN").order("name").limit(1000),
-    s.from("production_manual_results").select("id,result_code,result_date,project_name_snapshot,product_name_snapshot,work_item_name_snapshot,worker_name_snapshot,worker_pay_system_snapshot,qty_good,operator_price_snapshot,submission_price_snapshot,operator_value,submission_value,reason,status,created_by_email_snapshot,created_at,cancelled_by_email_snapshot,cancelled_at,cancellation_reason").order("id", { ascending: false }).limit(150),
+    s.from("production_manual_results").select("id,work_item_id,result_code,result_date,project_name_snapshot,product_name_snapshot,work_item_name_snapshot,worker_name_snapshot,worker_pay_system_snapshot,qty_good,operator_price_snapshot,submission_price_snapshot,operator_value,submission_value,reason,status,created_by_email_snapshot,created_at,cancelled_by_email_snapshot,cancelled_at,cancellation_reason").order("id", { ascending: false }).limit(300),
+    s.from("production_checks").select("id,check_code,check_date,order_item_id,good_qty,reject_qty,status,notes").order("check_date", { ascending: false }).limit(500),
+    s.from("production_order_items").select("id,work_item_id").limit(2000),
   ]);
 
   const error = [
@@ -128,6 +159,8 @@ export default async function Page({ searchParams }: Props) {
     workItemResult.error,
     workerResult.error,
     manualResult.error,
+    checksResult.error,
+    orderItemsResult.error,
   ].find(Boolean);
   if (error) throw new Error(error.message);
 
@@ -138,6 +171,54 @@ export default async function Page({ searchParams }: Props) {
   const workItems = (workItemResult.data ?? []) as WorkItemRef[];
   const workers = (workerResult.data ?? []) as WorkerRef[];
   const manualResults = (manualResult.data ?? []) as ManualResult[];
+  const checks = (checksResult.data ?? []) as CheckRow[];
+  const orderItems = (orderItemsResult.data ?? []) as OrderItemRow[];
+
+  const orderItemWorkMap = new Map<number, number>(orderItems.map((oi) => [oi.id, oi.work_item_id]));
+  const historyRecord: Record<number, ProductionHistoryItem[]> = {};
+
+  // 1. Masukkan hasil manual HARIAN ke history per item
+  for (const m of manualResults) {
+    if (m.work_item_id == null) continue;
+    const list = historyRecord[m.work_item_id] ?? [];
+    list.push({
+      id: `manual-${m.id}`,
+      date: m.result_date,
+      code: m.result_code,
+      source: "MANUAL_HARIAN",
+      workerName: m.worker_name_snapshot || "Pekerja HARIAN",
+      qtyGood: Number(m.qty_good || 0),
+      qtyReject: 0,
+      status: m.status,
+      notes: m.reason || "-",
+    });
+    historyRecord[m.work_item_id] = list;
+  }
+
+  // 2. Masukkan hasil pemeriksaan Checker SPK ke history per item
+  for (const c of checks) {
+    const workItemId = orderItemWorkMap.get(c.order_item_id);
+    if (workItemId == null) continue;
+    const list = historyRecord[workItemId] ?? [];
+    list.push({
+      id: `check-${c.id}`,
+      date: c.check_date || "-",
+      code: c.check_code || `CHK-${c.id}`,
+      source: "CHECKER_SPK",
+      workerName: "Operator SPK",
+      qtyGood: Number(c.good_qty || 0),
+      qtyReject: Number(c.reject_qty || 0),
+      status: c.status,
+      notes: c.notes || "Hasil Checker SPK",
+    });
+    historyRecord[workItemId] = list;
+  }
+
+  // Sort riwayat per item berdasarkan tanggal descending
+  for (const wId of Object.keys(historyRecord)) {
+    const numId = Number(wId);
+    historyRecord[numId].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }
 
   const projectMap = new Map(projects.map((item) => [item.id, item.name]));
   const productMap = new Map(products.map((item) => [item.id, item.name]));
@@ -226,10 +307,12 @@ export default async function Page({ searchParams }: Props) {
                     </div>
                     <Badge>{target > 0 ? `${qty((productEq / target) * 100)}%` : `${qty(productEq)} eq`}</Badge>
                   </div>
-                  <TableWrap>
-                    <thead><tr><Th>Item</Th><Th>Qty/Produk</Th><Th>Target Raw</Th><Th>Qty Sah</Th><Th>Equivalent</Th><Th>Hari Ini</Th><Th>Sisa Eq</Th><Th>Over Eq</Th><Th>Progress</Th><Th>Mode</Th></tr></thead>
-                    <tbody>{items.map((item) => <tr key={item.work_item_id}><Td>{item.work_item_name}</Td><Td>{qty(item.qty_per_product)}</Td><Td>{qty(item.target_raw_qty)} {item.unit}</Td><Td>{qty(item.qty_sah)} {item.unit}</Td><Td><b>{qty(item.equivalent_product)}</b></Td><Td>{qty(item.equivalent_today)}</Td><Td>{qty(item.remaining_equivalent)}</Td><Td>{qty(item.over_equivalent)}</Td><Td>{qty(item.progress_percent)}%</Td><Td><Badge>{item.routing_validation_mode}</Badge></Td></tr>)}</tbody>
-                  </TableWrap>
+                  <ItemAccordionList
+                    items={items}
+                    historyByItem={historyRecord}
+                    workers={inputWorkers}
+                    canWrite={canWrite}
+                  />
                 </div>
               );
             })}

@@ -27,7 +27,7 @@ export default async function Page({ searchParams }: Props) {
     supabase
       .from("attendance_records")
       .select(
-        "id,attendance_code,worker_id,attendance_date,attendance_status,day_class,schedule_in,schedule_out,actual_in,actual_out,overtime_minutes,verification_status,notes"
+        "id,attendance_code,worker_id,attendance_date,attendance_status,day_class,schedule_in,schedule_out,actual_in,actual_out,overtime_minutes,verification_status,notes,payroll_run_details(payroll_run_id)"
       )
       .order("attendance_date", { ascending: false })
       .limit(1500),

@@ -1,0 +1,77 @@
+name: Database Migrations & Schema Drift CI
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'src/**'
+      - '.github/workflows/db-migration-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/**'
+
+jobs:
+  validate-migrations-and-drift:
+    name: Verify Clean Migration & Schema Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Ephemeral Supabase Container
+        run: supabase start
+
+      - name: Apply All Migrations Cleanly (Clean DB Reset)
+        run: |
+          echo "Applying migrations sequentially from scratch..."
+          supabase db reset
+
+      - name: Check Database Linter / Schema Health
+        run: |
+          echo "Running database linter..."
+          supabase db lint --local
+
+      - name: Verify Schema Integrity & Detect Schema Drift
+        run: |
+          echo "Verifying local database against migration files..."
+          DIFF_OUT=$(supabase db diff --local --schema public)
+          if [ -n "$DIFF_OUT" ]; then
+            echo "::error::Schema drift detected! Migration files do not match database state:"
+            echo "$DIFF_OUT"
+            exit 1
+          fi
+          echo "Schema is in sync with migrations. Zero migration drift."
+
+      - name: Run TypeScript Compile Check
+        run: npx tsc --noEmit
+
+      - name: Run Isolated Bundling & Transfer Integration Tests
+        run: |
+          echo "Running isolated integration test on clean ephemeral database..."
+          eval $(supabase status -o env)
+          node --test tests/bundling-transfer-flow.test.js
+
+      - name: Teardown Supabase Container
+        if: always()
+        run: supabase stop --no-backup
+

@@ -483,7 +483,6 @@ export function WorkerDirectoryClient({
               {canWrite ? (
                 <form
                   action={updateWorker}
-                  encType="multipart/form-data"
                   className="mt-4 grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-2 xl:grid-cols-3"
                 >
                   <input type="hidden" name="id" value={w.id} />

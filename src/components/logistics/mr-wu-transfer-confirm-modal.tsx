@@ -7,6 +7,7 @@ import { compressImage } from "@/lib/utils/image-compression";
 type Props = {
   transfer: {
     id: number;
+    transfer_kind?: "FINISHED_GOOD" | "PACKAGE";
     transfer_code: string;
     document_no?: string | null;
     transfer_date: string;
@@ -30,6 +31,7 @@ export function MrWuTransferConfirmModal({ transfer, returnPath = "/dashboard/mi
   const [isOpen, setIsOpen] = useState(false);
   const [photoUrl, setPhotoUrl] = useState<string | null>(transfer.surat_jalan_photo_url || null);
   const [isUploading, setIsUploading] = useState(false);
+  const [photoWasUpdated, setPhotoWasUpdated] = useState(false);
   const [receivedQty, setReceivedQty] = useState<number>(Number(transfer.received_qty ?? transfer.quantity));
   const [rejectQty, setRejectQty] = useState<number>(Number(transfer.reject_qty ?? 0));
   const [damagedQty, setDamagedQty] = useState<number>(Number(transfer.damaged_qty ?? 0));
@@ -47,7 +49,11 @@ export function MrWuTransferConfirmModal({ transfer, returnPath = "/dashboard/mi
 
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("transfer_id", String(transfer.id));
+      if (transfer.transfer_kind === "PACKAGE") {
+        fd.append("package_transfer_id", String(transfer.id));
+      } else {
+        fd.append("transfer_id", String(transfer.id));
+      }
 
       const res = await fetch("/api/upload/surat-jalan", {
         method: "POST",
@@ -58,6 +64,7 @@ export function MrWuTransferConfirmModal({ transfer, returnPath = "/dashboard/mi
       if (!res.ok) throw new Error(json.error || "Gagal mengunggah foto surat jalan.");
 
       setPhotoUrl(json.photoUrl);
+      setPhotoWasUpdated(true);
     } catch (err: any) {
       alert("Error upload: " + err.message);
     } finally {
@@ -130,7 +137,9 @@ export function MrWuTransferConfirmModal({ transfer, returnPath = "/dashboard/mi
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Qty Dikirim dari Pusat:</span>
-                <span className="font-black text-gray-900">{transfer.quantity.toLocaleString("id-ID")} Unit/Pcs</span>
+                <span className="font-black text-gray-900">
+                  {transfer.quantity.toLocaleString("id-ID")} {transfer.transfer_kind === "PACKAGE" ? "Paket" : "Unit/Pcs"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Tanggal Pengiriman:</span>
@@ -141,8 +150,11 @@ export function MrWuTransferConfirmModal({ transfer, returnPath = "/dashboard/mi
             {/* Form */}
             <form action={confirmTransferReceiptAction} className="mt-4 space-y-4">
               <input type="hidden" name="transfer_id" value={transfer.id} />
+              <input type="hidden" name="transfer_kind" value={transfer.transfer_kind || "FINISHED_GOOD"} />
               <input type="hidden" name="return_path" value={returnPath} />
               <input type="hidden" name="surat_jalan_photo_url" value={photoUrl || ""} />
+              <input type="hidden" name="initial_surat_jalan_photo_url" value={transfer.surat_jalan_photo_url || ""} />
+              <input type="hidden" name="photo_was_updated" value={photoWasUpdated ? "true" : "false"} />
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
@@ -160,6 +172,9 @@ export function MrWuTransferConfirmModal({ transfer, returnPath = "/dashboard/mi
                     className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm font-bold text-gray-900 focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
                   />
                 </div>
+                <p className="text-[11px] text-gray-500">
+                  Total diterima baik, reject, dan rusak harus sama dengan jumlah yang dikirim.
+                </p>
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -235,13 +250,15 @@ export function MrWuTransferConfirmModal({ transfer, returnPath = "/dashboard/mi
                         />
                       </label>
                       <span className="text-gray-300">·</span>
-                      <button
-                        type="button"
-                        onClick={() => setPhotoUrl(null)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Hapus Foto
-                      </button>
+                      {transfer.transfer_kind === "PACKAGE" ? (
+                        <button
+                          type="button"
+                          onClick={() => setPhotoUrl(null)}
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          Hapus Foto
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 ) : (

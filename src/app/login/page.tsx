@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "@/components/ui/toast";
 import { useEffect, useState, type FormEvent } from "react";
 
 export default function LoginPage() {
@@ -23,7 +24,9 @@ export default function LoginPage() {
       permission_read_error: "Permission akun tidak dapat dibaca. Pastikan migration terbaru sudah diterapkan.",
     };
 
-    setError(messages[code] ?? "Akses akun tidak dapat diproses.");
+    const msg = messages[code] ?? "Akses akun tidak dapat diproses.";
+    setError(msg);
+    toast.error(msg);
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -36,6 +39,7 @@ export default function LoginPage() {
 
     if (!rawInput || !password) {
       setError("Email atau ID Pekerja dan password wajib diisi.");
+      toast.warning("Email atau ID Pekerja dan password wajib diisi.");
       return;
     }
 
@@ -53,13 +57,16 @@ export default function LoginPage() {
 
       if (loginError) {
         setError("Email/ID Pekerja atau kata sandi salah. Silakan coba lagi.");
+        toast.error("Email/ID Pekerja atau kata sandi salah. Silakan coba lagi.");
         return;
       }
 
+      toast.success("Login berhasil! Mengalihkan ke dashboard...");
       window.location.assign("/dashboard");
     } catch (loginFailure) {
       console.error("Login gagal:", loginFailure);
       setError("Login gagal diproses. Silakan coba lagi.");
+      toast.error("Login gagal diproses. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }

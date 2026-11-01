@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "@/components/ui/toast";
+import { copyToClipboard } from "@/lib/clipboard";
 
 type Props = {
   name: string;
@@ -31,11 +33,28 @@ export function BoronganCredentialCard({ name, workerCode, email, pass, phone }:
     `_Simpan pesan ini untuk login di browser HP Anda._`,
   ].join("\n");
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(waMessage).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  const handleCopy = async () => {
+    try {
+      const isSuccess = await copyToClipboard(waMessage);
+      if (isSuccess) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+        toast.success("Kredensial login berhasil disalin ke clipboard!");
+      } else {
+        alert(
+          "⚠️ Gagal menyalin ke clipboard secara otomatis.\n\n" +
+            "Fitur copy dibatasi oleh browser karena aplikasi diakses melalui HTTP non-localhost atau dev tunnel tanpa izin secure context.\n\n" +
+            "Silakan salin teks kredensial berikut secara manual:\n\n" +
+            waMessage
+        );
+      }
+    } catch (err: any) {
+      console.error("Gagal menyalin kredensial:", err);
+      alert(
+        "Terjadi kesalahan saat menyalin kredensial: " +
+          (err?.message || "Izin clipboard dibatasi browser.")
+      );
+    }
   };
 
   const cleanPhone = (phone || "").replace(/\D/g, "");
@@ -102,7 +121,9 @@ export function BoronganCredentialCard({ name, workerCode, email, pass, phone }:
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+          title="Copy to Clipboard"
+          aria-label="Copy to Clipboard"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs cursor-pointer active:scale-95"
         >
           {copied ? "✅ Kredensial Disalin!" : "📋 Salin Kredensial"}
         </button>

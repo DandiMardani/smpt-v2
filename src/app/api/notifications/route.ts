@@ -37,58 +37,89 @@ export async function GET() {
     const access = await getCurrentAccessContext();
     const userRole = (access.role || "").toUpperCase();
 
-    // User pekerja/warung tidak perlu menerima notifikasi aktivitas pabrik/logistik
-    if (["PEKERJA", "WARUNG", "CUTTING"].includes(userRole)) {
+    // Hanya role ADMIN, MANAGER, SPV, atau CHECKER yang berhak menerima notifikasi
+    const isAllowedRole = ["ADMIN", "ADMINISTRATOR", "MANAGER", "SPV", "SUPERVISOR", "CHECKER"].some(
+      (r) => userRole === r || userRole.includes(r)
+    );
+    if (!isAllowedRole) {
       return NextResponse.json({ success: true, unreadCount: 0, notifications: [] });
     }
 
     const supabase = await createClient();
     const currentUserId = access.userId;
 
+    const isChecker = userRole === "CHECKER" || userRole.includes("CHECKER");
+
+    // 6. Setoran Hasil Checker terbaru
+    let checkQuery = supabase
+      .from("production_checks")
+      .select("id, check_code, check_date, good_qty, reject_qty, notes, created_at, checker_user_id, checker_email, production_order_items(work_item_name_snapshot)")
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    // Filter Khusus Checker: HANYA mengambil data yang checker_id / checker_user_id sama dengan user login
+    if (isChecker) {
+      checkQuery = checkQuery.eq("checker_user_id", currentUserId);
+    }
+
+    // 7. SPK Terbitan SPV terbaru
+    let spkQuery = supabase
+      .from("production_orders")
+      .select("id, spk_code, order_date, status, created_at, created_by, checker_email, workers(name)")
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    // Filter Khusus Checker: HANYA mengambil penugasan SPK yang ditugaskan ke checker ini
+    if (isChecker && access.email) {
+      spkQuery = spkQuery.eq("checker_email", access.email.toLowerCase().trim());
+    }
+
     // Fetch in parallel recent inputs across modules
     const [attRes, shipRes, packRes, transRes, qcRes, checkRes, spkRes, profilesRes] = await Promise.all([
-      // 1. Absensi terbaru
-      supabase
-        .from("attendance_records")
-        .select("id, attendance_code, attendance_date, attendance_status, created_at, created_by, workers(name)")
-        .order("created_at", { ascending: false })
-        .limit(30),
-      // 2. Pengiriman Embarkasi terbaru
-      supabase
-        .from("embarkation_shipments")
-        .select("id, shipment_code, document_no, shipment_date, quantity, status, created_at, created_by, driver_name")
-        .order("created_at", { ascending: false })
-        .limit(15),
-      // 3. Packing Runs MR WU terbaru
-      supabase
-        .from("packing_runs")
-        .select("id, set_qty, packing_date, notes, created_at, created_by, locations(name), product_sets(name)")
-        .order("created_at", { ascending: false })
-        .limit(15),
-      // 4. Transfer Barang Jadi terbaru
-      supabase
-        .from("finished_goods_transfers")
-        .select("id, transfer_code, document_no, quantity, transfer_date, delivery_status, created_at, created_by, received_by, finished_goods(name)")
-        .order("created_at", { ascending: false })
-        .limit(15),
-      // 5. QC Inspections terbaru
-      supabase
-        .from("qc_inspections")
-        .select("id, inspection_date, inspected_qty, good_qty, reject_qty, rework_qty, created_at, created_by, finished_goods(name)")
-        .order("created_at", { ascending: false })
-        .limit(15),
-      // 6. Setoran Hasil Checker terbaru
-      supabase
-        .from("production_checks")
-        .select("id, check_code, check_date, good_qty, reject_qty, notes, created_at, checker_user_id, checker_email, production_order_items(work_item_name_snapshot)")
-        .order("created_at", { ascending: false })
-        .limit(15),
-      // 7. SPK Terbitan SPV terbaru
-      supabase
-        .from("production_orders")
-        .select("id, spk_code, order_date, status, created_at, created_by, workers(name)")
-        .order("created_at", { ascending: false })
-        .limit(15),
+      // 1. Absensi terbaru (skip jika role Checker untuk efisiensi)
+      isChecker
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("attendance_records")
+            .select("id, attendance_code, attendance_date, attendance_status, created_at, created_by, workers(name)")
+            .order("created_at", { ascending: false })
+            .limit(30),
+      // 2. Pengiriman Embarkasi terbaru (skip jika role Checker)
+      isChecker
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("embarkation_shipments")
+            .select("id, shipment_code, document_no, shipment_date, quantity, status, created_at, created_by, driver_name")
+            .order("created_at", { ascending: false })
+            .limit(15),
+      // 3. Packing Runs MR WU terbaru (skip jika role Checker)
+      isChecker
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("packing_runs")
+            .select("id, set_qty, packing_date, notes, created_at, created_by, locations(name), product_sets(name)")
+            .order("created_at", { ascending: false })
+            .limit(15),
+      // 4. Transfer Barang Jadi terbaru (skip jika role Checker)
+      isChecker
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("finished_goods_transfers")
+            .select("id, transfer_code, document_no, quantity, transfer_date, delivery_status, created_at, created_by, received_by, finished_goods(name)")
+            .order("created_at", { ascending: false })
+            .limit(15),
+      // 5. QC Inspections terbaru (skip jika role Checker)
+      isChecker
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from("qc_inspections")
+            .select("id, inspection_date, inspected_qty, good_qty, reject_qty, rework_qty, created_at, created_by, finished_goods(name)")
+            .order("created_at", { ascending: false })
+            .limit(15),
+      // 6. Setoran Hasil Checker terbaru (filtered khusus checker)
+      checkQuery,
+      // 7. SPK Terbitan SPV terbaru (filtered penugasan khusus checker)
+      spkQuery,
       // 8. Profiles & roles map
       supabase.from("profiles").select("id, display_name, email, role_id, roles(name, code)"),
     ]);
@@ -242,7 +273,7 @@ export async function GET() {
 
     // 6. Setoran Hasil Checker (Pemeriksaan Kerja Operator)
     (checkRes.data ?? []).forEach((c: any) => {
-      if (currentUserId && c.checker_user_id === currentUserId) return;
+      if (!isChecker && currentUserId && c.checker_user_id === currentUserId) return;
       const creator = c.checker_user_id ? profileMap.get(c.checker_user_id) : null;
       const actorName = creator ? `${creator.name} (${creator.roleName})` : (c.checker_email || "Checker");
       const itemName = (c.production_order_items as any)?.work_item_name_snapshot || "Pekerjaan";
@@ -265,7 +296,7 @@ export async function GET() {
 
     // 7. SPK Baru Diterbitkan Supervisor (SPV)
     (spkRes.data ?? []).forEach((spk: any) => {
-      if (currentUserId && spk.created_by === currentUserId) return;
+      if (!isChecker && currentUserId && spk.created_by === currentUserId) return;
       const creator = spk.created_by ? profileMap.get(spk.created_by) : null;
       const actorName = creator ? `${creator.name} (${creator.roleName})` : "Supervisor";
       const opName = (spk.workers as any)?.name || "Operator";

@@ -8,6 +8,9 @@ import { resolveProjectCategory } from "@/lib/project-category";
 import { createClient } from "@/lib/supabase/server";
 import { isProductionSupervisor, isSewingOperator } from "@/lib/workers/options";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type Props = { searchParams: Promise<SearchParams> };
 
 export default async function Page({ searchParams }: Props) {
@@ -110,6 +113,80 @@ export default async function Page({ searchParams }: Props) {
       .filter((c: any) => Number(c.good_qty || 0) + Number(c.reject_qty || 0) > 0)
       .map((c: any) => Number(c.order_item_id))
   );
+
+  // 1. Agregasi Progres & Sisa Kuota per Item Pekerjaan (Akurasi Mutlak per work_item_id)
+  const orderStatusMap = new Map<number, string>(
+    rawOrders.map((o: any) => [Number(o.id), String(o.status || "").toUpperCase()])
+  );
+
+  const orderItemWorkItemMap = new Map<number, { workItemId: number; assignedQty: number; isActive: boolean }>();
+  rawItems.forEach((it: any) => {
+    const oStatus = orderStatusMap.get(Number(it.order_id)) || "";
+    const isActive = oStatus === "AKTIF" || oStatus === "DRAFT";
+    orderItemWorkItemMap.set(Number(it.id), {
+      workItemId: Number(it.work_item_id),
+      assignedQty: Number(it.assigned_qty || 0),
+      isActive,
+    });
+  });
+
+  const checkGoodByOrderItem = new Map<number, number>();
+  const checkRejectByOrderItem = new Map<number, number>();
+  rawChecks.forEach((c: any) => {
+    if (c.status === "AKTIF") {
+      const oItemId = Number(c.order_item_id);
+      checkGoodByOrderItem.set(oItemId, (checkGoodByOrderItem.get(oItemId) || 0) + Number(c.good_qty || 0));
+      checkRejectByOrderItem.set(oItemId, (checkRejectByOrderItem.get(oItemId) || 0) + Number(c.reject_qty || 0));
+    }
+  });
+
+  const productTargetMap = new Map<number, number>(
+    (ppr.data ?? []).map((p: any) => [Number(p.id), Number(p.target_production || 0)])
+  );
+
+  const itemAggregates: Record<
+    number,
+    { target: number; allowance_qty?: number; selesai: number; aktif: number; sisa: number; reject: number }
+  > = {};
+
+  (ir.data ?? []).forEach((w: any) => {
+    const wId = Number(w.id);
+    const prodTarget = productTargetMap.get(Number(w.product_id)) || 0;
+    const qtyPerProduct = Number(w.qty_per_product) || 1;
+    const target = prodTarget > 0 ? Math.round(prodTarget * qtyPerProduct) : 0;
+
+    let selesai = 0;
+    let reject = 0;
+    let aktif = 0;
+
+    rawItems.forEach((it: any) => {
+      if (Number(it.work_item_id) === wId) {
+        const itId = Number(it.id);
+        const itGood = checkGoodByOrderItem.get(itId) || 0;
+        const itReject = checkRejectByOrderItem.get(itId) || 0;
+        selesai += itGood;
+        reject += itReject;
+
+        const itInfo = orderItemWorkItemMap.get(itId);
+        if (itInfo?.isActive) {
+          const remainingInSpk = Math.max(0, itInfo.assignedQty - itGood);
+          aktif += remainingInSpk;
+        }
+      }
+    });
+
+    const allowanceQty = Number((w as any).allowance_qty || (w as any).cadangan_qty || 0);
+    const sisa = Math.max(0, (target + allowanceQty) - (selesai + aktif));
+
+    itemAggregates[wId] = {
+      target,
+      allowance_qty: allowanceQty,
+      selesai,
+      aktif,
+      sisa,
+      reject,
+    };
+  });
 
   const filteredRawOrders = categoryParam
     ? rawOrders.filter((o) => projectCategoryMap.get(o.project_id) === categoryParam)
@@ -231,6 +308,12 @@ export default async function Page({ searchParams }: Props) {
         checkers={checkers}
         supervisors={supervisors}
         orders={orders}
+        currentUser={{
+          id: access.userId,
+          email: access.email,
+          displayName: access.displayName,
+        }}
+        itemAggregates={itemAggregates}
       />
     </PageShell>
   );

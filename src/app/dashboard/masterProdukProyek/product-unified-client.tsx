@@ -10,6 +10,7 @@ import {
   addProductWorkItemAction,
   deleteProductWorkItemAction,
   updateProjectProduct,
+  updateProjectProductAction,
   deleteProjectProduct,
 } from "./actions";
 
@@ -93,6 +94,8 @@ export function ProductUnifiedClient({
   const [activeTab, setActiveTab] = useState<"BOM" | "CUTTING" | "SEWING" | "INFO">("BOM");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterProjectId, setFilterProjectId] = useState<number>(0);
+  const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const materialMap = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
@@ -208,12 +211,24 @@ export function ProductUnifiedClient({
                     </span>
                   </div>
 
+                  {canWrite && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingProduct(product)}
+                      className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition shadow-xs cursor-pointer active:scale-95"
+                      title="Edit Spesifikasi & Proyek Produk"
+                    >
+                      <span>✏️</span>
+                      <span>Edit</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
                       setExpandedProductId(isExpanded ? null : product.id);
                     }}
-                    className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-xs ${
+                    className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition shadow-xs cursor-pointer ${
                       isExpanded
                         ? "bg-blue-600 text-white shadow-blue-500/20"
                         : "border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
@@ -631,7 +646,22 @@ export function ProductUnifiedClient({
                         Edit Data Produk #{product.product_code}
                       </b>
                       {canWrite ? (
-                        <form action={updateProjectProduct} className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 items-end">
+                        <form
+                          action={async (formData) => {
+                            try {
+                              const res = await updateProjectProductAction(formData);
+                              if (res?.success) {
+                                window.location.reload();
+                              }
+                            } catch (err: any) {
+                              if (err?.digest?.startsWith("NEXT_REDIRECT") || err?.message === "NEXT_REDIRECT") {
+                                throw err;
+                              }
+                              alert(err instanceof Error ? err.message : "Gagal memperbarui info produk.");
+                            }
+                          }}
+                          className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 items-end"
+                        >
                           <input type="hidden" name="id" value={product.id} />
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-700 mb-1">
@@ -649,6 +679,18 @@ export function ProductUnifiedClient({
                                 </option>
                               ))}
                             </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Kode Produk
+                            </label>
+                            <input
+                              name="product_code"
+                              defaultValue={product.product_code}
+                              required
+                              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-mono font-bold outline-none focus:border-blue-600 uppercase"
+                            />
                           </div>
 
                           <div>
@@ -746,6 +788,199 @@ export function ProductUnifiedClient({
           );
         })}
       </div>
+
+      {/* Modal Edit Produk & Spesifikasi Proyek */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div
+            key={editingProduct.id}
+            className="relative w-full max-w-xl rounded-2xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-800 text-base font-bold shadow-2xs">
+                  ✏️
+                </span>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">
+                    Edit Produk & Spesifikasi Proyek
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Perbarui rincian produk <span className="font-mono font-bold text-slate-700">#{editingProduct.product_code}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isSavingEdit}
+                onClick={() => setEditingProduct(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form
+              action={async (formData) => {
+                setIsSavingEdit(true);
+                try {
+                  const res = await updateProjectProductAction(formData);
+                  if (res?.success) {
+                    setEditingProduct(null);
+                    window.location.reload();
+                  }
+                } catch (err: any) {
+                  if (err?.digest?.startsWith("NEXT_REDIRECT") || err?.message === "NEXT_REDIRECT") {
+                    throw err;
+                  }
+                  alert(err instanceof Error ? err.message : "Gagal memperbarui produk.");
+                } finally {
+                  setIsSavingEdit(false);
+                }
+              }}
+              className="mt-4 space-y-4 overflow-y-auto pr-1 flex-1"
+            >
+              <input type="hidden" name="id" value={editingProduct.id} />
+
+              {/* Dropdown Pilihan Proyek Induk */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Proyek Induk <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  name="project_id"
+                  defaultValue={editingProduct.project_id}
+                  required
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.project_code} · {p.name} ({p.status})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  💡 Jika produk dipindahkan ke Proyek Induk yang berbeda, relasi data turunan (BOM, Komponen Potong, dan Ongkos Jahit) akan disinkronkan secara aman tanpa merusak data yang telah ada.
+                </p>
+              </div>
+
+              {/* Nama Produk & Kode Produk */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Nama Produk <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="name"
+                    defaultValue={editingProduct.name}
+                    required
+                    placeholder="Contoh: Tas Ransel Mandiri 2026"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Kode Produk <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="product_code"
+                    defaultValue={editingProduct.product_code}
+                    required
+                    placeholder="Contoh: PRDK-000001"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 uppercase"
+                  />
+                </div>
+              </div>
+
+              {/* Target Produksi, Satuan, & Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Target Produksi <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="target_production"
+                    step="0.0001"
+                    min="0.0001"
+                    defaultValue={String(editingProduct.target_production)}
+                    required
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono font-bold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Satuan <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="unit"
+                    defaultValue={editingProduct.unit}
+                    required
+                    placeholder="pcs"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Status <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    name="status"
+                    defaultValue={editingProduct.status}
+                    required
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="AKTIF">AKTIF</option>
+                    <option value="NONAKTIF">NONAKTIF</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Keterangan */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Keterangan / Catatan
+                </label>
+                <input
+                  type="text"
+                  name="notes"
+                  defaultValue={editingProduct.notes ?? ""}
+                  placeholder="Catatan spesifikasi (opsional)"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isSavingEdit}
+                  onClick={() => setEditingProduct(null)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs disabled:opacity-50 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shadow-2xs disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>{isSavingEdit ? "⏳" : "💾"}</span>
+                  {isSavingEdit ? "Menyimpan..." : "Simpan Perubahan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

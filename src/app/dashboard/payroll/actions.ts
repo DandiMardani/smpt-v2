@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { logActionFailure } from "@/lib/logger";
+import { finalizePayrollAction as originalFinalize } from "@/lib/final/actions";
+
+// Wrapper Server Action finalisasi payroll (menghindari re-export non-async pada file 'use server')
+export async function finalizePayrollAction(...args: Parameters<typeof originalFinalize>) {
+  return await originalFinalize(...args);
+}
 
 // 1. Aksi Simpan Koreksi Edit Manual
 export async function updateBulananItemAction(formData: FormData) {
@@ -189,4 +195,21 @@ async function recalculateRunTotals(supabase: any, runId: number) {
       })
       .eq("id", runId);
   }
+}
+
+
+// 4. Form Action Wrapper untuk Verifikasi Pembayaran (1 Item via Form)
+export async function markBulananPaidFormAction(formData: FormData) {
+  const itemId = Number(formData.get("item_id"));
+  const runId = Number(formData.get("run_id"));
+  if (!itemId || !runId) throw new Error("ID Item atau ID Payroll tidak valid.");
+  await verifyBulananPaymentAction([itemId], runId);
+}
+
+// 5. Form Action Wrapper untuk Batal Lunas (1 Item via Form)
+export async function revertBulananPaidFormAction(formData: FormData) {
+  const itemId = Number(formData.get("item_id"));
+  const runId = Number(formData.get("run_id"));
+  if (!itemId || !runId) throw new Error("ID Item atau ID Payroll tidak valid.");
+  await revertBulananPaymentAction(itemId, runId);
 }

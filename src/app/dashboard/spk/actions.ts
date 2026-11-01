@@ -1,11 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requirePermission } from "@/lib/access/current-user";
+import { requirePermission, getCurrentAccessContext } from "@/lib/access/current-user";
 import { errorMessage, getOptionalDate, getText, redirectWithMessage } from "@/lib/master/action-utils";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createStandaloneClient } from "@supabase/supabase-js";
 
 const PATH = "/dashboard/spk";
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serverKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serverKey) return null;
+  return createStandaloneClient(url, serverKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
 
 export async function createSpkUnifiedAction(f: FormData) {
   await requirePermission("spk.write");
@@ -77,11 +91,13 @@ export async function createSpkUnifiedAction(f: FormData) {
       if (pubError) throw pubError;
     }
   } catch (e) {
-    revalidatePath(PATH);
+    revalidatePath('/dashboard/spk');
+  revalidatePath('/dashboard/spk', 'page');
     redirectWithMessage(PATH, "error", errorMessage(e, "Gagal menyimpan rincian item SPK."));
   }
 
-  revalidatePath(PATH);
+  revalidatePath('/dashboard/spk');
+  revalidatePath('/dashboard/spk', 'page');
   revalidatePath("/dashboard/borongan");
   revalidatePath("/dashboard/setoran");
   revalidatePath("/dashboard/produksi");
@@ -105,7 +121,8 @@ export async function publishSpkAction(f: FormData) {
     redirectWithMessage(PATH, "error", errorMessage(e, "Gagal menerbitkan SPK."));
   }
 
-  revalidatePath(PATH);
+  revalidatePath('/dashboard/spk');
+  revalidatePath('/dashboard/spk', 'page');
   revalidatePath("/dashboard/borongan");
   revalidatePath("/dashboard/setoran");
   redirectWithMessage(PATH, "success", "SPK berhasil DITERBITKAN dan siap dikerjakan operator.");
@@ -124,35 +141,75 @@ export async function cancelSpkAction(f: FormData) {
     redirectWithMessage(PATH, "error", errorMessage(e, "Gagal membatalkan SPK."));
   }
 
-  revalidatePath(PATH);
+  revalidatePath('/dashboard/spk');
+  revalidatePath('/dashboard/spk', 'page');
   revalidatePath("/dashboard/borongan");
   revalidatePath("/dashboard/setoran");
   redirectWithMessage(PATH, "success", "SPK berhasil DIBATALKAN.");
 }
 
 export async function editSpkAction(f: FormData) {
-  await requirePermission("spk.write");
+  // 1. Validasi Hak Akses:
+  // Role ADMIN / SUPERADMIN / ADMINISTRATOR / OWNER selalu diizinkan bypass.
+  // Pengguna non-admin wajib memiliki permission spk.write atau produksi.write.
+  const access = await getCurrentAccessContext();
+  const roleName = String(access.role || "").toUpperCase();
+  const isAdmin = ["ADMIN", "ADMINISTRATOR", "SUPERADMIN", "OWNER"].includes(roleName);
+  const hasSpkPermission =
+    access.permissionCodes.includes("spk.write") ||
+    access.permissionCodes.includes("produksi.write");
+
+  if (!isAdmin && !hasSpkPermission) {
+    throw new Error("Anda tidak memiliki izin untuk tindakan ini.");
+  }
+
   const s = await createClient();
+  const admin = getAdminClient();
+  const db = admin || s;
 
   const orderId = Number(f.get("order_id"));
-  if (!orderId) redirectWithMessage(PATH, "error", "ID SPK tidak valid.");
+  if (!orderId) {
+    throw new Error("ID SPK tidak valid.");
+  }
 
-  // Check order status
-  const { data: order, error: oErr } = await s
+  // Check order status & rincian item pekerjaan
+  const { data: order, error: oErr } = await db
     .from("production_orders")
-    .select("id, spk_code, status, project_id, product_id")
+    .select("id, spk_code, status, project_id, product_id, checker_email, production_order_items(id, work_item_id, assigned_qty)")
     .eq("id", orderId)
     .single();
 
   if (oErr || !order) {
-    redirectWithMessage(PATH, "error", "Data SPK tidak ditemukan.");
+    throw new Error("Data SPK tidak ditemukan: " + (oErr?.message || "Not found"));
   }
 
   if (["SELESAI", "DIBATALKAN"].includes(order.status)) {
-    redirectWithMessage(PATH, "error", `SPK dengan status ${order.status} tidak dapat diedit.`);
+    throw new Error(`SPK dengan status ${order.status} tidak dapat diedit.`);
   }
 
-  // 1. Process Removed Items
+  // 1. Process Reassign Checker
+  const newCheckerEmail = (getText(f, "checker_email") || String(f.get("checker_email") || "")).trim();
+  let checkerUpdated = false;
+  if (newCheckerEmail && newCheckerEmail !== order.checker_email) {
+    // Menggunakan db (service role) agar update checker tidak dicegat RLS tabel production_orders
+    const { data: updatedRows, error: chkErr } = await db
+      .from("production_orders")
+      .update({ checker_email: newCheckerEmail })
+      .eq("id", orderId)
+      .select("id, checker_email");
+
+    if (chkErr) {
+      throw new Error("Gagal mengalihkan checker SPK: " + (chkErr.message || "Database error"));
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new Error(`Gagal memperbarui checker SPK #${orderId}. Tidak ada baris yang ter-update di database.`);
+    }
+
+    checkerUpdated = true;
+  }
+
+  // 2. Process Removed Items (Gunakan client authenticated 's' agar context user auth.uid() valid di RPC)
   const removedItemIds = f.getAll("remove_item_id").map(Number).filter((x) => x > 0);
   for (const rItemId of removedItemIds) {
     const { error: remErr } = await s.rpc("remove_production_order_item", {
@@ -160,11 +217,12 @@ export async function editSpkAction(f: FormData) {
       p_order_item_id: rItemId,
     });
     if (remErr) {
-      redirectWithMessage(PATH, "error", errorMessage(remErr, `Gagal menghapus item #${rItemId}.`));
+      throw new Error(errorMessage(remErr, `Gagal menghapus item #${rItemId}.`));
     }
   }
 
-  // 2. Process Existing Items Qty Updates
+  // 3. Process Existing Items Qty Updates
+  const existingOrderItems = (order.production_order_items ?? []) as Array<{ id: number; work_item_id: number; assigned_qty: number }>;
   const existingItemIds = f.getAll("existing_item_id").map(Number).filter((x) => x > 0);
   for (const itemId of existingItemIds) {
     if (removedItemIds.includes(itemId)) continue;
@@ -173,22 +231,29 @@ export async function editSpkAction(f: FormData) {
     const newQty = Number(f.get(`item_qty_${itemId}`));
 
     if (!Number.isFinite(newQty) || newQty <= 0) {
-      redirectWithMessage(PATH, "error", "Jumlah Qty penugasan harus lebih besar dari 0.");
+      throw new Error("Jumlah Qty penugasan harus lebih besar dari 0.");
+    }
+
+    // Hindari pemanggilan RPC jika kuantiti tidak mengalami perubahan
+    const currentItem = existingOrderItems.find((it) => it.id === itemId);
+    if (currentItem && Number(currentItem.assigned_qty) === newQty) {
+      continue;
     }
 
     if (workItemId > 0) {
+      // Panggil RPC dengan client session authenticated 's'
       const { error: updErr } = await s.rpc("add_production_order_item", {
         p_order_id: orderId,
         p_work_item_id: workItemId,
         p_assigned_qty: newQty,
       });
       if (updErr) {
-        redirectWithMessage(PATH, "error", errorMessage(updErr, "Gagal memperbarui kuantiti item SPK."));
+        throw new Error(errorMessage(updErr, "Gagal memperbarui kuantiti item SPK."));
       }
     }
   }
 
-  // 3. Process Newly Added Item (if any)
+  // 4. Process Newly Added Item (if any)
   const newWorkItemId = Number(f.get("add_work_item_id"));
   const newWorkItemQty = Number(f.get("add_work_item_qty"));
   if (newWorkItemId > 0 && newWorkItemQty > 0) {
@@ -198,18 +263,19 @@ export async function editSpkAction(f: FormData) {
       p_assigned_qty: newWorkItemQty,
     });
     if (addErr) {
-      redirectWithMessage(PATH, "error", errorMessage(addErr, "Gagal menambahkan item baru ke SPK."));
+      throw new Error(errorMessage(addErr, "Gagal menambahkan item baru ke SPK."));
     }
   }
 
-  revalidatePath(PATH);
   revalidatePath("/dashboard/borongan");
   revalidatePath("/dashboard/setoran");
   revalidatePath("/dashboard/produksi");
+  revalidatePath("/dashboard/spk");
 
-  redirectWithMessage(
-    PATH,
-    "success",
-    `SPK ${order.spk_code} berhasil diperbarui. Checker terkait telah menerima tanda perubahan.`
-  );
+  return {
+    success: true,
+    message: checkerUpdated
+      ? `SPK ${order.spk_code} berhasil diperbarui dan dialihkan ke Checker ${newCheckerEmail}.`
+      : `SPK ${order.spk_code} berhasil diperbarui. Checker terkait telah menerima tanda perubahan.`,
+  };
 }

@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
   // 2. Ping Supabase Auth endpoint
   try {
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? supabaseKey;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? supabaseKey;
     const authPing = await fetch(`${supabaseUrl}/auth/v1/settings`, {
       headers: { apikey: anonKey },
       cache: "no-store",

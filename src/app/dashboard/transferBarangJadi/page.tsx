@@ -15,16 +15,17 @@ export default async function Page({ searchParams }: Props) {
   const PUSAT_LOCATION_ID = 1;
 
   // 1. Ambil Barang Satuan, Paket Isian, Saldo Stok, Lokasi, dan Riwayat Transfer
-  const [fr, pkgRes, lr, tr, balFgRes, balPkgRes] = await Promise.all([
+  const [fr, pkgRes, lr, tr, pkgTr, balFgRes, balPkgRes] = await Promise.all([
     s.from("finished_goods").select("id, finished_good_code, name, status").eq("status", "AKTIF").order("name"),
     s.from("bundle_packages").select("id, package_code, name, status").eq("status", "AKTIF").order("name"),
     s.from("locations").select("id, name, status").eq("status", "AKTIF").order("name"),
     s.from("finished_goods_transfers").select("*").order("transfer_date", { ascending: false }).limit(300),
+    s.from("bundle_package_transfers").select("*").order("transfer_date", { ascending: false }).limit(300),
     s.from("logistics_stock_balances").select("finished_good_id, quantity").eq("location_id", PUSAT_LOCATION_ID).eq("item_kind", "FINISHED_GOOD"),
     s.from("bundle_package_balances").select("package_id, quantity").eq("location_id", PUSAT_LOCATION_ID),
   ]);
 
-  const e = [fr.error, pkgRes.error, lr.error, tr.error].find(Boolean);
+  const e = [fr.error, pkgRes.error, lr.error, tr.error, pkgTr.error, balFgRes.error, balPkgRes.error].find(Boolean);
   if (e) throw new Error(e.message);
 
   // Mapping Saldo Stok Ready di Gudang Pusat
@@ -46,10 +47,20 @@ export default async function Page({ searchParams }: Props) {
   });
 
   const packages = pkgRes.data ?? [];
-  const fgMap = new Map(finishedGoods.map((x: any) => [x.id, x]));
-  const packageMap = new Map(packages.map((x: any) => [x.id, x]));
-  const locMap = new Map((lr.data ?? []).map((x: any) => [x.id, x.name]));
-  const transfers = tr.data ?? [];
+  const fgMap = new Map(finishedGoods.map((x: any) => [Number(x.id), x]));
+  const packageMap = new Map(packages.map((x: any) => [Number(x.id), x]));
+  const locMap = new Map((lr.data ?? []).map((x: any) => [Number(x.id), x.name]));
+  const transfers = [
+    ...(tr.data ?? []).map((x: any) => ({ ...x, transfer_kind: "FINISHED_GOOD" })),
+    ...(pkgTr.data ?? []).map((x: any) => ({
+      ...x,
+      transfer_kind: "PACKAGE",
+      delivery_status: x.status,
+    })),
+  ].sort((a: any, b: any) =>
+    String(b.transfer_date).localeCompare(String(a.transfer_date)) ||
+    Number(b.id) - Number(a.id)
+  );
 
   const totalTransferQty = transfers.reduce((sum: number, x: any) => sum + (Number(x.quantity) || 0), 0);
   const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
@@ -178,15 +189,15 @@ export default async function Page({ searchParams }: Props) {
             </thead>
             <tbody>
               {transfers.map((x: any) => {
-                const isPackage = x.item_kind === "PACKAGE" || (!x.finished_good_id && x.package_id);
-                const pkg = isPackage ? packageMap.get(x.package_id) : null;
-                const fg = !isPackage ? fgMap.get(x.finished_good_id) : null;
+                const isPackage = x.transfer_kind === "PACKAGE";
+                const pkg = isPackage ? packageMap.get(Number(x.package_id)) : null;
+                const fg = !isPackage ? fgMap.get(Number(x.finished_good_id)) : null;
 
-                const srcName = locMap.get(x.source_location_id) || `Gudang #${x.source_location_id}`;
-                const destName = locMap.get(x.destination_location_id) || `Gudang #${x.destination_location_id}`;
+                const srcName = locMap.get(Number(x.source_location_id)) || `Gudang #${x.source_location_id}`;
+                const destName = locMap.get(Number(x.destination_location_id)) || `Gudang #${x.destination_location_id}`;
 
                 return (
-                  <tr key={x.id} className="hover:bg-slate-50/70 transition">
+                  <tr key={`${x.transfer_kind}-${x.id}`} className="hover:bg-slate-50/70 transition">
                     <Td>
                       <span className="font-mono font-semibold text-xs text-sky-600">{x.transfer_code}</span>
                     </Td>
