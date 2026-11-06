@@ -1824,11 +1824,16 @@ export async function syncPayrollAdvancesCore(runId: number) {
     let otBonus = 0;
     let holidayBonus = 0;
 
-    if (paySystem === "BULANAN") {
+        if (paySystem === "BULANAN") {
       const count4hBulanan = workerAtts.filter((a) => {
         const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-        return rawDayOt >= 240;
+        const d = new Date(a.attendance_date + "T00:00:00Z");
+        const isSunday = d.getUTCDay() === 0;
+        // Hari Minggu staf bulanan: 8 jam pertama (480 mnt) adalah shift Minggu normal.
+        // Bonus lembur 4H hanya dihitung jika lanjut lembur malam >= 4 jam (total >= 720 mnt).
+        return isSunday ? rawDayOt >= 720 : rawDayOt >= 240;
       }).length;
+
 
       if (run.payroll_type === "BULANAN") {
         // --- RUN BULANAN (AKHIR BULAN) ---
