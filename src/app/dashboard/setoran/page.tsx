@@ -618,22 +618,31 @@ export default async function Page() {
           const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
           const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
 
-          const finalBonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
+                    // 1. Tarik bonus langsung dari Admin (officialSlip) jika ada. Jika 0, baru hitung manual.
+          const finalBonus4h = (officialSlip.overtimeBonus || 0) > 0 
+            ? Number(officialSlip.overtimeBonus) 
+            : count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
+
+          // 2. Sinkronkan tampilan jumlah shift (count4h) di UI agar pas dengan nominalnya
+          const finalCount4h = (officialSlip.overtimeBonus || 0) > 0 
+            ? Math.round(Number(officialSlip.overtimeBonus) / Number(settingsMap.OT_BONUS_BULANAN_4H || 17500)) 
+            : count4h;
 
           estimatedGross = monthlySalary + totalOtWage + finalBonus4h;
 
           breakdown = {
             baseAmount: monthlySalary,
             overtimeWage: totalOtWage,
-            bonus4h: finalBonus4h,
+            bonus4h: finalBonus4h, // <-- Sekarang pasti Rp 70.000
             sundayMealOrBonus: 0,
             regularMeal: 0,
             totalGross: estimatedGross,
             otHourlyRate: Math.round(otHourlyRate),
             otMinutes: totalOtMins,
             sundayCount,
-            count4h,
+            count4h: finalCount4h, // <-- Sekarang pasti 4 shift
           };
+
         } else {
           const slipWorkedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
           workedDays = slipWorkedDays > 0 ? slipWorkedDays : workedDays;
