@@ -423,7 +423,7 @@ export default async function Page() {
         isSunday = new Date(y, m, d).getDay() === 0;
       }
 
-            // 1. Ambil OT dari absen mesin (hanya menit asli murni tanpa manual)
+      // 1. Ambil OT dari absen mesin (hanya menit asli murni tanpa manual)
       const actualOtMinutes = Number(a.overtime_minutes || 0);
       
       // 2. Ambil OT dari input manual Admin (jam diubah ke menit)
@@ -434,14 +434,13 @@ export default async function Page() {
       otMins += rawDayOt;
 
       // 4. KUNCI NYA DI SINI: Total Evaluasi Shift 4H 
-      // (mesin absen murni + input manual 2 jam dari Admin = total diakui 4H/240 mnt)
       const effectiveShiftOt = actualOtMinutes + manualOtMinutes;
 
       if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
         sundayCount += 1;
         
         if (isBulananWorker) {
-          // Minggu Bulanan: 8 jam normal + 4 jam tambahan malam = 12 jam (720 mnt)
+          // Minggu Bulanan: 8 jam normal + 4 jam tambahan malam = 12 jam (720 mnt) untuk syarat bonus Rp 17.500
           if (effectiveShiftOt >= 720) count4h += 1; 
         } else {
           // Minggu Harian: 4 jam lembur (240 mnt)
@@ -604,46 +603,36 @@ export default async function Page() {
               totalValue: b.operatorValue,
             })),
           };
-                    } else if (workerData.pay_system === "BULANAN" || officialSlip.type === "BULANAN") {
-              const monthlySalary = n(workerData.monthly_salary);
-              const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
-              const otHourlyRate = monthlySalary > 0 ? Math.round(monthlySalary / Math.max(1, otDiv)) : 0;
+        } else if (workerData.pay_system === "BULANAN" || officialSlip.type === "BULANAN") {
+          const monthlySalary = n(workerData.monthly_salary);
+          const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
+          const otHourlyRate = monthlySalary > 0 ? Math.round(monthlySalary / Math.max(1, otDiv)) : 0;
 
-              const slipOtMins = (Number(officialSlip.overtimeMinutes) || 0) + ((Number(officialSlip.manualOvertimeHours) || 0) * 60);
-              const totalOtMins = Math.max(otMins, slipOtMins);
+          const slipOtMins = (Number(officialSlip.overtimeMinutes) || 0) + ((Number(officialSlip.manualOvertimeHours) || 0) * 60);
+          const totalOtMins = Math.max(otMins, slipOtMins);
 
-              overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
-              workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5) || workedDays;
+          overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
+          workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5) || workedDays;
 
-              const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
-              const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
+          const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
+          const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
 
-              // --- SINKRONISASI ADMIN: Paksa tarik Rp 70.000 & 4 Shift dari Admin ---
-              const adminBonus = Number(officialSlip.overtimeBonus || 0);
-              const finalBonus4h = adminBonus > 0 
-                ? adminBonus 
-                : count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
+          const finalBonus4h = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
 
-              const finalCount4h = adminBonus > 0 
-                ? Math.round(adminBonus / Number(settingsMap.OT_BONUS_BULANAN_4H || 17500)) 
-                : count4h;
+          estimatedGross = monthlySalary + totalOtWage + finalBonus4h;
 
-              estimatedGross = monthlySalary + totalOtWage + finalBonus4h;
-
-              breakdown = {
-                baseAmount: monthlySalary,
-                overtimeWage: totalOtWage,
-                bonus4h: finalBonus4h,
-                sundayMealOrBonus: 0,
-                regularMeal: 0,
-                totalGross: estimatedGross,
-                otHourlyRate: Math.round(otHourlyRate),
-                otMinutes: totalOtMins,
-                sundayCount,
-                count4h: finalCount4h,
-              };
-
-
+          breakdown = {
+            baseAmount: monthlySalary,
+            overtimeWage: totalOtWage,
+            bonus4h: finalBonus4h,
+            sundayMealOrBonus: 0,
+            regularMeal: 0,
+            totalGross: estimatedGross,
+            otHourlyRate: Math.round(otHourlyRate),
+            otMinutes: totalOtMins,
+            sundayCount,
+            count4h,
+          };
         } else {
           const slipWorkedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
           workedDays = slipWorkedDays > 0 ? slipWorkedDays : workedDays;
