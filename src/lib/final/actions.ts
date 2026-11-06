@@ -1925,7 +1925,13 @@ export async function syncPayrollAdvancesCore(runId: number) {
         .reduce((sum, a) => sum + Math.max(0, Number(a.amount) - Number(a.paid_amount)), 0);
     }
 
-    const gross = baseAmt + mealAmt + otAmt + manualOtAmt + otBonus + holidayBonus;
+        let gross = baseAmt + mealAmt + otAmt + manualOtAmt + otBonus + holidayBonus;
+    
+    // KUNCI: Cegah angka bonus lembur masuk ke pencairan Uang Makan mingguan
+    if (paySystem === "BULANAN" && run.payroll_type !== "BULANAN") {
+      gross = mealAmt;
+    }
+    
     const deduction = kasbonP + kasbonW;
     const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
 
