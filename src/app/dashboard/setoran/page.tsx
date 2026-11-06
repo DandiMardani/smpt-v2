@@ -604,44 +604,45 @@ export default async function Page() {
               totalValue: b.operatorValue,
             })),
           };
-        } else if (workerData.pay_system === "BULANAN" || officialSlip.type === "BULANAN") {
-          const monthlySalary = n(workerData.monthly_salary);
-          const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
-          const otHourlyRate = monthlySalary > 0 ? Math.round(monthlySalary / Math.max(1, otDiv)) : 0;
+                    } else if (workerData.pay_system === "BULANAN" || officialSlip.type === "BULANAN") {
+              const monthlySalary = n(workerData.monthly_salary);
+              const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
+              const otHourlyRate = monthlySalary > 0 ? Math.round(monthlySalary / Math.max(1, otDiv)) : 0;
 
-          const slipOtMins = (Number(officialSlip.overtimeMinutes) || 0) + ((Number(officialSlip.manualOvertimeHours) || 0) * 60);
-          const totalOtMins = Math.max(otMins, slipOtMins);
+              const slipOtMins = (Number(officialSlip.overtimeMinutes) || 0) + ((Number(officialSlip.manualOvertimeHours) || 0) * 60);
+              const totalOtMins = Math.max(otMins, slipOtMins);
 
-          overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
-          workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5) || workedDays;
+              overtimeHours = Math.round((totalOtMins / 60) * 10) / 10;
+              workedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5) || workedDays;
 
-          const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
-          const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
+              const rawSlipOtWage = (Number(officialSlip.overtimeAmount) || 0) + (Number(officialSlip.manualOvertimeAmount) || 0);
+              const totalOtWage = rawSlipOtWage > 0 ? rawSlipOtWage : Math.round((totalOtMins / 60) * otHourlyRate);
 
-                    // 1. Tarik bonus langsung dari Admin (officialSlip) jika ada. Jika 0, baru hitung manual.
-          const finalBonus4h = (officialSlip.overtimeBonus || 0) > 0 
-            ? Number(officialSlip.overtimeBonus) 
-            : count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
+              // --- SINKRONISASI ADMIN: Paksa tarik Rp 70.000 & 4 Shift dari Admin ---
+              const adminBonus = Number(officialSlip.overtimeBonus || 0);
+              const finalBonus4h = adminBonus > 0 
+                ? adminBonus 
+                : count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
 
-          // 2. Sinkronkan tampilan jumlah shift (count4h) di UI agar pas dengan nominalnya
-          const finalCount4h = (officialSlip.overtimeBonus || 0) > 0 
-            ? Math.round(Number(officialSlip.overtimeBonus) / Number(settingsMap.OT_BONUS_BULANAN_4H || 17500)) 
-            : count4h;
+              const finalCount4h = adminBonus > 0 
+                ? Math.round(adminBonus / Number(settingsMap.OT_BONUS_BULANAN_4H || 17500)) 
+                : count4h;
 
-          estimatedGross = monthlySalary + totalOtWage + finalBonus4h;
+              estimatedGross = monthlySalary + totalOtWage + finalBonus4h;
 
-          breakdown = {
-            baseAmount: monthlySalary,
-            overtimeWage: totalOtWage,
-            bonus4h: finalBonus4h, // <-- Sekarang pasti Rp 70.000
-            sundayMealOrBonus: 0,
-            regularMeal: 0,
-            totalGross: estimatedGross,
-            otHourlyRate: Math.round(otHourlyRate),
-            otMinutes: totalOtMins,
-            sundayCount,
-            count4h: finalCount4h, // <-- Sekarang pasti 4 shift
-          };
+              breakdown = {
+                baseAmount: monthlySalary,
+                overtimeWage: totalOtWage,
+                bonus4h: finalBonus4h,
+                sundayMealOrBonus: 0,
+                regularMeal: 0,
+                totalGross: estimatedGross,
+                otHourlyRate: Math.round(otHourlyRate),
+                otMinutes: totalOtMins,
+                sundayCount,
+                count4h: finalCount4h,
+              };
+
 
         } else {
           const slipWorkedDays = (officialSlip.fullDays || 0) + ((officialSlip.halfDays || 0) * 0.5);
