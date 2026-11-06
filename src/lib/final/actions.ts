@@ -1865,12 +1865,13 @@ export async function syncPayrollAdvancesCore(runId: number) {
         const halfDaysNonSun = nonSundayAtts.filter((a) => a.day_class === "HALF_DAY").length;
         const sundayDays = sundayAtts.length;
 
-        mealAmt = (fullDaysNonSun * mealFullDayRate) + (halfDaysNonSun * mealHalfDayRate) + (sundayDays * mealSundayRate);
+                mealAmt = (fullDaysNonSun * mealFullDayRate) + (halfDaysNonSun * mealHalfDayRate) + (sundayDays * mealSundayRate);
 
-        // Aturan Wajib: Semua lemburan staf bulanan (baik jam-jaman maupun bonus Rp 17.500) TIDAK BOLEH masuk ke Uang Makan mingguan (harus 0)
-        otBonus = 0;
+        // TETAP REKAM bonus untuk diproyeksikan di slip Gaji Bulanan
+        otBonus = count4hBulanan * bulananOt4hBonus;
         holidayBonus = 0;
       }
+
     } else {
       // --- PEKERJA HARIAN ---
       const dailyRate = Number(w?.daily_salary ?? w?.daily_rate ?? w?.rate_per_day ?? it.daily_wage_snapshot ?? 0);
