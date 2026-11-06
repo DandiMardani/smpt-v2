@@ -451,7 +451,7 @@ export default async function Page() {
         // Hari biasa (Senin-Sabtu): lembur >= 4 jam (240 mnt) mendapat bonus
         if (effectiveShiftOt >= 240) count4h += 1;
       }
-
+    }
 
     workedDays = fullDays + (halfDays * 0.5);
     overtimeHours = Math.round((otMins / 60) * 10) / 10;
