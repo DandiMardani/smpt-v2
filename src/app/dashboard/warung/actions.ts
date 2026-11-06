@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAccessContext } from "@/lib/access/current-user";
 import { revalidatePath } from "next/cache";
+import { checkIsCashAdvanceLocked } from "@/lib/kasbon/lock-guard";
 
 async function getAuth() {
   const access = await getCurrentAccessContext();
@@ -69,6 +70,16 @@ export async function updateWarungTransactionAction(
 ) {
   try {
     const { supabase, warungId, isAdmin } = await getAuth();
+
+    // Guardrail Pengunci: Cek apakah kasbon sudah terkunci dalam slip gaji atau lunas
+    const lock = await checkIsCashAdvanceLocked(supabase, transactionId);
+    if (lock.isLocked) {
+      return {
+        success: false,
+        error: lock.reason || "Aksi ditolak: Kasbon ini sudah terkunci dalam slip gaji yang telah dilunasi.",
+      };
+    }
+
     const totalAmount = Number(payload.direct_amount) || 0;
     const paidAmount = Math.max(0, Number(payload.paid_amount) || 0);
 
@@ -111,6 +122,15 @@ export async function recordWarungPaymentAction(
   try {
     const { supabase, warungId, isAdmin } = await getAuth();
 
+    // Guardrail Pengunci: Cek status kasbon
+    const lock = await checkIsCashAdvanceLocked(supabase, transactionId, { allowPayment: true });
+    if (lock.isLocked) {
+      return {
+        success: false,
+        error: lock.reason || "Aksi ditolak: Kasbon ini sudah terkunci dalam slip gaji yang telah dilunasi.",
+      };
+    }
+
     let queryFetch = supabase
       .from("cash_advances")
       .select("id, amount, warung_id")
@@ -152,6 +172,15 @@ export async function recordWarungPaymentAction(
 export async function deleteWarungTransactionAction(transactionId: string) {
   try {
     const { supabase, warungId, isAdmin } = await getAuth();
+
+    // Guardrail Pengunci: Tolak pembatalan/penghapusan jika terhubung dengan payroll atau lunas
+    const lock = await checkIsCashAdvanceLocked(supabase, transactionId);
+    if (lock.isLocked) {
+      return {
+        success: false,
+        error: lock.reason || "Aksi ditolak: Kasbon ini sudah terkunci dalam slip gaji yang telah dilunasi.",
+      };
+    }
 
     let query = supabase.from("cash_advances").delete().eq("id", transactionId);
 

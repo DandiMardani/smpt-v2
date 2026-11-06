@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,6 +14,8 @@ import {
 import { BomCalculator } from "@/components/master/bom-calculator";
 import { CurrencyNumberInput } from "@/components/forms/currency-number-input";
 import { formatNumber, formatRupiah } from "@/lib/master/page-utils";
+import { toast } from "@/components/ui/toast";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { saveBomRequirement } from "./actions";
 
 type ProjectRef = { id: number; project_code: string; name: string; status: string };
@@ -34,6 +36,16 @@ type MaterialRef = {
   calculation_type: "SHEET" | "LENGTH" | "PCS" | "ROLL_LENGTH";
   status: string;
 };
+
+function filterDecimalInput(val: string): string {
+  let sanitized = val.replace(/,/g, ".");
+  sanitized = sanitized.replace(/[^0-9.]/g, "");
+  const parts = sanitized.split(".");
+  if (parts.length > 2) {
+    sanitized = `${parts[0]}.${parts.slice(1).join("")}`;
+  }
+  return sanitized;
+}
 
 export function MasterKebutuhanFilter({
   projects,
@@ -264,6 +276,7 @@ export function MasterKebutuhanCreateForm({
   defaultProductId?: number;
   currentQ?: string;
 }) {
+  const router = useRouter();
   const [projectId, setProjectId] = useState<number>(defaultProjectId || 0);
   const [productId, setProductId] = useState<number>(defaultProductId || 0);
   const [showProductPicker, setShowProductPicker] = useState<boolean>(!defaultProductId);
@@ -271,9 +284,36 @@ export function MasterKebutuhanCreateForm({
   const [materialId, setMaterialId] = useState<string>("");
   const [componentName, setComponentName] = useState<string>("");
   const [unit, setUnit] = useState<string>("Meter");
-  const [netQtyPerUnit, setNetQtyPerUnit] = useState<number>(1);
-  const [allowancePercent, setAllowancePercent] = useState<number>(2);
+  const [netQtyPerUnit, setNetQtyPerUnit] = useState<string>("1");
+  const [allowancePercent, setAllowancePercent] = useState<string>("0");
   const [unitPrice, setUnitPrice] = useState<number>(0);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const materialOptions: SearchableSelectOption[] = useMemo(() => {
+    return materials.map((m) => ({
+      value: String(m.id),
+      label: `${m.material_code} · ${m.name} (${m.standard_unit})`,
+      sublabel: `Tipe Kalkulasi: ${m.calculation_type}`,
+    }));
+  }, [materials]);
+
+  // Sinkronisasi dengan BomCalculator ketika pengguna klik "Gunakan Hasil"
+  useEffect(() => {
+    const el = document.getElementById("bom-qty-per-unit");
+    if (!el) return;
+    const handleNativeInput = (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      if (target && target.value !== undefined) {
+        setNetQtyPerUnit(filterDecimalInput(target.value));
+      }
+    };
+    el.addEventListener("input", handleNativeInput);
+    el.addEventListener("change", handleNativeInput);
+    return () => {
+      el.removeEventListener("input", handleNativeInput);
+      el.removeEventListener("change", handleNativeInput);
+    };
+  }, []);
 
   const availableProducts = useMemo(() => {
     if (!projectId) return products;
@@ -299,32 +339,116 @@ export function MasterKebutuhanCreateForm({
       setComponentName(m.name);
       setUnit(m.standard_unit);
     }
+    const selectEl = document.getElementById("bom-material-id") as HTMLSelectElement | null;
+    if (selectEl) {
+      selectEl.value = matId;
+      selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+    }
   }
 
   function handleComponentTypeChange(type: string) {
     setComponentType(type);
     if (type !== "BAHAN") {
-      setAllowancePercent(0);
-    } else if (allowancePercent === 0) {
-      setAllowancePercent(2);
+      setAllowancePercent("0");
     }
   }
 
-  const totalQtyWithOverage = Number((netQtyPerUnit * (1 + allowancePercent / 100)).toFixed(6));
+  const parsedNetQty = parseFloat(netQtyPerUnit) || 0;
+  const parsedAllowance = parseFloat(allowancePercent) || 0;
+  const totalQtyWithOverage = Number((parsedNetQty * (1 + parsedAllowance / 100)).toFixed(6));
   const subtotalCost = totalQtyWithOverage * unitPrice;
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const activeProjId = projectId || activeProduct?.project_id;
+      if (!activeProjId) {
+        toast.error("Proyek wajib dipilih terlebih dahulu.");
+        setIsSubmitting(false);
+        return;
+      }
+      if (!productId) {
+        toast.error("Produk tujuan wajib dipilih terlebih dahulu.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const formElement = e.currentTarget;
+      const formData = new FormData(formElement);
+
+      // Pastikan project_id dan product_id terisi dengan benar (tidak null / kosong)
+      formData.set("project_id", String(activeProjId));
+      formData.set("product_id", String(productId));
+
+      if (componentType === "BAHAN") {
+        if (!materialId) {
+          toast.error("Bahan fisik wajib dipilih terlebih dahulu.");
+          setIsSubmitting(false);
+          return;
+        }
+        formData.set("material_id", String(materialId));
+      } else {
+        formData.delete("material_id");
+      }
+
+      // Saat submit, pastikan nilainya di-parsing dengan aman menggunakan parseFloat(value)
+      const floatNetQty = parseFloat(netQtyPerUnit) || 0;
+      const floatAllowance = parseFloat(allowancePercent) || 0;
+      formData.set("qty_per_unit", String(floatNetQty));
+      formData.set("net_usage_per_product", String(floatNetQty));
+      formData.set("allowance_percent", String(floatAllowance));
+
+      // Tandai sebagai client submit agar tidak memicu redirect Next.js
+      formData.set("client_submit", "true");
+
+      const res = await saveBomRequirement(formData);
+
+      if (!res.success) {
+        toast.error(res.error || "Gagal menyimpan kebutuhan BOM.");
+        return;
+      }
+
+      // Perbaiki Redirect Nyasar: Hapus atau komentari kode navigasi pindah halaman (seperti router.push)
+      // router.push(`/dashboard/masterKebutuhan?project=${activeProjId}&product=${productId}`); // Dihapus/dikomentari agar user tetap di halaman
+
+      // Ganti dengan memanggil router.refresh(), tampilkan toast.success, dan bersihkan state form
+      toast.success(res.message || "Master Kebutuhan/BOM berhasil disimpan.");
+      router.refresh();
+
+      // Bersihkan state form agar user bisa langsung menambah item berikutnya
+      setMaterialId("");
+      setComponentName("");
+      setNetQtyPerUnit("1");
+      setAllowancePercent("0");
+      setUnitPrice(0);
+    } catch (err: unknown) {
+      console.error("Form submit error:", err);
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as any).message)
+            : "Terjadi kesalahan saat menyimpan data BOM.";
+      toast.error(errMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <SectionCard
       title="Tambah Kebutuhan / Komponen (BOM) Baru"
       description="Masukkan kebutuhan bahan baku, aksesoris, atau jasa untuk produk ini."
     >
-      <form action={saveBomRequirement} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <input type="hidden" name="return_project" value={projectId || activeProduct?.project_id || ""} />
         <input type="hidden" name="return_product" value={productId || ""} />
         <input type="hidden" name="return_q" value={currentQ || ""} />
         <input type="hidden" name="project_id" value={projectId || activeProduct?.project_id || ""} />
         <input type="hidden" name="product_id" value={productId || ""} />
-        <input type="hidden" name="net_usage_per_product" value={netQtyPerUnit || 0} />
+        <input type="hidden" name="net_usage_per_product" value={parsedNetQty || 0} />
 
         {/* Selected Product Banner */}
         {productId && activeProduct ? (
@@ -412,14 +536,26 @@ export function MasterKebutuhanCreateForm({
           </Field>
 
           {componentType === "BAHAN" ? (
-            <Field label="Pilih Bahan Fisik">
+            <div>
+              <span className="mb-1.5 block text-xs font-semibold text-slate-700">
+                Pilih Bahan Fisik <span className="text-red-500">*</span>
+              </span>
+              <SearchableSelect
+                value={materialId}
+                onChange={(val) => handleMaterialChange(String(val))}
+                options={materialOptions}
+                placeholder="-- Ketik / Pilih Bahan Fisik --"
+                searchPlaceholder="Cari kode atau nama bahan..."
+                emptyMessage={materials.length === 0 ? "Belum ada master bahan fisik" : "Bahan tidak ditemukan."}
+              />
               <select
                 id="bom-material-id"
                 name="material_id"
-                required
                 value={materialId}
                 onChange={(e) => handleMaterialChange(e.target.value)}
-                className={selectClass}
+                className="hidden"
+                tabIndex={-1}
+                aria-hidden="true"
               >
                 <option value="">Pilih Material</option>
                 {materials.map((m) => (
@@ -434,7 +570,7 @@ export function MasterKebutuhanCreateForm({
                   </option>
                 ))}
               </select>
-            </Field>
+            </div>
           ) : (
             <Field label="Nama Komponen / Jasa">
               <input
@@ -466,11 +602,11 @@ export function MasterKebutuhanCreateForm({
             <input
               id="bom-qty-per-unit"
               name="qty_per_unit"
-              type="number"
-              min="0.0001"
-              step="any"
-              value={netQtyPerUnit || ""}
-              onChange={(e) => setNetQtyPerUnit(e.target.value === "" ? 0 : Number(e.target.value))}
+              type="text"
+              inputMode="decimal"
+              value={netQtyPerUnit}
+              onChange={(e) => setNetQtyPerUnit(filterDecimalInput(e.target.value))}
+              placeholder="Contoh: 0.1890"
               required
               className={inputClass}
             />
@@ -478,15 +614,15 @@ export function MasterKebutuhanCreateForm({
 
           <Field
             label="Toleransi / Overage (%)"
-            hint={`Total + Overage (${allowancePercent}%): ${totalQtyWithOverage} ${unit}`}
+            hint={`Total + Overage (${parsedAllowance}%): ${totalQtyWithOverage} ${unit}`}
           >
             <input
               name="allowance_percent"
-              type="number"
-              min="0"
-              step="any"
-              value={allowancePercent === 0 ? "0" : allowancePercent || ""}
-              onChange={(e) => setAllowancePercent(e.target.value === "" ? 0 : Number(e.target.value))}
+              type="text"
+              inputMode="decimal"
+              value={allowancePercent}
+              onChange={(e) => setAllowancePercent(filterDecimalInput(e.target.value))}
+              placeholder="Contoh: 0"
               className={inputClass}
             />
           </Field>
@@ -530,10 +666,10 @@ export function MasterKebutuhanCreateForm({
           <div className="flex items-end">
             <button
               type="submit"
-              disabled={!productId}
+              disabled={!productId || isSubmitting}
               className={primaryButtonClass}
             >
-              Simpan Kebutuhan Bahan
+              {isSubmitting ? "Menyimpan..." : "Simpan Kebutuhan Bahan"}
             </button>
           </div>
         </div>

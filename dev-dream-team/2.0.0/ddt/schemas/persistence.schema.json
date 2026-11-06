@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "record_types": ["graph-node", "task-state", "knowledge", "playbook", "evidence"],
+  "writer_roles": ["update-repository-context"],
+  "redaction_marker": "[REDACTED_SECRET]",
+  "evidence_context": {"allowed": ["source", "kind", "reference", "observed_at", "environment", "schema_version", "base_sha", "excerpt"], "bounded_free_text_fields": {"reference": 512, "excerpt": 512}}
+}

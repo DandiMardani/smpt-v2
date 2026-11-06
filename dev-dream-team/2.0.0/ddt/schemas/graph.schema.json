@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "required": ["schema_version", "id", "scope", "summary", "evidence"],
+  "allowed_scopes": ["owned", "observed", "adjacent", "case_edge", "external"],
+  "confidence": ["observed", "inferred"],
+  "evidence_required_for_inferred": true,
+  "relations": {
+    "required": ["target", "kind", "evidence"],
+    "confidence": ["observed", "inferred"],
+    "evidence_required": true
+  },
+  "case_edge_requires": ["triggers"],
+  "level_1_index_fields": ["id", "scope", "summary", "path_hints", "confidence", "last_verified_sha", "external_ref"],
+  "optional_links": ["knowledge_refs", "playbook_refs"],
+  "external_requires": ["external_ref.repository", "external_ref.reference"],
+  "non_external_requires": ["paths"],
+  "architecture_pressure": {"levels": ["none", "observed", "elevated"], "signals_required_above_none": true}
+}

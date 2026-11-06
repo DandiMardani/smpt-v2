@@ -33,7 +33,7 @@ export default async function ModulePlaceholderPage({
     <div className="space-y-6">
       <header className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs">
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-600">
-          SMPT V2
+          KDMB
         </p>
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
           {menuItem.text}

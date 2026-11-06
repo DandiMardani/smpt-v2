@@ -11,7 +11,6 @@ insert into public.cash_advances (
   created_by,
   created_at,
   category,
-  warung_id,
   warung_name,
   installment_count,
   installment_amount,
@@ -27,17 +26,20 @@ select
   (old_data->>'paid_amount')::numeric,
   old_data->>'status',
   old_data->>'notes',
-  (old_data->>'created_by')::uuid,
+  (select u.id from auth.users u where u.id = (ae.old_data->>'created_by')::uuid),
   (old_data->>'created_at')::timestamptz,
   coalesce(old_data->>'category', 'KASBON_WARUNG'),
-  (old_data->>'warung_id')::uuid,
   old_data->>'warung_name',
   coalesce((old_data->>'installment_count')::int, 1),
   coalesce((old_data->>'installment_amount')::numeric, (old_data->>'amount')::numeric),
   coalesce((old_data->>'installments_paid')::int, 0)
-from public.audit_events
-where table_name = 'cash_advances'
-  and action = 'DELETE'
+from public.audit_events ae
+where ae.table_name = 'cash_advances'
+  and ae.action = 'DELETE'
+  and exists (
+    select 1 from public.workers w
+    where w.id = (ae.old_data->>'worker_id')::bigint
+  )
 on conflict (id) do update set
   advance_code = excluded.advance_code,
   worker_id = excluded.worker_id,

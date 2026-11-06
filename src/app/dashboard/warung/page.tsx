@@ -37,10 +37,7 @@ export default async function WarungPage() {
     workers = data || [];
   }
 
-  // 2. Normalisasi nota: jangan paksa update ke Dandi Store jika tidak ada keperluan
-
-
-  // 3. Hak Akses Query Data Transaksi:
+  // 2. Hak Akses Query Data Transaksi:
   // - Admin: Ambil SELURUH kasbon warung agar bisa melihat kartu per-warung
   // - User Warung Mitra: HANYA ambil data yang sesuai warung miliknya
   let query = supabase
@@ -53,12 +50,50 @@ export default async function WarungPage() {
     query = query.or(`warung_id.eq.${warungId},warung_name.ilike.%${defaultWarungName}%`);
   }
 
-  const { data: transactionsData } = await query;
+  const [txRes, paidPayrollRes] = await Promise.all([
+    query,
+    supabase
+      .from("payroll_run_items")
+      .select("id, worker_id, payment_status, payroll_runs(id, status, period_start, period_end, notes, config_snapshot)")
+      .neq("payment_status", "DIBATALKAN"),
+  ]);
 
-  const transactions = (transactionsData || []).map((t: any) => {
+  const transactionsData = txRes.data || [];
+  const paidPayrollItems = paidPayrollRes.data || [];
+
+  const transactions = transactionsData.map((t: any) => {
     const w = workers.find((item: any) => String(item.id) === String(t.worker_id));
     const effectiveWarungName = t.warung_name && t.warung_name.trim() !== "" ? t.warung_name : "Dandi Store";
     const remAmount = Math.max(0, (Number(t.amount) || 0) - (Number(t.paid_amount) || 0));
+
+    // Evaluasi pengunci payroll
+    const isLockedByPayroll = paidPayrollItems.some((item: any) => {
+      if (String(item.worker_id) !== String(t.worker_id)) return false;
+      const run = item.payroll_runs;
+      if (!run) return false;
+      const itemStatus = String(item.payment_status || "").toUpperCase();
+      const runStatus = String(run.status || "").toUpperCase();
+      const isPaid =
+        itemStatus === "PAID" ||
+        itemStatus === "SUDAH_DIBAYAR" ||
+        itemStatus === "SUDAH DIBAYAR" ||
+        runStatus === "PAID" ||
+        runStatus === "FINAL" ||
+        runStatus === "SUDAH_DIBAYAR" ||
+        String(run.notes || "").toLowerCase().includes("sudah dibayar");
+
+      if (!isPaid) return false;
+
+      const tDate = t.advance_date || (t.created_at ? String(t.created_at).slice(0, 10) : "");
+      return tDate >= run.period_start && tDate <= run.period_end;
+    });
+
+    const isLocked =
+      t.status === "LUNAS" ||
+      (Number(t.paid_amount || 0) >= Number(t.amount || 0) && Number(t.amount || 0) > 0) ||
+      String(t.notes || "").toLowerCase().includes("payroll") ||
+      String(t.notes || "").toLowerCase().includes("lunas via") ||
+      isLockedByPayroll;
 
     return {
       id: String(t.id),
@@ -75,6 +110,7 @@ export default async function WarungPage() {
       installments_paid: t.installments_paid || 0,
       warung_name: effectiveWarungName,
       warung_id: t.warung_id || (effectiveWarungName === "Dandi Store" ? warungId : null),
+      is_locked: isLocked,
     };
   });
 

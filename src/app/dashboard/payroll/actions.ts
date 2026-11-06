@@ -175,9 +175,11 @@ async function recalculateRunTotals(supabase: any, runId: number) {
       (acc: number, it: any) =>
         acc +
         Number(it.base_amount || 0) +
+        Number(it.meal_amount || 0) +
         Number(it.overtime_amount || 0) +
         Number(it.manual_overtime_amount || 0) +
-        Number(it.overtime_bonus || 0),
+        Number(it.overtime_bonus || 0) +
+        Number(it.holiday_bonus || 0),
       0
     );
     const totalDed = allItems.reduce((acc: number, it: any) => acc + Number(it.deduction_amount || 0), 0);

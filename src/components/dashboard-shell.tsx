@@ -469,11 +469,9 @@ export function DashboardShell({
                 <div className="min-w-0 transition-opacity duration-200">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-black tracking-tight text-slate-900">Kreasi Dinamika</span>
-                    <span className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-white shadow-xs">
-                      V2 PRO
-                    </span>
+                    
                   </div>
-                  <p className="truncate text-[11px] font-semibold text-slate-400">Sistem Manufaktur Terpadu</p>
+                  <p className="truncate text-[11px] font-semibold text-slate-400">Maju Bersama</p>
                 </div>
               </Link>
 

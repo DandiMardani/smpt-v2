@@ -1,21 +1,21 @@
 import {
-  Badge,
-  Card,
-  Flow,
-  Metric,
   Notice,
   PageShell,
   ReadOnly,
-  TableWrap,
-  Td,
-  Th,
-  dangerClass,
 } from "@/components/final/final-ui";
 import { requirePermission } from "@/lib/access/current-user";
-import { n, param, qty, type SearchParams } from "@/lib/final/final-utils";
+import { n, param, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
-import { cancelCheckerResultAction } from "@/lib/final/actions";
-import { CheckerTasksClient, type CheckerTaskItem } from "./checker-tasks-client";
+import { BoronganPageClient } from "./borongan-page-client";
+import type {
+  CheckerTaskItem,
+  ProductionCheck,
+  CheckerEditRequest,
+  ProjectOptionItem,
+  ProductOptionItem,
+  WorkItemOptionItem,
+  WorkerOptionItem,
+} from "./types";
 
 type ProductionOrder = {
   id: number;
@@ -45,31 +45,49 @@ type ProductionOrderItem = {
   status: string;
 };
 
-type ProductionCheck = {
-  id: number;
-  check_code?: string;
-  check_date?: string;
-  order_item_id: number;
-  checker_user_id?: string | null;
-  checker_email?: string | null;
-  good_qty: number | string;
-  reject_qty: number | string;
-  status: string;
-  notes?: string | null;
-};
-
 type WorkerRow = {
   id: number;
   name: string;
   worker_code: string;
   department?: string | null;
   position?: string | null;
+  status?: string | null;
 };
 
 type ProductRow = {
   id: number;
+  project_id?: number | null;
   name: string;
   product_code?: string | null;
+  target_production?: number | string | null;
+  unit?: string | null;
+  status?: string | null;
+};
+
+type ProjectRow = {
+  id: number;
+  name: string;
+  project_code?: string | null;
+  status?: string | null;
+};
+
+type WorkItemRow = {
+  id: number;
+  project_id: number;
+  product_id?: number | null;
+  name: string;
+  unit: string;
+  qty_per_product: number;
+  operator_price?: number | null;
+  proposed_price?: number | null;
+  status?: string | null;
+  executor_scope?: string | null;
+};
+
+type ProfileRow = {
+  id: string;
+  display_name?: string | null;
+  email?: string | null;
 };
 
 type RouteStatusRow = {
@@ -83,34 +101,116 @@ type Props = { searchParams: Promise<SearchParams> };
 
 export default async function Page({ searchParams }: Props) {
   const access = await requirePermission("borongan.view");
-  const canOperate = access.permissionCodes.includes("borongan.operate");
+  const isCheckerRole = access.role === "CHECKER";
+  const isAdminOrManager = access.role === "ADMIN" || access.role === "MANAGER";
+  const canOperate = access.permissionCodes.includes("borongan.operate") || isCheckerRole || isAdminOrManager;
   const q = await searchParams;
   const s = await createClient();
 
-  const isCheckerRole = access.role === "CHECKER";
   const userEmail = access.email?.toLowerCase().trim();
 
-  const [or, ir, cr, wr, pr] = await Promise.all([
+  const [or, ir, cr, wr, pr, er, profs, projRes, wiRes] = await Promise.all([
     s.from("production_orders").select("*").order("order_date", { ascending: false }).limit(200),
     s.from("production_order_items").select("*").limit(1000),
     s.from("production_checks").select("*").order("check_date", { ascending: false }).limit(300),
-    s.from("workers").select("id, name, worker_code, department, position").limit(500),
-    s.from("project_products").select("id, name, product_code").limit(500),
+    s.from("workers").select("id, name, worker_code, department, position, status").order("name").limit(500),
+    s.from("project_products").select("id, project_id, name, product_code, target_production, unit, status").order("name").limit(500),
+    s
+      .from("checker_edit_requests")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500),
+    s.from("profiles").select("id, display_name, email").limit(500),
+    s.from("projects").select("id, name, project_code, status").order("name").limit(300),
+    s.from("work_items").select("id, project_id, product_id, name, unit, qty_per_product, operator_price, proposed_price, status, executor_scope").order("name").limit(1000),
   ]);
-  const e = [or.error, ir.error, cr.error, wr.error, pr.error].find(Boolean);
+
+  const e = [or.error, ir.error, cr.error, wr.error, pr.error, projRes.error, wiRes.error].find(Boolean);
   if (e) throw new Error(e.message);
 
   let orders = (or.data ?? []) as ProductionOrder[];
-  let checks = (cr.data ?? []) as ProductionCheck[];
+  let checksRaw = (cr.data ?? []) as any[];
   const workers = (wr.data ?? []) as WorkerRow[];
   const products = (pr.data ?? []) as ProductRow[];
+  const editRequestsRaw = (er.data ?? []) as any[];
+  const profiles = (profs.data ?? []) as ProfileRow[];
+  const rawProjects = (projRes.data ?? []) as ProjectRow[];
+  const rawWorkItems = (wiRes.data ?? []) as WorkItemRow[];
+
+  // Data Options untuk Input Setoran Mandiri (Auto-SPK)
+  const projectOptions: ProjectOptionItem[] = rawProjects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    project_code: p.project_code,
+    status: p.status || undefined,
+  }));
+
+  const productOptions: ProductOptionItem[] = products.map((pr) => ({
+    id: pr.id,
+    project_id: Number(pr.project_id || 0),
+    name: pr.name,
+    product_code: pr.product_code,
+    target_production: n(pr.target_production),
+    unit: pr.unit || undefined,
+    status: pr.status || undefined,
+  }));
+
+  const workItemOptions: WorkItemOptionItem[] = rawWorkItems
+    .filter((wi) => wi.executor_scope !== "PEKERJA_HARIAN" && !wi.name.toUpperCase().includes("PEKERJA HARIAN"))
+    .map((wi) => ({
+      id: wi.id,
+      project_id: wi.project_id,
+      product_id: wi.product_id,
+      name: wi.name,
+      unit: wi.unit || "PCS",
+      qty_per_product: n(wi.qty_per_product) || 1,
+      operator_price: n(wi.operator_price),
+      proposed_price: n(wi.proposed_price),
+      status: wi.status || undefined,
+      executor_scope: wi.executor_scope || undefined,
+    }));
+
+  const workerOptions: WorkerOptionItem[] = workers.map((w) => ({
+    id: w.id,
+    name: w.name,
+    worker_code: w.worker_code,
+    department: w.department,
+    position: w.position,
+    status: w.status || undefined,
+  }));
+
   const workerMap = new Map<number, WorkerRow>(workers.map((w) => [w.id, w]));
   const productMap = new Map<number, ProductRow>(products.map((p) => [p.id, p]));
+  const profileMap = new Map<string, ProfileRow>(profiles.map((p) => [p.id, p]));
+
+  // Map edit requests yang berstatus pending berdasarkan setoran_id
+  const pendingEditMap = new Map<number, CheckerEditRequest>();
+  for (const req of editRequestsRaw) {
+    if (req.status === "pending" && !pendingEditMap.has(req.setoran_id)) {
+      pendingEditMap.set(req.setoran_id, req as CheckerEditRequest);
+    }
+  }
+
+  // Map edit requests yang berstatus rejected (ambil yang paling baru per setoran)
+  const rejectedEditMap = new Map<number, CheckerEditRequest>();
+  for (const req of editRequestsRaw) {
+    if (req.status === "rejected" && !rejectedEditMap.has(req.setoran_id)) {
+      rejectedEditMap.set(req.setoran_id, req as CheckerEditRequest);
+    }
+  }
+
+  // Map edit requests yang berstatus approved (setoran sudah direvisi & disahkan Admin)
+  const approvedEditMap = new Map<number, CheckerEditRequest>();
+  for (const req of editRequestsRaw) {
+    if (req.status === "approved" && !approvedEditMap.has(req.setoran_id)) {
+      approvedEditMap.set(req.setoran_id, req as CheckerEditRequest);
+    }
+  }
 
   // Scoping: Jika user login adalah CHECKER, fokuskan ke SPK dan input milik checker tersebut
   if (isCheckerRole && userEmail) {
     orders = orders.filter((o) => (o.checker_email || "").toLowerCase().trim() === userEmail);
-    checks = checks.filter(
+    checksRaw = checksRaw.filter(
       (c) =>
         (c.checker_email || "").toLowerCase().trim() === userEmail ||
         c.checker_user_id === access.userId,
@@ -119,6 +219,7 @@ export default async function Page({ searchParams }: Props) {
 
   const items = (ir.data ?? []) as ProductionOrderItem[];
   const orderMap = new Map<number, ProductionOrder>(orders.map((o) => [o.id, o]));
+  const itemMap = new Map<number, ProductionOrderItem>(items.map((i) => [i.id, i]));
 
   // Item aktif yang SPK-nya AKTIF dan ditugaskan ke Checker ini
   const active = items.filter(
@@ -142,11 +243,41 @@ export default async function Page({ searchParams }: Props) {
     for (const row of rows) routeMap.set(Number(row.order_item_id), row);
   }
 
+  // Siapkan data checks dengan pending_request, rejected_request, dan field denormalized
+  const checks: ProductionCheck[] = checksRaw.map((c) => {
+    const item = itemMap.get(c.order_item_id);
+    const order = item ? orderMap.get(item.order_id) : null;
+    const op = order ? workerMap.get(order.operator_worker_id) : null;
+    return {
+      id: c.id,
+      check_code: c.check_code,
+      check_date: c.check_date,
+      order_item_id: c.order_item_id,
+      checker_user_id: c.checker_user_id,
+      checker_email: c.checker_email,
+      good_qty: n(c.good_qty),
+      reject_qty: n(c.reject_qty),
+      status: c.status,
+      notes: c.notes,
+      pending_request: pendingEditMap.get(c.id) || null,
+      rejected_request: rejectedEditMap.get(c.id) || null,
+      approved_request: approvedEditMap.get(c.id) || null,
+      spk_code: order?.spk_code || "-",
+      work_item_name: item?.work_item_name_snapshot || "-",
+      operator_name: op ? `${op.name} (${op.worker_code})` : "-",
+      unit: item?.unit_snapshot || "PCS",
+      is_paid: Boolean(c.is_paid),
+      payment_status: c.payment_status || null,
+    };
+  });
+
+  // Buat CheckerTaskItem dengan submitted_checks
   const tasks: CheckerTaskItem[] = active.map((i) => {
     const o = orderMap.get(i.order_id);
-    const used = checks
-      .filter((x) => x.order_item_id === i.id && x.status === "AKTIF")
-      .reduce((a, x) => a + n(x.good_qty) + n(x.reject_qty), 0);
+    const itemChecks = checks.filter(
+      (x) => x.order_item_id === i.id && x.status === "AKTIF"
+    );
+    const used = itemChecks.reduce((a, x) => a + n(x.good_qty) + n(x.reject_qty), 0);
     const remain = Math.max(0, n(i.assigned_qty) - used);
     const route = routeMap.get(i.id);
     const availableEq = route?.available_equivalent == null ? null : n(route.available_equivalent);
@@ -160,8 +291,8 @@ export default async function Page({ searchParams }: Props) {
         new Date(o.updated_at).getTime() - new Date(o.created_at).getTime() > 5000
     );
 
-    const prod = o?.product_id != null ? productMap.get(o.product_id) : undefined;
-    const op = o?.operator_worker_id != null ? workerMap.get(o.operator_worker_id) : undefined;
+    const p = o ? productMap.get(o.product_id) : null;
+    const op = o ? workerMap.get(o.operator_worker_id) : null;
 
     return {
       id: i.id,
@@ -171,17 +302,13 @@ export default async function Page({ searchParams }: Props) {
       assigned_qty: n(i.assigned_qty),
       qty_per_product_snapshot: n(i.qty_per_product_snapshot),
       status: i.status,
-      spk_code: o?.spk_code || "",
-      product_name: prod?.name || "",
-      product_code: prod?.product_code || "",
-      operator_worker_id: o?.operator_worker_id ?? null,
-      operator_name: op
-        ? `${op.name} (${op.worker_code})`
-        : o?.operator_worker_id
-        ? `Operator #${o.operator_worker_id}`
-        : "-",
+      spk_code: o?.spk_code || "-",
+      product_name: p?.name || "",
+      product_code: p?.product_code || "",
+      operator_worker_id: o?.operator_worker_id,
+      operator_name: op ? `${op.name} (${op.worker_code})` : "-",
       operator_code: op?.worker_code || "",
-      checker_email: o?.checker_email || "-",
+      checker_email: o?.checker_email || "",
       due_date: o?.due_date || null,
       notes: o?.notes || null,
       remain,
@@ -190,19 +317,60 @@ export default async function Page({ searchParams }: Props) {
       hard,
       availableEq,
       maxRaw,
+      checks: itemChecks,
+    };
+  });
+
+  // Dekorasikan data checker_edit_requests dengan relasi SPK, Operator, dan Checker (HANYA yang relasi setoran-nya AKTIF)
+  const decoratedEditRequests: CheckerEditRequest[] = editRequestsRaw
+    .filter((r) => {
+      // Pastikan relasi production_checks berstatus AKTIF (mencegah data yatim)
+      if (r.production_checks && r.production_checks.status !== "AKTIF") return false;
+      const check = checksRaw.find((c) => c.id === r.setoran_id);
+      if (check && check.status !== "AKTIF") return false;
+      return true;
+    })
+    .map((r) => {
+    const check = checksRaw.find((c) => c.id === r.setoran_id);
+    const item = check ? itemMap.get(check.order_item_id) : null;
+    const order = item ? orderMap.get(item.order_id) : null;
+    const operator = order ? workerMap.get(order.operator_worker_id) : null;
+    const prof = profileMap.get(r.checker_id);
+
+    return {
+      id: r.id,
+      setoran_id: r.setoran_id,
+      checker_id: r.checker_id,
+      current_qty: n(r.current_qty),
+      requested_qty: n(r.requested_qty),
+      reason: r.reason,
+      status: r.status,
+      reviewed_by: r.reviewed_by,
+      reviewed_at: r.reviewed_at,
+      review_notes: r.review_notes,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      check_code: check?.check_code,
+      check_date: check?.check_date,
+      spk_code: order?.spk_code,
+      work_item_name: item?.work_item_name_snapshot,
+      unit: item?.unit_snapshot,
+      operator_name: operator ? `${operator.name} (${operator.worker_code})` : undefined,
+      checker_name: prof?.display_name || undefined,
+      checker_email: prof?.email || check?.checker_email || undefined,
     };
   });
 
   return (
     <PageShell
-      eyebrow="Produksi"
-      title="Checker / Setoran Borongan"
-      description="Pemeriksaan hasil kerja operator borongan berdasarkan SPK yang ditugaskan oleh Supervisor."
+      eyebrow="Borongan & Upah Satuan"
+      title="Pemeriksaan Checker Borongan"
+      description="Pemeriksaan hasil kerja operator borongan berdasarkan SPK yang ditugaskan oleh Supervisor beserta pengajuan dan persetujuan edit setoran."
     >
       <Notice success={param(q, "success")} error={param(q, "error")} />
       {!canOperate ? <ReadOnly /> : null}
 
-      {/* Notifikasi Khusus Checker */}
+      {/* Banner Notifikasi Khusus Checker */}
       <div className="space-y-3">
         <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50/40 p-4 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -212,12 +380,14 @@ export default async function Page({ searchParams }: Props) {
               </span>
               <div>
                 <p className="font-extrabold text-slate-900 text-sm">
-                  {isCheckerRole ? `Halo, Checker ${access.displayName || access.email}` : "Mode Tinjauan Checker (Admin/Manager)"}
+                  {isCheckerRole
+                    ? `Halo, Checker ${access.displayName || access.email}`
+                    : "Mode Tinjauan Checker (Admin/Manager)"}
                 </p>
                 <p className="text-xs text-slate-600 mt-0.5">
                   {isCheckerRole
                     ? `Menampilkan pekerjaan SPK yang ditugaskan SPV khusus ke email Anda (${userEmail}).`
-                    : "Menampilkan seluruh penugasan Checker aktif di sistem."}
+                    : "Menampilkan seluruh penugasan Checker aktif serta antrean persetujuan perubahan setoran."}
                 </p>
               </div>
             </div>
@@ -253,82 +423,21 @@ export default async function Page({ searchParams }: Props) {
         )}
       </div>
 
-      <Flow>
-        Qty Sah menjadi output approved dan masuk ke WIP tahap berikutnya. Pastikan pemeriksaan fisik selesai sebelum input disimpan.
-      </Flow>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Tugas SPK Aktif" value={active.length} />
-        <Metric label="Input Pemeriksaan Saya" value={checks.length} />
-        <Metric label="Pekerjaan Berantai (Routing)" value={active.filter((x) => routeMap.get(x.id)?.has_dependencies).length} />
-      </div>
-
-      <Card title="Pekerjaan Menunggu Checker">
-        <CheckerTasksClient
-          tasks={tasks}
-          canOperate={canOperate}
-          isCheckerRole={isCheckerRole}
-          userEmail={userEmail}
-        />
-      </Card>
-
-      <Card title="Riwayat Input Saya">
-        <TableWrap>
-          <thead>
-            <tr>
-              <Th>Kode Pemeriksaan</Th>
-              <Th>Tanggal</Th>
-              <Th>SPK & Pekerjaan</Th>
-              <Th>Operator</Th>
-              <Th>Qty Sah</Th>
-              <Th>Reject</Th>
-              <Th>Status</Th>
-              <Th>Aksi</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {checks.length === 0 ? (
-              <tr>
-                <Td colSpan={8} className="text-center py-6 text-slate-400">
-                  Belum ada riwayat hasil pemeriksaan yang Anda input.
-                </Td>
-              </tr>
-            ) : (
-              checks.map((x) => {
-                const item = items.find((it) => it.id === x.order_item_id);
-                const order = item ? orderMap.get(item.order_id) : null;
-                const op = order ? workerMap.get(order.operator_worker_id) : null;
-                const opName = op ? `${op.name} (${op.worker_code})` : order?.operator_worker_id ? `Operator #${order.operator_worker_id}` : "-";
-
-                return (
-                  <tr key={x.id}>
-                    <Td className="font-mono text-xs font-bold text-slate-700">{x.check_code}</Td>
-                    <Td>{x.check_date}</Td>
-                    <Td>
-                      <div className="font-bold text-slate-900">{order?.spk_code || "-"}</div>
-                      <div className="text-xs text-slate-500">{item?.work_item_name_snapshot || "-"}</div>
-                    </Td>
-                    <Td className="font-medium text-slate-800">{opName}</Td>
-                    <Td className="font-bold text-emerald-700">{qty(x.good_qty)}</Td>
-                    <Td className={Number(x.reject_qty) > 0 ? "font-bold text-rose-600" : ""}>{qty(x.reject_qty)}</Td>
-                    <Td><Badge>{x.status}</Badge></Td>
-                    <Td>
-                      {canOperate && x.status === "AKTIF" ? (
-                        <form action={cancelCheckerResultAction}>
-                          <input type="hidden" name="check_id" value={x.id} />
-                          <button className={dangerClass}>Batalkan</button>
-                        </form>
-                      ) : (
-                        "-"
-                      )}
-                    </Td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </TableWrap>
-      </Card>
+      {/* Main Client Tabbed Container */}
+      <BoronganPageClient
+        tasks={tasks}
+        checks={checks}
+        editRequests={decoratedEditRequests}
+        canOperate={canOperate}
+        isAdminOrManager={isAdminOrManager}
+        isCheckerRole={isCheckerRole}
+        userEmail={userEmail}
+        hasRoutingDependenciesCount={active.filter((x) => routeMap.get(x.id)?.has_dependencies).length}
+        projects={projectOptions}
+        products={productOptions}
+        workItems={workItemOptions}
+        workers={workerOptions}
+      />
     </PageShell>
   );
 }

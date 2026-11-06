@@ -6,6 +6,7 @@ import AttendanceManager, {
   type AttendanceRecordItem,
   type WorkerItem,
   type FinalizedPayrollRun,
+  computeDayClassification,
 } from "@/components/attendance/attendance-manager";
 import PayrollSettingsModal, {
   type PayrollSettingsMap,
@@ -17,7 +18,7 @@ import {
   PageShell,
   ReadOnly,
 } from "@/components/final/final-ui";
-import { calculateShiftOvertime } from "@/lib/attendance/overtime-calculator";
+import { calculateShiftOvertime, timeToMinutes } from "@/lib/attendance/overtime-calculator";
 import { addBulkAttendanceAction } from "@/lib/final/actions";
 
 const BULANAN_NAMES = ["SURATNO", "DANDI MARDANI", "USMAN ALAMSYAH", "JAJANG ROSADI", "SUHERMANTO", "SUHERMAN", "NEDIH"];
@@ -178,16 +179,7 @@ function QuickManualAttendanceSheet({
         shiftSettings
       );
 
-      let dayClass: "FULL_DAY" | "HALF_DAY" = "FULL_DAY";
-      if (normalizedIn && effectiveOut) {
-        const inH = parseInt(normalizedIn.slice(0, 2), 10);
-        const outH = parseInt(effectiveOut.slice(0, 2), 10);
-        const inM = inH * 60 + parseInt(normalizedIn.slice(3, 5), 10);
-        const outM = outH * 60 + parseInt(effectiveOut.slice(3, 5), 10);
-        if (inH >= 12 || outH <= 13 || (outM - inM > 0 && outM - inM <= 300)) {
-          dayClass = "HALF_DAY";
-        }
-      }
+      const dayClass = computeDayClassification(normalizedIn, effectiveOut);
 
       // ----------------------------------------------------
       // KALKULASI POTONGAN TELAT KHUSUS PEKERJA HARIAN

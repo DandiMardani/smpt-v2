@@ -21,11 +21,13 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  const filtered = data.filter((item) => {
-    if (startDate && item.transaction_date < startDate) return false;
-    if (endDate && item.transaction_date > endDate) return false;
-    return true;
-  });
+  const filtered = data
+    .filter((item) => !item.status || item.status === "AKTIF")
+    .filter((item) => {
+      if (startDate && item.transaction_date < startDate) return false;
+      if (endDate && item.transaction_date > endDate) return false;
+      return true;
+    });
 
   const handleExportExcel = async () => {
     if (filtered.length === 0) {
@@ -33,10 +35,12 @@ export function ExportKasKecilBar({ data }: { data: PettyCashItem[] }) {
       return;
     }
 
-    // 1. HITUNG SALDO AWAL (Dari semua transaksi SEBELUM startDate)
+    // 1. HITUNG SALDO AWAL (Dari semua transaksi aktif SEBELUM startDate)
     let saldoAwal = 0;
     if (startDate) {
-      const pastData = data.filter((item) => item.transaction_date < startDate);
+      const pastData = data
+        .filter((item) => !item.status || item.status === "AKTIF")
+        .filter((item) => item.transaction_date < startDate);
       pastData.forEach((item) => {
         const isMasuk = item.direction.toUpperCase() === "MASUK";
         const d = isMasuk ? Number(item.amount || 0) : 0;

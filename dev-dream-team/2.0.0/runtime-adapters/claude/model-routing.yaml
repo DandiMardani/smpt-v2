@@ -1,0 +1,34 @@
+schema_version: 1
+purpose: |
+  Bind DDT conceptual tiers (executor / reasoner / planner) to concrete
+  model identifiers per vendor. Loaded by the Claude runtime adapter;
+  not part of DDT Core. See canonical doc §40 ("Roles ≠ models").
+
+  Skill bodies must reference tiers and ownership labels (sol, terra,
+  planner) — never specific model ids. This file is the single place
+  where a vendor name maps to a concrete model id.
+
+tiers:
+  executor:
+    anthropic: <fill: e.g. claude-sonnet-5>
+    openai:    <fill>
+    google:    <fill>
+  reasoner:
+    anthropic: <fill: e.g. claude-opus-5>
+    openai:    <fill>
+    google:    <fill>
+  planner:
+    anthropic: <fill: e.g. claude-fable-5-1>
+    openai:    <fill>
+    google:    <fill>
+
+bindings:
+  sol:    reasoner
+  terra:  executor
+
+notes:
+  - Tier names come from DDT Core (ddt/role-composition.md).
+  - Model ids are host-specific and live here, not in skill bodies.
+  - Empty vendor entries are valid; the host falls back to its default tier.
+  - Add other vendors (e.g. mistral, xai) by extending each tier map; the
+    schema is intentionally open.

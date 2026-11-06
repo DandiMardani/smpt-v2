@@ -1,0 +1,48 @@
+{
+  "name": "dev-dream-team",
+  "version": "2.0.0",
+  "description": "A personal engineering team with a tiny shared kernel, detachable policy attachments, bounded specialist workflows, local evidence-backed repository context, and fresh-context review. DDT v2 preserves the role skills while applying least privilege, context, delegation, action, and code.",
+  "author": {
+    "name": "king"
+  },
+  "keywords": [
+    "engineering",
+    "backend",
+    "frontend",
+    "devops",
+    "architecture",
+    "qa",
+    "security",
+    "code-review",
+    "scaffolding",
+    "full-stack",
+    "product-knowledge",
+    "codebase-map",
+    "consistency",
+    "contracts",
+    "review-panel",
+    "multi-agent",
+    "least-privilege",
+    "evidence-ledger",
+    "local-context",
+    "progressive-retrieval"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Dev Dream Team",
+    "shortDescription": "Bounded, evidence-led engineering role skills.",
+    "longDescription": "A modular engineering-skill team with a tiny common kernel, least-privilege policy attachments, and local evidence-backed repository context.",
+    "developerName": "king",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Repository-aware engineering workflows",
+      "Fresh-context review",
+      "Local evidence-backed context"
+    ],
+    "defaultPrompt": [
+      "Map this repository with product knowledge and safe local context.",
+      "Investigate this failure using DDT's evidence-led workflow.",
+      "Review this change from fresh, bounded context."
+    ]
+  }
+}

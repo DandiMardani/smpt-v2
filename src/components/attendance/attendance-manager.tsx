@@ -80,23 +80,59 @@ type EditFormState = {
   notes: string;
 };
 
+/**
+ * Fungsi tunggal otomatis FULL_DAY vs HALF_DAY berdasarkan jam masuk & pulang.
+ * Aturan Bisnis Resmi:
+ *  1. Shift Pagi: masuk <= 09:30 dan pulang antara 11:30 - 14:00 → HALF_DAY
+ *  2. Shift Siang: masuk >= 11:00 s/d 13:30 dan pulang >= 15:30 → HALF_DAY
+ *  3. Durasi total < 6 jam (360 mnt) → HALF_DAY
+ *  4. Selain itu (masuk pagi, pulang >= 16:00, durasi >= 6 jam) → FULL_DAY
+ */
+export function computeDayClassification(
+  checkIn: string | null | undefined,
+  checkOut: string | null | undefined
+): "FULL_DAY" | "HALF_DAY" {
+  if (!checkIn || !checkOut) return "FULL_DAY";
+
+  const parseMins = (tStr: string): number | null => {
+    const clean = tStr.trim();
+    if (!clean || clean === "--:--") return null;
+    const parts = clean.split(":");
+    if (parts.length < 2) return null;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  const inM = parseMins(checkIn);
+  const outM = parseMins(checkOut);
+
+  if (inM === null || outM === null) return "FULL_DAY";
+
+  const duration = outM - inM;
+  if (duration <= 0) return "FULL_DAY";
+
+  // 1. Shift Pagi: masuk <= 09:30 dan pulang 11:30 - 14:00
+  if (inM <= 9 * 60 + 30 && outM >= 11 * 60 + 30 && outM <= 14 * 60) {
+    return "HALF_DAY";
+  }
+
+  // 2. Shift Siang: masuk 11:00 - 13:30 dan pulang >= 15:30
+  if (inM >= 11 * 60 && inM <= 13 * 60 + 30 && outM >= 15 * 60 + 30) {
+    return "HALF_DAY";
+  }
+
+  // 3. Durasi total < 6 jam (360 menit)
+  if (duration < 360) {
+    return "HALF_DAY";
+  }
+
+  return "FULL_DAY";
+}
+
 function checkIsHalfDay(rec: AttendanceRecordItem): boolean {
-  if (rec.day_class === "HALF_DAY") return true;
-  if (rec.actual_in) {
-    const match = rec.actual_in.match(/^(\d{1,2}):/);
-    if (match) {
-      const h = parseInt(match[1], 10);
-      if (h >= 12 || (h >= 1 && h <= 6)) return true;
-    }
-  }
-  if (rec.actual_in && rec.actual_out) {
-    const inM = timeToMinutes(rec.actual_in);
-    const outM = timeToMinutes(rec.actual_out);
-    if (inM !== null && outM !== null && outM > inM && outM - inM <= 300) {
-      return true;
-    }
-  }
-  return false;
+  return computeDayClassification(rec.actual_in, rec.actual_out) === "HALF_DAY";
 }
 
 function cleanJumatNotes(notes: string | null | undefined): string {
@@ -134,7 +170,6 @@ export default function AttendanceManager({
   });
 
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [defaultDayClass, setDefaultDayClass] = useState<"FULL_DAY" | "HALF_DAY">("FULL_DAY");
   const [useAutoOvertime, setUseAutoOvertime] = useState<boolean>(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditFormState | null>(null);
@@ -194,7 +229,7 @@ export default function AttendanceManager({
         isHadir,
         isAnomaly,
         isHalfDay,
-        effectiveDayClass: isHalfDay ? "HALF_DAY" : rec.day_class || "FULL_DAY",
+        effectiveDayClass: computeDayClassification(rec.actual_in, rec.actual_out),
         isPaid,
         matchingPayrollRun,
       };
@@ -350,12 +385,14 @@ export default function AttendanceManager({
       setEditForm(null);
       return;
     }
+    const inTime = (rec.actual_in || "08:00").slice(0, 5);
+    const outTime = (rec.actual_out || "17:00").slice(0, 5);
     setExpandedId(rec.id);
     setEditForm({
       id: rec.id,
-      actualIn: (rec.actual_in || "08:00").slice(0, 5),
-      actualOut: (rec.actual_out || "17:00").slice(0, 5),
-      dayClass: rec.effectiveDayClass || "FULL_DAY",
+      actualIn: inTime,
+      actualOut: outTime,
+      dayClass: computeDayClassification(inTime, outTime),
       overtimeMinutes:
         rec.verification_status === "TERVERIFIKASI"
           ? rec.overtime_minutes
@@ -385,6 +422,7 @@ export default function AttendanceManager({
     setEditForm({
       ...editForm,
       [field]: value,
+      dayClass: computeDayClassification(nextIn, nextOut),
       overtimeMinutes: recalc.overtimeMinutes,
     });
   }
@@ -404,7 +442,7 @@ export default function AttendanceManager({
       schedule_out: rec.schedule_out,
       actual_in: rec.actual_in,
       actual_out: normalOut,
-      day_class: rec.day_class || "FULL_DAY",
+      day_class: computeDayClassification(rec.actual_in, normalOut),
       attendance_status: rec.attendance_status,
       overtime_minutes: 0,
       source: "MANUAL",
@@ -464,7 +502,7 @@ export default function AttendanceManager({
       schedule_out: rec.schedule_out,
       actual_in: editForm.actualIn,
       actual_out: editForm.actualOut,
-      day_class: editForm.dayClass,
+      day_class: computeDayClassification(editForm.actualIn, editForm.actualOut),
       attendance_status: rec.attendance_status,
       overtime_minutes: otMins,
       source: "MANUAL",
@@ -538,7 +576,7 @@ export default function AttendanceManager({
     if (selectedDrafts.length === 0) return;
     const items = selectedDrafts.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
-      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : row.day_class || defaultDayClass;
+      const assignedDayClass = computeDayClassification(row.actual_in, row.actual_out);
       return {
         id: row.id,
         day_class: assignedDayClass,
@@ -565,7 +603,7 @@ export default function AttendanceManager({
     if (allDraftsInFilter.length === 0) return;
     const items = allDraftsInFilter.map((row) => {
       const ot = useAutoOvertime ? row.calc.overtimeMinutes : row.overtime_minutes || 0;
-      const assignedDayClass = row.isHalfDay ? "HALF_DAY" : row.day_class || defaultDayClass;
+      const assignedDayClass = computeDayClassification(row.actual_in, row.actual_out);
       return {
         id: row.id,
         day_class: assignedDayClass,
@@ -621,7 +659,7 @@ export default function AttendanceManager({
         schedule_out: rec.schedule_out,
         actual_in: rec.actual_in,
         actual_out: outTime,
-        day_class: rec.day_class,
+        day_class: computeDayClassification(rec.actual_in, outTime),
         attendance_status: rec.attendance_status,
         overtime_minutes: newCalc.overtimeMinutes,
         source: "MANUAL",
@@ -1115,18 +1153,9 @@ export default function AttendanceManager({
                 <span className="font-semibold text-[11px]">Hitung Lembur Otomatis</span>
               </label>
 
-              <select
-                value={defaultDayClass}
-                onChange={(e) => setDefaultDayClass(e.target.value as "FULL_DAY" | "HALF_DAY")}
-                className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white outline-none cursor-pointer text-xs"
-              >
-                <option value="FULL_DAY" className="text-slate-900">
-                  FULL DAY (Default)
-                </option>
-                <option value="HALF_DAY" className="text-slate-900">
-                  HALF DAY
-                </option>
-              </select>
+              <span className="rounded-xl border border-white/20 bg-black/20 px-2.5 py-1.5 font-bold text-white/70 text-[11px] select-none">
+                🤖 Klasifikasi Otomatis
+              </span>
 
               {selectedIds.size > 0 ? (
                 <>
@@ -1478,16 +1507,17 @@ export default function AttendanceManager({
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Klasifikasi Hari
                         </label>
-                        <select
-                          value={editForm.dayClass}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, dayClass: e.target.value })
-                          }
-                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900 font-semibold"
+                        {/* Read-only badge — dihitung otomatis dari Jam Masuk & Jam Pulang */}
+                        <div
+                          className={`w-full rounded-lg border px-2.5 py-1.5 text-xs font-bold flex items-center gap-1.5 ${
+                            editForm.dayClass === "HALF_DAY"
+                              ? "bg-amber-50 border-amber-300 text-amber-800"
+                              : "bg-blue-50 border-blue-200 text-blue-700"
+                          }`}
                         >
-                          <option value="FULL_DAY">FULL DAY</option>
-                          <option value="HALF_DAY">HALF DAY</option>
-                        </select>
+                          <span>{editForm.dayClass === "HALF_DAY" ? "🌓" : "☀️"}</span>
+                          <span>{editForm.dayClass === "HALF_DAY" ? "HALF DAY (Otomatis)" : "FULL DAY (Otomatis)"}</span>
+                        </div>
                       </div>
 
                       <div>

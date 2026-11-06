@@ -73,6 +73,22 @@ export interface WarungTransaction {
   installments_paid: number;
   warung_name: string;
   warung_id?: string | null;
+  is_locked?: boolean;
+}
+
+export function isTxLocked(tx: WarungTransaction | any): boolean {
+  if (!tx) return false;
+  const amount = Number(tx.amount || 0);
+  const paid = Number(tx.paid_amount || 0);
+  const remaining = Math.max(0, amount - paid);
+  const isLunas = remaining === 0 || tx.status === "LUNAS";
+  const notes = String(tx.notes || "").toLowerCase();
+  return (
+    isLunas ||
+    Boolean(tx.is_locked) ||
+    notes.includes("payroll") ||
+    notes.includes("lunas via")
+  );
 }
 
 interface Worker {
@@ -283,8 +299,8 @@ export function WarungPortal({
   };
 
   const handleOpenEdit = (tx: WarungTransaction) => {
-    if (tx.status === "LUNAS") {
-      alert("Nota ini sudah LUNAS dan terkunci sebagai arsip pembukuan.");
+    if (isTxLocked(tx)) {
+      alert("Aksi ditolak: Kasbon ini sudah terkunci dalam slip gaji yang telah dilunasi.");
       return;
     }
     setEditingTx(tx);
@@ -302,6 +318,10 @@ export function WarungPortal({
   };
 
   const handleOpenPayment = (tx: WarungTransaction) => {
+    if (isTxLocked(tx)) {
+      alert("Aksi ditolak: Kasbon ini sudah terkunci dalam slip gaji yang telah dilunasi.");
+      return;
+    }
     setPaymentModalTx(tx);
     const rem = Math.max(0, Number(tx.amount || 0) - Number(tx.paid_amount || 0));
     setPaymentAmountInput(rem);
@@ -473,8 +493,8 @@ export function WarungPortal({
 
   const handleDelete = async (txId: string) => {
     const tx = transactions.find((t) => t.id === txId);
-    if (tx?.status === "LUNAS") {
-      alert("Nota yang sudah LUNAS tidak dapat dihapus.");
+    if (isTxLocked(tx)) {
+      alert("Aksi ditolak: Kasbon ini sudah terkunci dalam slip gaji yang telah dilunasi.");
       return;
     }
     if (!confirm("Apakah Anda yakin ingin membatalkan/menghapus nota ini?")) return;
@@ -712,6 +732,7 @@ export function WarungPortal({
                         const paid = Number(tx.paid_amount || 0);
                         const remaining = Math.max(0, amount - paid);
                         const isLunas = remaining === 0 || tx.status === "LUNAS";
+                        const isLocked = isTxLocked(tx);
                         const isPartial = paid > 0 && remaining > 0 && !isLunas;
 
                         return (
@@ -747,7 +768,7 @@ export function WarungPortal({
                               )}
                             </td>
                             <td className="py-3 px-3 text-right whitespace-nowrap">
-                              {!isLunas ? (
+                              {!isLocked ? (
                                 <div className="inline-flex items-center gap-1">
                                   <button
                                     onClick={() => handleOpenPayment(tx)}
@@ -770,7 +791,7 @@ export function WarungPortal({
                                 </div>
                               ) : (
                                 <span className="text-[11px] font-semibold text-slate-400 italic">
-                                  🔒 Lunas
+                                  🔒 Terkunci (Slip Gaji / Lunas)
                                 </span>
                               )}
                             </td>
@@ -922,6 +943,7 @@ export function WarungPortal({
                   const paid = Number(tx.paid_amount || 0);
                   const remaining = Math.max(0, amount - paid);
                   const isLunas = remaining === 0 || tx.status === "LUNAS";
+                  const isLocked = isTxLocked(tx);
 
                   return (
                     <div key={tx.id} className={`border rounded-xl p-3 shadow-xs space-y-2 ${isLunas ? "bg-slate-50/80 border-slate-200" : "bg-white border-slate-200"}`}>
@@ -963,9 +985,9 @@ export function WarungPortal({
                         </div>
                       </div>
 
-                      {/* TOMBOL AKSI: HANYA MUNCUL JIKA NOTA BELUM LUNAS */}
+                      {/* TOMBOL AKSI: HANYA MUNCUL JIKA NOTA BELUM LUNAS / TERKUNCI */}
                       <div className="flex justify-end items-center gap-2 pt-1.5 border-t border-slate-100">
-                        {!isLunas ? (
+                        {!isLocked ? (
                           <>
                             <button
                               onClick={() => handleOpenPayment(tx)}
@@ -991,7 +1013,7 @@ export function WarungPortal({
                           </>
                         ) : (
                           <span className="text-[11px] font-semibold text-slate-400 italic">
-                            🔒 Terkunci (Arsip Pembukuan)
+                            🔒 Terkunci (Slip Gaji / Lunas)
                           </span>
                         )}
                       </div>

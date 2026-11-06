@@ -86,9 +86,9 @@ export default function LoginPage() {
             />
           </div>
 
-          <h1 className="text-xl font-black tracking-tight text-slate-900">
+          {/* <h1 className="text-xl font-black tracking-tight text-slate-900">
             SMPT V2
-          </h1>
+          </h1> */}
           <p className="mt-0.5 text-xs font-semibold text-slate-400">
             Kreasi Dinamika Maju Bersama
           </p>

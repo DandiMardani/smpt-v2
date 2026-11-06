@@ -1,4 +1,6 @@
 -- Restore real petty cash transactions from uploaded receipts in nota-kas-kecil bucket
+alter table public.petty_cash_transactions add column if not exists receipt_url text;
+
 insert into public.petty_cash_transactions (
   transaction_date, direction, category, amount, description, document_no, receipt_url, status
 ) values

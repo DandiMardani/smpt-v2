@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "required": ["schema_version", "task_id", "repository", "worktree", "branch", "base_sha", "objective", "status"],
+  "allowed_status": ["active", "inactive", "blocked", "complete"],
+  "sensitive_fields_forbidden": ["raw_log", "payload", "token", "password", "secret", "connection_string"],
+  "ownership": {"reasoning_owner": ["terra", "sol"], "execution_owner": ["terra"], "handoff_state": ["executing", "reasoning_escalated", "bounded_execution", "completed", "human_blocked"]}
+}

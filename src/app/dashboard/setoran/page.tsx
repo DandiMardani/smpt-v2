@@ -48,6 +48,31 @@ function formatIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function addDays(d: Date | string, days: number): string {
+  const dt = typeof d === "string" ? new Date(d + "T00:00:00Z") : new Date(d);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+function getFlexibleMonthlyPeriod(paidPeriodEnd: string | null, refDate = new Date()): { start: string; end: string } {
+  const y = refDate.getFullYear();
+  const m = refDate.getMonth();
+  const todayStr = formatIsoDate(refDate);
+
+  let start = "";
+  if (paidPeriodEnd) {
+    // Dimulai dari (tanggal_akhir_slip_lunas_terakhir + 1 hari)
+    start = addDays(paidPeriodEnd, 1);
+  } else {
+    // Default: tanggal 1 awal bulan berjalan
+    start = formatIsoDate(new Date(y, m, 1));
+  }
+
+  // Hingga hari ini
+  const end = todayStr < start ? start : todayStr;
+  return { start, end };
+}
+
 function getDynamicPeriod(paySystem: string, refDate = new Date()): { start: string; end: string } {
   const y = refDate.getFullYear();
   const m = refDate.getMonth();
@@ -119,11 +144,17 @@ export default async function Page() {
   let checks: any[] = [];
 
   if (workerId) {
-    // TAHAP 2: Fetch data profil pekerja untuk menentukan sistem upah & rentang periode dinamis
-    const [rpcProfRes, wRes] = await Promise.all([
+    // TAHAP 2: Fetch data profil pekerja & slip payroll terlebih dahulu untuk menentukan periode fleksibel
+    const [rpcProfRes, wRes, pSlipRes, opSlipRes, ordersRes] = await Promise.all([
       s.rpc("smpt_get_my_worker_profile"),
       s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department,phone").eq("id", workerId).maybeSingle(),
+      s.from("payroll_run_items").select("*, payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(10),
+      s.from("operator_payroll_items").select("*, operator_payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(30),
+      s.from("production_orders").select("*").eq("operator_worker_id", workerId).order("order_date", { ascending: false })
     ]);
+
+    if (ordersRes.error) throw new Error(ordersRes.error.message);
+    orders = ordersRes.data || [];
 
     const rpcWorker = rpcProfRes.data && rpcProfRes.data.length > 0 ? rpcProfRes.data[0] : null;
     const directWorker = wRes.data || null;
@@ -136,27 +167,7 @@ export default async function Page() {
       pay_system: directWorker?.pay_system ?? rpcWorker?.pay_system ?? "HARIAN",
     };
 
-    // Tentukan rentang tanggal periode cut-off dinamis sesuai pay_system
-    currentPeriod = getDynamicPeriod(workerData.pay_system, now);
-
-    // Lookback 7 hari sebelum currentPeriod.start untuk mengambil data absensi/lembur dengan status Cutoff (Slip Depan)
-    const pStartDt = new Date(currentPeriod.start + "T00:00:00Z");
-    pStartDt.setUTCDate(pStartDt.getUTCDate() - 7);
-    const searchStartDate = formatIsoDate(new Date(pStartDt.toISOString().slice(0, 10)));
-
-    // TAHAP 3: Fetch absensi, kasbon, slip payroll & SPK dengan filter periode dinamis
-    const [advRes, attRes, pSlipRes, opSlipRes, ordersRes] = await Promise.all([
-      s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
-      s.from("attendance_records").select("id,attendance_code,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status,notes,actual_in,actual_out,payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))").eq("worker_id", workerId).gte("attendance_date", searchStartDate).lte("attendance_date", currentPeriod.end),
-      s.from("payroll_run_items").select("*, payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(10),
-      s.from("operator_payroll_items").select("*, operator_payroll_runs(*)").eq("worker_id", workerId).order("id", { ascending: false }).limit(30),
-      s.from("production_orders").select("*").eq("operator_worker_id", workerId).order("order_date", { ascending: false })
-    ]);
-
-    if (ordersRes.error) throw new Error(ordersRes.error.message);
-    orders = ordersRes.data || [];
-
-    // TAHAP 3.1: Ekstraksi Slip Gaji Resmi Terakhir Sesuai Sistem Penggajian
+    // TAHAP 2.1: Ekstraksi Slip Gaji Resmi Terakhir Sesuai Sistem Penggajian
     let officialSlipItem: any = null;
     let latestWeeklyMealItem: any = null;
     latestMealSlip = null;
@@ -176,6 +187,27 @@ export default async function Page() {
     } else {
       officialSlipItem = validSlips.length > 0 ? validSlips[0] : null;
     }
+
+    let isOfficialSlipPaid = officialSlipItem
+      ? getRunPaymentStatus(officialSlipItem.payroll_runs, officialSlipItem) === "SUDAH DIBAYAR"
+      : false;
+    let paidPeriodEnd = isOfficialSlipPaid ? (officialSlipItem.payroll_runs?.period_end || null) : null;
+
+    // Tentukan rentang tanggal periode cut-off fleksibel sesuai pay_system
+    if (workerData.pay_system === "BULANAN") {
+      currentPeriod = getFlexibleMonthlyPeriod(paidPeriodEnd, now);
+    } else {
+      currentPeriod = getDynamicPeriod(workerData.pay_system, now);
+    }
+
+    // Lookback 7 hari sebelum currentPeriod.start untuk mengambil data absensi/lembur dengan status Cutoff (Slip Depan)
+    const searchStartDate = addDays(currentPeriod.start, -7);
+
+    // TAHAP 3: Fetch absensi & kasbon dengan filter rentang periode dinamis
+    const [advRes, attRes] = await Promise.all([
+      s.from("cash_advances").select("*").eq("worker_id", workerId).eq("status", "AKTIF").order("advance_date", { ascending: false }),
+      s.from("attendance_records").select("id,attendance_code,attendance_date,day_class,attendance_status,overtime_minutes,manual_overtime_hours,verification_status,notes,actual_in,actual_out,payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))").eq("worker_id", workerId).gte("attendance_date", searchStartDate).lte("attendance_date", currentPeriod.end),
+    ]);
 
     if (latestWeeklyMealItem) {
       const mRun = latestWeeklyMealItem.payroll_runs;
@@ -269,8 +301,8 @@ export default async function Page() {
       };
     }
 
-    const isOfficialSlipPaid = officialSlip?.paymentStatus === "SUDAH DIBAYAR";
-    const paidPeriodEnd = isOfficialSlipPaid ? (officialSlip?.periodEnd || null) : null;
+    isOfficialSlipPaid = officialSlip?.paymentStatus === "SUDAH DIBAYAR";
+    paidPeriodEnd = isOfficialSlipPaid ? (officialSlip?.periodEnd || null) : null;
 
     // TAHAP 4: Fetch order items berdasarkan orderIds
     const orderIds = orders.map((o: any) => o.id);
@@ -299,9 +331,20 @@ export default async function Page() {
     const isBulananWorker = workerData.pay_system === "BULANAN";
 
     const allAdv = advRes.data ?? [];
-    if (isOfficialSlipPaid && paidPeriodEnd) {
-      // Jika slip periode lalu sudah dibayar (LUNAS), nota kasbon warung dan pinjaman pada/sebelum paidPeriodEnd sudah diselesaikan oleh slip tersebut.
-      // Siklus baru berjalan hanya merender nota kasbon baru yang terjadi setelah paidPeriodEnd.
+    if (isBulananWorker) {
+      // Untuk karyawan bulanan: ambil nota kasbon warung dan pinjaman yang terjadi dalam periode fleksibel berjalan
+      warungDebts = allAdv.filter(
+        (a: any) =>
+          a.category === "KASBON_WARUNG" &&
+          a.advance_date >= currentPeriod.start &&
+          a.advance_date <= currentPeriod.end
+      );
+      companyLoans = allAdv.filter(
+        (a: any) =>
+          a.category !== "KASBON_WARUNG" &&
+          (paidPeriodEnd ? a.advance_date > paidPeriodEnd : true)
+      );
+    } else if (isOfficialSlipPaid && paidPeriodEnd) {
       warungDebts = allAdv.filter((a: any) => a.category === "KASBON_WARUNG" && a.advance_date > paidPeriodEnd);
       companyLoans = allAdv.filter((a: any) => a.category !== "KASBON_WARUNG" && a.advance_date > paidPeriodEnd);
     } else {

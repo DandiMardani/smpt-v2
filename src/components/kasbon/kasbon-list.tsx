@@ -11,6 +11,7 @@ export type CashAdvanceItem = {
   advance_code: string;
   worker_id: number;
   advance_date: string;
+  created_at?: string | null;
   amount: number | string;
   paid_amount: number | string;
   category?: string | null;
@@ -20,6 +21,7 @@ export type CashAdvanceItem = {
   installments_paid?: number | null;
   status: string;
   notes?: string | null;
+  is_locked?: boolean;
 };
 
 type WorkerMapItem = {
@@ -71,16 +73,24 @@ export function KasbonList({
   });
 
   const handleOpenEdit = (adv: CashAdvanceItem) => {
+    const rem = Math.max(0, Math.round(n(adv.amount) - n(adv.paid_amount)));
+    if (adv.is_locked || adv.status === "LUNAS" || rem <= 0) {
+      alert("Aksi ditolak: Kasbon ini sudah lunas atau terkunci dalam slip gaji.");
+      return;
+    }
     setEditingAdvance(adv);
     const count = Number(adv.installment_count) || 1;
     setEditCount(count);
-    const rem = n(adv.amount) - n(adv.paid_amount);
-    const amt = n(adv.installment_amount) || Math.round(rem / Math.max(1, count));
+    const amt = Math.round(n(adv.installment_amount) || (count > 1 ? rem / count : rem));
     setEditAmount(amt);
   };
 
   const handleSaveInstallment = async () => {
     if (!editingAdvance) return;
+    if (editingAdvance.is_locked || editingAdvance.status === "LUNAS") {
+      alert("Aksi ditolak: Kasbon ini sudah terkunci dalam slip gaji yang telah dilunasi.");
+      return;
+    }
     setIsUpdating(true);
     try {
       const supabase = createClient();
@@ -132,7 +142,7 @@ export function KasbonList({
                   onChange={(e) => {
                     const c = Number(e.target.value);
                     setEditCount(c);
-                    const rem = n(editingAdvance.amount) - n(editingAdvance.paid_amount);
+                    const rem = Math.max(0, Math.round(n(editingAdvance.amount) - n(editingAdvance.paid_amount)));
                     setEditAmount(Math.round(rem / Math.max(1, c)));
                   }}
                   className={inputClass}
@@ -253,18 +263,24 @@ export function KasbonList({
       ) : (
         <div className="space-y-3">
           {filtered.map((x) => {
-            const rem = n(x.amount) - n(x.paid_amount);
+            const rawAmount = n(x.amount);
+            const rawPaid = n(x.paid_amount);
+            const rem = Math.max(0, Math.round(rawAmount - rawPaid));
+            const isLunas = rem <= 0 || x.status === "LUNAS";
             const instCount = Number(x.installment_count) || 1;
-            const instAmt =
+            const instAmt = Math.round(
               n(x.installment_amount) ||
-              (instCount > 1 ? Math.round(n(x.amount) / instCount) : n(x.amount));
+              (instCount > 1 ? Math.round(rawAmount / instCount) : rawAmount)
+            );
             const worker = workerMap[x.worker_id];
 
             return (
               <div
                 key={x.id}
                 className={`rounded-2xl border p-4 shadow-2xs transition hover:shadow-xs ${
-                  instCount > 1
+                  isLunas
+                    ? "border-emerald-200/80 bg-emerald-50/10"
+                    : instCount > 1
                     ? "border-indigo-200/90 bg-indigo-50/15"
                     : "border-gray-200/90 bg-white"
                 }`}
@@ -288,7 +304,7 @@ export function KasbonList({
                         >
                           🏢 Perusahaan · {instCount > 1 ? `Angsuran ${instCount}x` : "Sekali Lunas"}
                         </span>
-                        {canWrite && x.status === "AKTIF" && (
+                        {canWrite && !isLunas && !x.is_locked && (
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(x)}
@@ -297,8 +313,21 @@ export function KasbonList({
                             ⚙ Atur Angsuran
                           </button>
                         )}
+                        {x.is_locked && (
+                          <span className="text-[11px] text-slate-400 italic font-semibold">
+                            🔒 Terkunci (Payroll)
+                          </span>
+                        )}
                       </div>
-                      <Badge>{x.status}</Badge>
+                      {isLunas ? (
+                        <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 shadow-2xs">
+                          LUNAS
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800 shadow-2xs">
+                          {x.status || "AKTIF"}
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
@@ -306,14 +335,14 @@ export function KasbonList({
                         Tgl Pinjam: <b>{x.advance_date}</b>
                       </span>
                       <span>
-                        Total Pinjaman: <b>{money(x.amount)}</b>
+                        Total Pinjaman: <b>{money(rawAmount)}</b>
                       </span>
                       <span>
-                        Sudah Terbayar: <b className="text-emerald-700">{money(x.paid_amount)}</b>
+                        Sudah Terbayar: <b className="text-emerald-700">{money(rawPaid)}</b>
                       </span>
                       <span>
                         Sisa Hutang:{" "}
-                        <b className={rem > 0 ? "text-rose-600 font-extrabold text-sm" : "text-emerald-700"}>
+                        <b className={rem > 0 ? "text-rose-600 font-extrabold text-sm" : "text-emerald-700 font-bold"}>
                           {money(rem)}
                         </b>
                       </span>
@@ -343,20 +372,29 @@ export function KasbonList({
                           style={{
                             width: `${Math.min(
                               100,
-                              Math.round((n(x.paid_amount) / Math.max(1, n(x.amount))) * 100)
+                              Math.round((rawPaid / Math.max(1, rawAmount)) * 100)
                             )}%`,
                           }}
                         />
                       </div>
                       <div className="text-[10px] text-gray-500 mt-1">
-                        Terbayar {money(x.paid_amount)} dari {money(x.amount)}
+                        Terbayar {money(rawPaid)} dari {money(rawAmount)}
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Inline Payment Form */}
-                {canWrite && x.status === "AKTIF" && rem > 0 && (
+                {/* Status Pelunasan / Form Pembayaran */}
+                {rem <= 0 ? (
+                  <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 text-xs font-semibold text-emerald-800 bg-emerald-50/70 rounded-xl px-3.5 py-2.5 border border-emerald-200/80">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span>✅ Pinjaman ini telah lunas</span>
+                    </div>
+                    <span className="text-[11px] font-medium text-emerald-600">
+                      Tidak ada tagihan tertunda
+                    </span>
+                  </div>
+                ) : canWrite && !x.is_locked ? (
                   <form
                     action={payCashAdvanceAction}
                     className="mt-3 grid gap-2 sm:grid-cols-2 md:grid-cols-5 border-t border-gray-100 pt-3"
@@ -403,7 +441,7 @@ export function KasbonList({
                       </button>
                     </div>
                   </form>
-                )}
+                ) : null}
               </div>
             );
           })}

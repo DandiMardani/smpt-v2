@@ -25,6 +25,9 @@ import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
+// --- IMPORT CONTAINER BARU ---
+import { PayrollBoronganContainer } from "./payroll-borongan-container";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -97,11 +100,11 @@ export default async function Page({ searchParams }: Props) {
 
       const { data: all } = await client
         .from("payroll_run_items")
-        .select("base_amount, meal_amount, overtime_amount, deduction_amount, net_amount")
+        .select("base_amount, meal_amount, overtime_amount, manual_overtime_amount, overtime_bonus, holiday_bonus, deduction_amount, net_amount")
         .eq("payroll_run_id", runId);
 
       if (all) {
-        const tG = all.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.meal_amount || 0) + Number(i.overtime_amount || 0), 0);
+        const tG = all.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.meal_amount || 0) + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0) + Number(i.holiday_bonus || 0), 0);
         const tD = all.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0);
         const tN = all.reduce((acc, i) => acc + Number(i.net_amount || 0), 0);
         await client.from("payroll_runs").update({ total_gross: tG, total_deduction: tD, total_net: tN }).eq("id", runId);
@@ -292,77 +295,6 @@ export default async function Page({ searchParams }: Props) {
   const operatorItems = allOperatorItems.filter((item) => operatorRunMap.has(item.run_id));
   const workerMap = new Map(workers.map((w) => [w.id, w]));
 
-  // Grouping Agregat Detail Payroll Operator per Periode / Kode Run (Batch)
-  const operatorBatchMap = new Map<number, {
-    runId: number;
-    payrollCode: string;
-    periodStart: string;
-    periodEnd: string;
-    workerIds: Set<number | string>;
-    totalQty: number;
-    totalValue: number;
-    itemCount: number;
-  }>();
-
-  for (const opRun of operatorRuns) {
-    operatorBatchMap.set(opRun.id, {
-      runId: opRun.id,
-      payrollCode: opRun.payroll_code || `OPR-${String(opRun.id).padStart(6, "0")}`,
-      periodStart: opRun.period_start,
-      periodEnd: opRun.period_end,
-      workerIds: new Set<number | string>(),
-      totalQty: 0,
-      totalValue: Number(opRun.total_operator_value || 0),
-      itemCount: 0,
-    });
-  }
-
-  for (const item of operatorItems) {
-    let batch = operatorBatchMap.get(item.run_id);
-    if (!batch) {
-      const run = operatorRunMap.get(item.run_id);
-      batch = {
-        runId: item.run_id,
-        payrollCode: run?.payroll_code || `OPR-${String(item.run_id).padStart(6, "0")}`,
-        periodStart: run?.period_start || "-",
-        periodEnd: run?.period_end || "-",
-        workerIds: new Set<number | string>(),
-        totalQty: 0,
-        totalValue: 0,
-        itemCount: 0,
-      };
-      operatorBatchMap.set(item.run_id, batch);
-    }
-    const workerIdent = item.worker_id || item.worker_name_snapshot;
-    if (workerIdent) batch.workerIds.add(workerIdent);
-    const itemQty = Number(item.qty_approved || 0);
-    batch.totalQty += itemQty;
-    batch.itemCount += 1;
-  }
-
-  for (const [runId, batch] of operatorBatchMap.entries()) {
-    const itemsInRun = operatorItems.filter((i) => i.run_id === runId);
-    if (itemsInRun.length > 0) {
-      const sumVal = itemsInRun.reduce((acc, i) => {
-        const q = Number(i.qty_approved || 0);
-        const p = Number(i.operator_price_snapshot || 0);
-        return acc + Number(i.operator_value ?? (q * p));
-      }, 0);
-      if (sumVal > 0) {
-        batch.totalValue = sumVal;
-      }
-    }
-  }
-
-  const operatorBatchSummaries = Array.from(operatorBatchMap.values())
-    .map((b) => ({
-      ...b,
-      workerCount: b.workerIds.size,
-    }))
-    .sort(
-      (a, b) => (b.periodEnd || "").localeCompare(a.periodEnd || "") || b.runId - a.runId
-    );
-
   const settingsRows = (settingsResult.data ?? []) as Array<{ key: string; value_numeric: number | null; value_text: string | null }>;
   const settingsMap: PayrollSettingsMap = {};
   settingsRows.forEach((r) => {
@@ -370,6 +302,14 @@ export default async function Page({ searchParams }: Props) {
   });
 
   const latestRunId = payrollRuns[0]?.id ?? "";
+
+  // Ambil state pencarian awal untuk disuapkan ke Container
+  const initialFilters = {
+    periodStart: String(param(q, "period_start") || ""),
+    periodEnd: String(param(q, "period_end") || ""),
+    workerId: String(param(q, "worker_id") || ""),
+    search: String(param(q, "q") || ""),
+  };
 
   // Ambil Run Aktif Terbaru
   const activeRun = payrollRuns[0];
@@ -388,21 +328,21 @@ export default async function Page({ searchParams }: Props) {
 
   const harianItems = activeItems.filter((item) => !uangMakanItems.includes(item));
 
-  // Hitung Total Uang Makan Staf Bulanan
+  // Hitung Total Uang Makan Staf Bulanan (Murni Uang Makan Kehadiran)
   const totMealBase = uangMakanItems.reduce((acc, i) => acc + Number(i.meal_amount || 0), 0);
-  const totMealOt = uangMakanItems.reduce(
-    (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0),
-    0
-  );
-  const totMealNet = totMealBase + totMealOt;
+  const totMealNet = totMealBase;
 
   // Hitung Total Upah Pekerja Harian
   const totHarianBase = harianItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
   const totHarianOt = harianItems.reduce(
-    (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0),
+    (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0),
     0
   );
-  const totHarianGross = totHarianBase + totHarianOt;
+  const totHarianBonus = harianItems.reduce(
+    (acc, i) => acc + Number(i.overtime_bonus || 0) + Number(i.holiday_bonus || 0),
+    0
+  );
+  const totHarianGross = totHarianBase + totHarianOt + totHarianBonus;
   const totHarianKp = harianItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0);
   const totHarianKw = harianItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0);
   const totHarianDed = totHarianKp + totHarianKw;
@@ -601,11 +541,8 @@ export default async function Page({ searchParams }: Props) {
                       {uangMakanItems.map((item) => {
                         const w = workerMap.get(item.worker_id);
                         const meal = Number(item.meal_amount || 0);
-                        const overtime =
-                          Number(item.overtime_amount || 0) +
-                          Number(item.manual_overtime_amount || 0) +
-                          Number(item.overtime_bonus || 0);
-                        const net = meal + overtime;
+                        const overtime = 0; // Seluruh lembur staf bulanan dibayarkan bulanan, tidak cair mingguan
+                        const net = meal;
                         const isPaid = (item as any).payment_status === "PAID";
 
                         const fullDays = Number(item.full_days || 0);
@@ -631,8 +568,8 @@ export default async function Page({ searchParams }: Props) {
                               {money(meal)}
                             </td>
 
-                            <td className="px-3 py-2.5 text-right text-slate-600 font-medium">
-                              {overtime > 0 ? money(overtime) : "-"}
+                            <td className="px-3 py-2.5 text-right text-slate-400 font-medium">
+                              -
                             </td>
 
                             <td className="px-3 py-2.5 text-right font-black text-emerald-700 bg-emerald-50/60 text-sm">
@@ -741,7 +678,7 @@ export default async function Page({ searchParams }: Props) {
                 badgeColor="blue"
                 totBase={activeItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0)}
                 totOt={activeItems.reduce((acc, i) => acc + Number(i.overtime_amount || 0), 0)}
-                totGross={activeItems.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.overtime_amount || 0), 0)}
+                totGross={activeItems.reduce((acc, i) => acc + Number(i.base_amount || 0) + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0) + Number(i.overtime_bonus || 0) + Number(i.holiday_bonus || 0), 0)}
                 totKp={activeItems.reduce((acc, i) => acc + Number(i.kasbon_perusahaan_amount || 0), 0)}
                 totKw={activeItems.reduce((acc, i) => acc + Number(i.kasbon_warung_amount || 0), 0)}
                 totDed={activeItems.reduce((acc, i) => acc + Number(i.deduction_amount || 0), 0)}
@@ -795,81 +732,62 @@ export default async function Page({ searchParams }: Props) {
       </tr>
     </thead>
     <tbody>
-      {payrollRuns.map((item) => (
-        <tr key={item.id}>
-          <Td>{item.payroll_code}</Td>
-          <Td>{item.payroll_type}</Td>
-          <Td>{item.period_start}—{item.period_end}</Td>
-          <Td>{money(item.total_gross)}</Td>
-          <Td>{money(item.total_deduction)}</Td>
-          <Td>{money(item.total_net)}</Td>
-          {canWrite && (
-            <Td>
-              <form action={deletePayrollRunAction}>
-                <input type="hidden" name="run_id" value={item.id} />
-                <button
-                  type="submit"
-                  className="rounded-md bg-rose-100 px-3 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-200 transition-colors cursor-pointer"
-                >
-                  Batalkan
-                </button>
-              </form>
-            </Td>
-          )}
-        </tr>
-      ))}
+      {payrollRuns.map((item) => {
+        const runItems = payrollItems.filter((pi) => pi.payroll_run_id === item.id);
+        const hasPaidItems = runItems.some(
+          (pi) =>
+            String(pi.payment_status || "").toUpperCase() === "PAID" ||
+            String(pi.status || "").toUpperCase() === "LUNAS"
+        );
+        const isLunas =
+          String(item.status || "").toUpperCase() === "LUNAS" ||
+          String(item.status || "").toUpperCase() === "PAID" ||
+          String(item.payment_status || "").toUpperCase() === "PAID" ||
+          hasPaidItems;
+
+        return (
+          <tr key={item.id}>
+            <Td>{item.payroll_code}</Td>
+            <Td>{item.payroll_type}</Td>
+            <Td>{item.period_start}—{item.period_end}</Td>
+            <Td>{money(item.total_gross)}</Td>
+            <Td>{money(item.total_deduction)}</Td>
+            <Td>{money(item.total_net)}</Td>
+            {canWrite && (
+              <Td>
+                {isLunas ? (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 shadow-2xs">
+                    <span>🔒</span>
+                    <span>Terkunci</span>
+                  </span>
+                ) : (
+                  <form action={deletePayrollRunAction}>
+                    <input type="hidden" name="run_id" value={item.id} />
+                    <button
+                      type="submit"
+                      className="rounded-md bg-rose-100 px-3 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-200 transition-colors cursor-pointer"
+                    >
+                      Batalkan
+                    </button>
+                  </form>
+                )}
+              </Td>
+            )}
+          </tr>
+        );
+      })}
     </tbody>
   </TableWrap>
 </Card>
 
-            <Card title="Riwayat Finalisasi Payroll Operator (Borongan)">
-              {operatorBatchSummaries.length === 0 ? (
-                <Empty>Belum ada riwayat batch Payroll Operator (Borongan).</Empty>
-              ) : (
-                <TableWrap>
-                  <thead>
-                    <tr>
-                      <Th>KODE RUN</Th>
-                      <Th>PERIODE</Th>
-                      <Th>TOTAL PEKERJA</Th>
-                      <Th>TOTAL QTY</Th>
-                      <Th>TOTAL NILAI</Th>
-                      {canWrite && <Th>AKSI</Th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {operatorBatchSummaries.map((batch) => (
-                      <tr key={batch.runId}>
-                        <Td>
-                          <span className="font-extrabold text-slate-900 bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200">
-                            {batch.payrollCode}
-                          </span>
-                        </Td>
-                        <Td className="whitespace-nowrap font-medium text-slate-700">
-                          {batch.periodStart} — {batch.periodEnd}
-                        </Td>
-                        <Td className="whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700 border border-blue-200">
-                            👥 {batch.workerCount} Pekerja
-                          </span>
-                        </Td>
-                        <Td className="font-bold text-slate-900 whitespace-nowrap">
-                          {qty(batch.totalQty)}
-                        </Td>
-                        <Td className="font-black text-amber-700 whitespace-nowrap text-sm">
-                          {money(batch.totalValue)}
-                        </Td>
-                        {canWrite && (
-                          <Td>
-                            <CancelOperatorPayrollRunButton runId={batch.runId} />
-                          </Td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </TableWrap>
-              )}
-            </Card>
+            {/* CONTAINER BARU MENGGANTIKAN RIWAYAT LAMA */}
+            <PayrollBoronganContainer 
+               runs={operatorRuns as any} 
+               items={operatorItems as any}
+               workers={workers as any} 
+               initialFilters={initialFilters as any} 
+               canWrite={canWrite}
+            />
           </div>
         }
       />

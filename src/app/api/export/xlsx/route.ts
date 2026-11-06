@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { buildXlsx, type XlsxSheet } from "@/lib/export/xlsx";
 import ExcelJS from "exceljs";
 
@@ -575,8 +575,14 @@ async function operatorPayrollSlipsWorkbook(
 
 // Helper: Cek apakah seorang pekerja adalah staf BULANAN
 function isBulananWorker(worker: any, itemSnapshot?: string): boolean {
-  if (itemSnapshot && itemSnapshot.toUpperCase() === "BULANAN") return true;
-  if (worker?.pay_system && String(worker.pay_system).toUpperCase() === "BULANAN") return true;
+  const snap = String(itemSnapshot || "").toUpperCase().trim();
+  if (snap === "BULANAN") return true;
+  if (snap === "HARIAN") return false;
+
+  const wPay = String(worker?.pay_system || "").toUpperCase().trim();
+  if (wPay === "BULANAN") return true;
+  if (wPay === "HARIAN") return false;
+
   const name = String(worker?.name || "").toUpperCase().trim();
   return BULANAN_NAMES.some((bn) => name.includes(bn));
 }
@@ -589,24 +595,32 @@ async function payrollSlipsWorkbook(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: URLSearchParams
 ): Promise<{ sheets: XlsxSheet[]; filename: string }> {
-  const runId = positiveId(params.get("run_id"));
+  const rawRunId = params.get("run_id") || params.get("id") || params.get("runId");
+  const numId = positiveId(rawRunId);
 
   let runQuery = supabase.from("payroll_runs").select("*");
-  if (runId) {
-    runQuery = runQuery.eq("id", runId);
+  if (numId) {
+    runQuery = runQuery.eq("id", numId);
+  } else if (rawRunId) {
+    const extractedNum = String(rawRunId).replace(/\D/g, "");
+    if (extractedNum && /PAY-\d+/i.test(String(rawRunId))) {
+      runQuery = runQuery.or(`id.eq.${Number(extractedNum)},payroll_code.eq.${rawRunId}`);
+    } else {
+      runQuery = runQuery.eq("payroll_code", rawRunId);
+    }
   } else {
-    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+    runQuery = runQuery.neq("status", "DIBATALKAN").order("id", { ascending: false }).limit(1);
   }
 
-  const { data: runData, error: runError } = await runQuery.single();
-  if (runError || !runData) {
+  const { data: runData, error: runError } = await runQuery;
+  const run = runData?.[0];
+  if (runError || !run) {
     throw new Error("Data Payroll Run tidak ditemukan.");
   }
-  const run = runData as any;
 
   const [itemsRes, workersRes] = await Promise.all([
     supabase.from("payroll_run_items").select("*").eq("payroll_run_id", run.id).order("id", { ascending: true }),
-    supabase.from("workers").select("id, worker_code, name, department, position, identity_no, phone, pay_system, monthly_salary, daily_salary"),
+    supabase.from("workers").select("*"),
   ]);
 
   if (itemsRes.error) throw itemsRes.error;
@@ -670,7 +684,7 @@ async function payrollSlipsWorkbook(
       no: idx + 1,
       nik: w?.worker_code || `K0${idx + 1}`,
       nama: it.worker_name_snapshot || w?.name || "-",
-      jabatan: (w?.position || w?.department || "STAF").toUpperCase(),
+      jabatan: (it.department_snapshot || w?.position || w?.department || "STAF").toUpperCase(),
       kehadiran: kehadiran % 1 === 0 ? kehadiran : kehadiran.toFixed(1),
       gaji_pokok: formatRupiah(baseAmount),
       lemburan_per_jam: formatRupiah(hourlyRate),
@@ -707,7 +721,7 @@ async function payrollSlipsWorkbook(
 
   return {
     sheets: [{ name: "Daftar Gaji", columns, rows, headerColor: "1E293B" }],
-    filename: `Daftar-Gaji-Karyawan-${fileSlug(periodMonthStr)}-${run.payroll_code}.xlsx`,
+    filename: `Daftar-Gaji-Karyawan-${fileSlug(periodMonthStr)}-${run.payroll_code || run.id}.xlsx`,
   };
 }
 
@@ -719,13 +733,21 @@ async function uangMakanWorkbook(
   supabase: any,
   params: URLSearchParams
 ): Promise<{ sheets: XlsxSheet[]; filename: string }> {
-  const runId = positiveId(params.get("run_id"));
+  const rawRunId = params.get("run_id") || params.get("id") || params.get("runId");
+  const numId = positiveId(rawRunId);
 
   let runQuery = supabase.from("payroll_runs").select("*");
-  if (runId) {
-    runQuery = runQuery.eq("id", runId);
+  if (numId) {
+    runQuery = runQuery.eq("id", numId);
+  } else if (rawRunId) {
+    const extractedNum = String(rawRunId).replace(/\D/g, "");
+    if (extractedNum && /PAY-\d+/i.test(String(rawRunId))) {
+      runQuery = runQuery.or(`id.eq.${Number(extractedNum)},payroll_code.eq.${rawRunId}`);
+    } else {
+      runQuery = runQuery.eq("payroll_code", rawRunId);
+    }
   } else {
-    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+    runQuery = runQuery.neq("status", "DIBATALKAN").order("id", { ascending: false }).limit(1);
   }
 
   const { data: runData } = await runQuery;
@@ -733,7 +755,7 @@ async function uangMakanWorkbook(
 
   const [itemsRes, workersRes] = await Promise.all([
     supabase.from("payroll_run_items").select("*").eq("payroll_run_id", run.id || 0).order("id", { ascending: true }),
-    supabase.from("workers").select("id, worker_code, name, department, position, pay_system"),
+    supabase.from("workers").select("*"),
   ]);
 
   const items = itemsRes.data ?? [];
@@ -763,10 +785,14 @@ async function uangMakanWorkbook(
     const half = Number(it.half_days || 0);
     
     // MURNI BACA DATA DARI DATABASE: Hari Hadir = Full + 0.5*Half
-    const totalHari = full + half * 0.5;
+    let totalHari = full + half * 0.5;
 
-    // Perhitungan: Rp 50.000 / hari (35rb makan + 15rb insentif)
-    const totalMakan = totalHari * 50000;
+    // Perhitungan: Rp 50.000 / hari (35rb makan + 15rb insentif) murni kehadiran
+    const mealAmt = Number(it.meal_amount || 0);
+    if (totalHari === 0 && mealAmt > 0) {
+      totalHari = Math.round((mealAmt / 50000) * 10) / 10;
+    }
+    const totalMakan = mealAmt > 0 ? mealAmt : (totalHari * 50000);
     grandTotal += totalMakan;
 
     return {
@@ -815,13 +841,21 @@ async function upahHarianWorkbook(
   supabase: any,
   params: URLSearchParams
 ): Promise<{ buffer: Buffer; filename: string }> {
-  const runId = positiveId(params.get("run_id"));
+  const rawRunId = params.get("run_id") || params.get("id") || params.get("runId");
+  const numId = positiveId(rawRunId);
 
   let runQuery = supabase.from("payroll_runs").select("*");
-  if (runId) {
-    runQuery = runQuery.eq("id", runId);
+  if (numId) {
+    runQuery = runQuery.eq("id", numId);
+  } else if (rawRunId) {
+    const extractedNum = String(rawRunId).replace(/\D/g, "");
+    if (extractedNum && /PAY-\d+/i.test(String(rawRunId))) {
+      runQuery = runQuery.or(`id.eq.${Number(extractedNum)},payroll_code.eq.${rawRunId}`);
+    } else {
+      runQuery = runQuery.eq("payroll_code", rawRunId);
+    }
   } else {
-    runQuery = runQuery.order("id", { ascending: false }).limit(1);
+    runQuery = runQuery.neq("status", "DIBATALKAN").order("id", { ascending: false }).limit(1);
   }
 
   const { data: runData } = await runQuery;
@@ -829,7 +863,7 @@ async function upahHarianWorkbook(
 
   const [itemsRes, workersRes] = await Promise.all([
     supabase.from("payroll_run_items").select("*").eq("payroll_run_id", run.id || 0).order("id", { ascending: true }),
-    supabase.from("workers").select("id, worker_code, name, department, position, identity_no, daily_salary, pay_system"),
+    supabase.from("workers").select("*"),
   ]);
 
   const items = itemsRes.data ?? [];
@@ -891,7 +925,9 @@ async function upahHarianWorkbook(
     const totalHari = full + half * 0.5;
 
     // Baca murni dari snapshot & master worker
-    const dailyRate = Number(w?.daily_salary) || (totalHari > 0 ? Math.round(Number(it.base_amount || 0) / totalHari) : 0);
+    const dailyRate =
+      Number(w?.daily_salary || w?.daily_rate || w?.rate_per_day || it.daily_wage_snapshot || 0) ||
+      (totalHari > 0 ? Math.round(Number(it.base_amount || 0) / totalHari) : 0);
     const hourlyOtRate = dailyRate > 0 ? Math.round(dailyRate / 8) : 0;
 
     const otMin = Number(it.overtime_minutes || 0);
@@ -904,7 +940,8 @@ async function upahHarianWorkbook(
 
     // Potongan 
     const dendaKasbon = Number(it.kasbon_perusahaan_amount || 0) + Number(it.kasbon_warung_amount || 0);
-    const totalUpah = (totalHari * dailyRate + totalLembur + mealLembur) - dendaKasbon;
+    const baseCalc = (totalHari * dailyRate + totalLembur + mealLembur) - dendaKasbon;
+    const totalUpah = it.net_amount !== undefined && it.net_amount !== null ? Number(it.net_amount) : baseCalc;
 
     grandTotal += totalUpah;
 
@@ -912,8 +949,8 @@ async function upahHarianWorkbook(
     const row = ws.addRow({
       no: idx + 1,
       nama: (it.worker_name_snapshot || w?.name || "-").toUpperCase(),
-      bagian: (w?.position || w?.department || "HELPER").toUpperCase(),
-      nik: w?.identity_no || w?.worker_code || "-",
+      bagian: (it.department_snapshot || w?.position || w?.department || "HELPER").toUpperCase(),
+      nik: w?.identity_no || it.worker_code_snapshot || w?.worker_code || "-",
       hari: totalHari,
       gaji: dailyRate,
       um: "-",
@@ -1171,6 +1208,8 @@ export async function GET(request: NextRequest) {
     if (to < from) return NextResponse.json({ error: "Periode export tidak valid." }, { status: 400 });
 
     const supabase = await createClient();
+    const admin = createAdminClient();
+    const db = admin || supabase;
     const access = await accessContext(supabase);
     if (!access) return NextResponse.json({ error: "Sesi berakhir." }, { status: 401 });
 
@@ -1189,15 +1228,15 @@ export async function GET(request: NextRequest) {
       }
 
       if (isOperatorReport) {
-        const result = await operatorPayrollSlipsWorkbook(supabase, params);
+        const result = await operatorPayrollSlipsWorkbook(db, params);
         sheets = result.sheets;
         customFilename = result.filename;
       } else if (isMealReport) {
-        const result = await uangMakanWorkbook(supabase, params);
+        const result = await uangMakanWorkbook(db, params);
         sheets = result.sheets;
         customFilename = result.filename;
       } else if (isDailyReport) {
-        const { buffer, filename } = await upahHarianWorkbook(supabase, params);
+        const { buffer, filename } = await upahHarianWorkbook(db, params);
         return new NextResponse(new Uint8Array(buffer), {
           status: 200,
           headers: {
@@ -1208,7 +1247,7 @@ export async function GET(request: NextRequest) {
           },
         });
       } else {
-        const result = await payrollSlipsWorkbook(supabase, params);
+        const result = await payrollSlipsWorkbook(db, params);
         sheets = result.sheets;
         customFilename = result.filename;
       }

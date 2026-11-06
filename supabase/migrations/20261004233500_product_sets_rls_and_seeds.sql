@@ -16,14 +16,17 @@ declare
 begin
   select id into v_proj_id from public.projects order by id limit 1;
 
-  insert into public.product_sets (set_code, name, unit, status, project_id, notes)
-  values
-    ('SET-HAJI-REGULER', 'SET KOPER HAJI REGULER (Besar 24" + Kecil 18" + Isian + Kardus)', 'SET', 'AKTIF', v_proj_id, 'Standar Koper Haji Reguler Lengkap'),
-    ('SET-HAJI-GARUDA', 'SET KOPER HAJI GARUDA INDONESIA', 'SET', 'AKTIF', v_proj_id, 'Koper Haji Kloter Garuda'),
-    ('SET-HAJI-SAUDI', 'SET KOPER HAJI SAUDIA AIRLINES', 'SET', 'AKTIF', v_proj_id, 'Koper Haji Kloter Saudia')
-  on conflict (set_code) do update
-  set name = excluded.name,
-      status = 'AKTIF',
-      unit = 'SET';
+  -- HANYA jalankan insert jika v_proj_id berhasil ditemukan (tidak kosong)
+  if v_proj_id is not null then
+    insert into public.product_sets (set_code, name, unit, status, project_id, notes)
+    values
+      ('SET-HAJI-REGULER', 'SET KOPER HAJI REGULER (Besar 24" + Kecil 18" + Isian + Kardus)', 'SET', 'AKTIF', v_proj_id, 'Standar Koper Haji Reguler Lengkap'),
+      ('SET-HAJI-GARUDA', 'SET KOPER HAJI GARUDA INDONESIA', 'SET', 'AKTIF', v_proj_id, 'Koper Haji Kloter Garuda'),
+      ('SET-HAJI-SAUDI', 'SET KOPER HAJI SAUDIA AIRLINES', 'SET', 'AKTIF', v_proj_id, 'Koper Haji Kloter Saudia')
+    on conflict (set_code) do update
+    set name = excluded.name,
+        status = 'AKTIF',
+        unit = 'SET';
+  end if;
 end;
 $$;

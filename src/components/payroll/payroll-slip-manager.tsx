@@ -294,9 +294,14 @@ export function PayrollSlipManager(props: Props) {
   const runItems: PayrollItemRow[] = items.filter((it: any) => it.payroll_run_id === activeRun?.id);
 
   // Filter Staf Bulanan & Harian
+  const bulananRefNames = ["SURATNO", "DANDI MARDANI", "USMAN ALAMSYAH", "JAJANG ROSADI", "SUHERMANTO", "SUHERMAN", "NEDIH"];
+
   const filteredItems = runItems.filter((it) => {
-    const paySystem = String(it.pay_system_snapshot || it.workers?.pay_system || "").toUpperCase();
-    const isBulananWorker = paySystem === "BULANAN";
+    const matchedWorker = (it.worker_id ? workerMap.get(it.worker_id) : null) || it.workers;
+    const workerName = String(it.worker_name_snapshot || matchedWorker?.name || "");
+    const isKnownBulanan = bulananRefNames.some((bn) => workerName.toUpperCase().includes(bn));
+    const paySystem = String(it.pay_system_snapshot || matchedWorker?.pay_system || (isKnownBulanan ? "BULANAN" : "")).toUpperCase();
+    const isBulananWorker = paySystem === "BULANAN" || isKnownBulanan;
 
     let matchTab = false;
     if (activeTab === "BULANAN" || activeTab === "UANG_MAKAN") {
@@ -305,11 +310,10 @@ export function PayrollSlipManager(props: Props) {
       matchTab = !isBulananWorker;
     }
 
-    const name = String(it.worker_name_snapshot || it.workers?.name || "");
-    const code = String(it.worker_code_snapshot || it.workers?.code || "");
+    const code = String(it.worker_code_snapshot || matchedWorker?.code || "");
     return (
       matchTab &&
-      (name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (workerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         code.toLowerCase().includes(searchQuery.toLowerCase()))
     );
   });
@@ -395,8 +399,14 @@ export function PayrollSlipManager(props: Props) {
     }
   };
 
-  const countBulanan = runItems.filter((i) => String(i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() === "BULANAN").length;
-  const countHarian = runItems.filter((i) => String(i.pay_system_snapshot || i.workers?.pay_system || "").toUpperCase() !== "BULANAN").length;
+  const countBulanan = runItems.filter((i) => {
+    const matchedWorker = (i.worker_id ? workerMap.get(i.worker_id) : null) || i.workers;
+    const workerName = String(i.worker_name_snapshot || matchedWorker?.name || "");
+    const isKnownBulanan = bulananRefNames.some((bn) => workerName.toUpperCase().includes(bn));
+    const paySystem = String(i.pay_system_snapshot || matchedWorker?.pay_system || (isKnownBulanan ? "BULANAN" : "")).toUpperCase();
+    return paySystem === "BULANAN" || isKnownBulanan;
+  }).length;
+  const countHarian = runItems.length - countBulanan;
   const countBorongan = filteredOpItems.length;
   const totalBoronganQty = filteredOpItems.reduce((acc, op) => acc + Number(op.qty_approved || 0), 0);
   const totalBoronganVal = filteredOpItems.reduce((acc, op) => {
@@ -749,39 +759,69 @@ export function PayrollSlipManager(props: Props) {
             </div>
           ) : (
             filteredItems.map((item) => {
-              const workerName = item.worker_name_snapshot || item.workers?.name || "Tanpa Nama";
-              const code = item.worker_code_snapshot || item.workers?.code || "-";
-              const dept = item.department_snapshot || item.workers?.department || "PRODUKSI";
+              const matchedWorker = (item.worker_id ? workerMap.get(item.worker_id) : null) || item.workers;
+              const workerName = item.worker_name_snapshot || matchedWorker?.name || "Tanpa Nama";
+              const code = item.worker_code_snapshot || matchedWorker?.worker_code || matchedWorker?.code || "-";
+              const dept = item.department_snapshot || matchedWorker?.department || "PRODUKSI";
 
-              const base = Number(item.base_amount || 0);
-              const overtime =
-                Number(item.overtime_amount || 0) +
-                Number(item.manual_overtime_amount || 0) +
-                Number(item.overtime_bonus || 0);
-              const kp = Number(item.kasbon_perusahaan_amount || 0);
-              const kw = Number(item.kasbon_warung_amount || 0);
-              const denda = Number(
-                item.late_deduction_amount ||
-                  item.denda_amount ||
-                  item.late_deduction ||
-                  0
-              );
-              const totalDed = Number(item.deduction_amount ?? (kp + kw + denda));
-              const gross = base + overtime;
-              const bulananNet = Math.max(0, gross - totalDed);
+              // 1. Gaji Pokok Bulanan (Ambil gaji pokok master bila base_amount dari run mingguan bernilai 0)
+              const bulananBase = Number(item.base_amount || item.monthly_salary_snapshot || matchedWorker?.monthly_salary || matchedWorker?.base_salary || 0);
+              const base = activeTab === "BULANAN" ? bulananBase : Number(item.base_amount || 0);
 
-              // Mode Uang Makan
+              // 2. Lembur & Bonus
+              const otMinutes = Number(item.overtime_minutes || 0) + (Number(item.manual_overtime_hours || 0) * 60);
+              const hourlyRate = (activeTab === "BULANAN" && bulananBase > 0) ? Math.round((bulananBase / 190) * 100) / 100 : 0;
+              const calculatedBulananOt = (activeTab === "BULANAN" && Number(item.overtime_amount || 0) === 0)
+                ? Math.round((otMinutes / 60) * hourlyRate * 100) / 100
+                : Number(item.overtime_amount || 0);
+
+              const overtime = activeTab === "BULANAN"
+                ? calculatedBulananOt + Number(item.manual_overtime_amount || 0)
+                : (activeTab === "UANG_MAKAN" ? 0 : (Number(item.overtime_amount || 0) + Number(item.manual_overtime_amount || 0)));
+
+              // Pada tab UANG_MAKAN: bonus/lembur wajib 0. Pada tab BULANAN: sertakan bonus lembur shift Rp 17.500
+              const bonuses = activeTab === "UANG_MAKAN"
+                ? 0
+                : (Number(item.overtime_bonus || 0) + Number(item.holiday_bonus || 0));
+
+              // 3. Kasbon & Potongan
+              const kp = activeTab === "UANG_MAKAN" ? 0 : Number(item.kasbon_perusahaan_amount || 0);
+              const kw = activeTab === "UANG_MAKAN" ? 0 : Number(item.kasbon_warung_amount || 0);
+              const denda = activeTab === "UANG_MAKAN" ? 0 : Number(item.late_deduction_amount || item.denda_amount || item.late_deduction || 0);
+              const totalDed = activeTab === "UANG_MAKAN" ? 0 : (kp + kw + denda);
+
+              // 4. Mode Uang Makan vs Gaji Bulanan
               const mealAmt = Number(item.meal_amount || 0);
-              const totalDays = mealAmt > 0 ? Math.round((mealAmt / 50000) * 10) / 10 : 0;
-              const netThp = activeTab === "UANG_MAKAN" ? mealAmt : (item.net_amount !== undefined ? Number(item.net_amount) : bulananNet);
+              const totalDays = Number(item.full_days || 0) + Number(item.half_days || 0) * 0.5 || (mealAmt > 0 ? Math.round((mealAmt / 50000) * 10) / 10 : 0);
+
+              // 5. THP (Bebas Uang Makan untuk Gaji Bulanan!)
+              const gross = activeTab === "BULANAN" ? (base + overtime + bonuses) : (base + mealAmt + overtime + bonuses);
+              const bulananNet = Math.max(0, (base + overtime + bonuses) - totalDed);
+              const netThp = activeTab === "UANG_MAKAN" ? mealAmt : bulananNet;
 
               // HIDE KARTU KOSONG (ZERO STATE):
-              // Pada render daftar slip gaji pekerja, beri logika filter. Jika nilai Gaji Pokok == 0 DAN Total Lembur == 0 DAN Gaji Bersih (THP) == 0, jangan render kartu tersebut (return null).
-              if (base === 0 && overtime === 0 && netThp === 0) {
+              if (base === 0 && overtime === 0 && bonuses === 0 && netThp === 0 && mealAmt === 0) {
                 return null;
               }
 
               const isExpanded = expandedCardIds.has(item.id);
+
+              // Item khusus yang disuapkan ke AdaptivePayrollDetail dan Popup Cetak Slip
+              const itemForDetail: PayrollItemRow = {
+                ...item,
+                worker_name_snapshot: workerName,
+                worker_code_snapshot: code,
+                department_snapshot: dept,
+                base_amount: base,
+                monthly_salary_snapshot: bulananBase,
+                overtime_amount: overtime,
+                overtime_bonus: bonuses,
+                meal_amount: activeTab === "BULANAN" ? 0 : mealAmt,
+                kasbon_perusahaan_amount: kp,
+                kasbon_warung_amount: kw,
+                deduction_amount: totalDed,
+                net_amount: netThp,
+              };
 
               return (
                 <div
@@ -842,8 +882,8 @@ export function PayrollSlipManager(props: Props) {
                       {!isExpanded && (
                         <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-500 font-medium border-r border-slate-100 pr-4">
                           <div>Pokok: <b className="text-slate-800">{formatRupiah(activeTab === "UANG_MAKAN" ? mealAmt : base)}</b></div>
-                          <div>Lembur: <b className="text-slate-800">{formatRupiah(overtime)}</b></div>
-                          <div>Pot: <b className="text-rose-600">-{formatRupiah(totalDed)}</b></div>
+                          <div>Lembur: <b className="text-slate-800">{formatRupiah(activeTab === "UANG_MAKAN" ? 0 : overtime)}</b></div>
+                          <div>Pot: <b className="text-rose-600">-{formatRupiah(activeTab === "UANG_MAKAN" ? 0 : totalDed)}</b></div>
                         </div>
                       )}
                       <div className="text-right">
@@ -861,8 +901,8 @@ export function PayrollSlipManager(props: Props) {
                   {isExpanded && (
                     <div className="border-t border-slate-100 bg-slate-50/60 p-4 sm:p-5 space-y-4 rounded-b-3xl">
                       <AdaptivePayrollDetail
-                        item={item}
-                        worker={item.workers}
+                        item={itemForDetail}
+                        worker={matchedWorker || item.workers}
                         settings={settings || activeRun?.config_snapshot}
                         type={activeTab as any}
                       />
@@ -871,7 +911,7 @@ export function PayrollSlipManager(props: Props) {
                       <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-200/60">
                         <button
                           type="button"
-                          onClick={() => setViewingSlipItem(item)}
+                          onClick={() => setViewingSlipItem(itemForDetail)}
                           className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 shadow-2xs transition-all cursor-pointer"
                         >
                           <FileText className="w-3.5 h-3.5" />
@@ -882,7 +922,7 @@ export function PayrollSlipManager(props: Props) {
                           type="button"
                           onClick={() => {
                             const waUrl = buildItemWhatsAppUrl(
-                              item,
+                              itemForDetail,
                               workerName,
                               code,
                               base,
@@ -1262,12 +1302,14 @@ export function PayrollSlipManager(props: Props) {
                 </span>
               </div>
 
-              {activeTab === "BULANAN" ? (
+              {activeTab !== "UANG_MAKAN" ? (
                 <>
                   <div className="flex justify-between py-1 border-b border-dashed">
-                    <span className="text-slate-500">Gaji Pokok Bulanan</span>
+                    <span className="text-slate-500">
+                      {activeTab === "BULANAN" ? "Gaji Pokok Bulanan" : `Upah Pokok (${Number(viewingSlipItem.full_days || 0)} Hari)`}
+                    </span>
                     <span className="font-bold text-slate-800">
-                      {formatRupiah(Number(viewingSlipItem.base_amount || 0))}
+                      {formatRupiah(Number(viewingSlipItem.base_amount || viewingSlipItem.monthly_salary_snapshot || 0))}
                     </span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-dashed">
@@ -1275,35 +1317,79 @@ export function PayrollSlipManager(props: Props) {
                     <span className="font-bold text-slate-800">
                       {formatRupiah(
                         Number(viewingSlipItem.overtime_amount || 0) +
-                        Number(viewingSlipItem.manual_overtime_amount || 0) +
-                        Number(viewingSlipItem.overtime_bonus || 0)
+                        Number(viewingSlipItem.manual_overtime_amount || 0)
                       )}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
-                    <span>Potongan Kasbon Kantor</span>
-                    <span className="font-bold">
-                      -{formatRupiah(Number(viewingSlipItem.kasbon_perusahaan_amount || 0))}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-dashed text-amber-600">
-                    <span>Potongan Kasbon Warung</span>
-                    <span className="font-bold">
-                      -{formatRupiah(Number(viewingSlipItem.kasbon_warung_amount || 0))}
-                    </span>
-                  </div>
+                  {(Number(viewingSlipItem.overtime_bonus || 0) > 0 || Number(viewingSlipItem.holiday_bonus || 0) > 0) && (
+                    <div className="flex justify-between py-1 border-b border-dashed text-amber-700">
+                      <span>Bonus & Insentif Lembur/Libur</span>
+                      <span className="font-bold">
+                        +{formatRupiah(
+                          Number(viewingSlipItem.overtime_bonus || 0) +
+                          Number(viewingSlipItem.holiday_bonus || 0)
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {(() => {
+                    const kp = Number(viewingSlipItem.kasbon_perusahaan_amount || 0);
+                    return (
+                      <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
+                        <span>Potongan Kasbon Kantor</span>
+                        <span className="font-bold">
+                          {kp > 0 ? `-${formatRupiah(kp)}` : "Rp 0"}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  {(() => {
+                    const kw = Number(viewingSlipItem.kasbon_warung_amount || 0);
+                    return (
+                      <div className="flex justify-between py-1 border-b border-dashed text-amber-600">
+                        <span>Potongan Kasbon Warung</span>
+                        <span className="font-bold">
+                          {kw > 0 ? `-${formatRupiah(kw)}` : "Rp 0"}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  {(() => {
+                    const denda = Number(
+                      viewingSlipItem.late_deduction_amount ||
+                      viewingSlipItem.denda_amount ||
+                      viewingSlipItem.late_deduction ||
+                      0
+                    );
+                    return (
+                      <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
+                        <span>Potongan Denda</span>
+                        <span className="font-bold">
+                          {denda > 0 ? `-${formatRupiah(denda)}` : "Rp 0"}
+                        </span>
+                      </div>
+                    );
+                  })()}
                   <div className="flex justify-between pt-2.5 text-sm font-black text-emerald-700 bg-emerald-50/60 p-2 rounded-xl">
                     <span>TOTAL DITERIMA (THP)</span>
                     <span>
                       {formatRupiah(
+                        Number(viewingSlipItem.net_amount) ||
                         Math.max(
                           0,
-                          Number(viewingSlipItem.base_amount || 0) +
+                          Number(viewingSlipItem.base_amount || viewingSlipItem.monthly_salary_snapshot || 0) +
                           Number(viewingSlipItem.overtime_amount || 0) +
                           Number(viewingSlipItem.manual_overtime_amount || 0) +
-                          Number(viewingSlipItem.overtime_bonus || 0) -
+                          Number(viewingSlipItem.overtime_bonus || 0) +
+                          Number(viewingSlipItem.holiday_bonus || 0) -
                           Number(viewingSlipItem.kasbon_perusahaan_amount || 0) -
-                          Number(viewingSlipItem.kasbon_warung_amount || 0)
+                          Number(viewingSlipItem.kasbon_warung_amount || 0) -
+                          Number(
+                            viewingSlipItem.late_deduction_amount ||
+                            viewingSlipItem.denda_amount ||
+                            viewingSlipItem.late_deduction ||
+                            0
+                          )
                         )
                       )}
                     </span>
@@ -1312,7 +1398,7 @@ export function PayrollSlipManager(props: Props) {
               ) : (
                 <div className="flex justify-between pt-2 text-sm font-black text-emerald-600">
                   <span>TOTAL DITERIMA</span>
-                  <span>{formatRupiah(Number(viewingSlipItem.net_amount || viewingSlipItem.meal_amount || 0))}</span>
+                  <span>{formatRupiah(Number(viewingSlipItem.meal_amount || 0))}</span>
                 </div>
               )}
             </div>

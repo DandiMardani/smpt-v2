@@ -143,6 +143,7 @@ export function WorkerFinancialSummary({
   currentPeriod?: { start: string; end: string };
   latestMealSlip?: OfficialMealSlipData | null;
 }) {
+  const [activeTab, setActiveTab] = useState<"ESTIMASI" | "RIWAYAT">("ESTIMASI");
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [modalMode, setModalMode] = useState<"OFFICIAL" | "ESTIMATION">("OFFICIAL");
   const [showRulesInfo, setShowRulesInfo] = useState(false);
@@ -231,167 +232,261 @@ export function WorkerFinancialSummary({
 
   return (
     <div className="space-y-5">
-      {/* 1. SEKSI DOKUMEN SLIP RESMI (Jika Tersedia) */}
-      {officialSlip ? (
-        <div
-          className={`rounded-2xl border-2 p-5 sm:p-6 shadow-xs space-y-4 ${
-            isSlipPaid
-              ? "border-emerald-300 bg-gradient-to-br from-emerald-50/70 via-white to-emerald-50/30"
-              : "border-amber-200 bg-gradient-to-br from-amber-50/70 via-white to-amber-50/30"
-          }`}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-200/80 pb-4">
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs ${
-                    isSlipPaid ? "bg-emerald-700 text-white" : "bg-amber-600 text-white"
-                  }`}
-                >
-                  📜 {isSlipPaid ? "DOKUMEN SLIP RESMI TERVERIFIKASI" : "DRAFT SLIP PAYROLL RESMI"}
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs border ${
-                    isSlipPaid
-                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                      : "bg-amber-100 text-amber-800 border-amber-300"
-                  }`}
-                >
-                  {isSlipPaid ? "🟢 SUDAH DIBAYAR (LUNAS)" : "🟡 BELUM DIBAYAR"}
-                </span>
-              </div>
+      {/* TAB NAVIGASI: PISAHKAN BERANDA ESTIMASI REAL-TIME DAN RIWAYAT SLIP RESMI */}
+      {officialSlip && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab("ESTIMASI")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black transition cursor-pointer ${
+                activeTab === "ESTIMASI"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+              }`}
+            >
+              <span>⏱️ Estimasi Upah Berjalan (Real-time)</span>
+            </button>
 
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
-                {isSlipPaid ? "Slip Payout Resmi:" : "Draft Slip Payroll:"}{" "}
-                <span className="font-mono text-emerald-800">{officialSlip.payrollCode}</span>
-              </h2>
-
-              <p className="text-xs text-slate-600 flex flex-wrap items-center gap-2">
-                <span><b>{worker.name}</b> ({worker.worker_code})</span>
-                <span>•</span>
-                <span>Sistem Upah: <b>{officialSlip.type}</b></span>
-                <span>•</span>
-                <span>📅 <b>Periode Slip:</b> {formatDateId(officialSlip.periodStart)} s/d {formatDateId(officialSlip.periodEnd)}</span>
-              </p>
-
-              <p className={`text-[11px] font-medium flex items-center gap-1.5 ${isSlipPaid ? "text-emerald-800" : "text-amber-800"}`}>
-                <span className={`inline-block w-2 h-2 rounded-full ${isSlipPaid ? "bg-emerald-500" : "bg-amber-500"}`}></span>
-                <span>
-                  {isSlipPaid
-                    ? "Slip resmi periode ini telah dibayar lunas sesuai ketetapan manajemen. Dokumen sah tersimpan di sistem."
-                    : "Draft slip payroll telah diterbitkan oleh manajemen dan sedang menunggu jadwal pencairan."}
-                </span>
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setModalMode("OFFICIAL");
-                  setShowSlipModal(true);
-                }}
-                className={`rounded-xl px-3.5 py-2 text-xs font-bold text-white shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer ${
-                  isSlipPaid ? "bg-emerald-600 hover:bg-emerald-700" : "bg-amber-600 hover:bg-amber-700"
-                }`}
-              >
-                📄 {isSlipPaid ? "Lihat / Cetak Slip Lunas" : "Lihat Draft Slip"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const text = getOfficialSlipWhatsAppText(officialSlip);
-                  const phone = normalizePhone(worker.phone);
-                  const appUrl = phone
-                    ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-                    : `https://wa.me/?text=${encodeURIComponent(text)}`;
-                  window.open(appUrl, "_blank");
-                }}
-                className={`rounded-xl border bg-white px-3.5 py-2 text-xs font-bold shadow-2xs transition inline-flex items-center gap-1.5 cursor-pointer ${
+            <button
+              type="button"
+              onClick={() => setActiveTab("RIWAYAT")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black transition cursor-pointer ${
+                activeTab === "RIWAYAT"
+                  ? "bg-emerald-700 text-white shadow-xs"
+                  : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+              }`}
+            >
+              <span>📜 Riwayat Slip Resmi</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
                   isSlipPaid
-                    ? "border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-                    : "border-amber-600 text-amber-700 hover:bg-amber-50"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-amber-100 text-amber-800"
                 }`}
               >
-                💬 {isSlipPaid ? "Share WA Slip Lunas" : "Share WA Draft"}
-              </button>
-            </div>
-          </div>
-
-          {/* Rincian Ringkas Dokumen Slip Resmi */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl bg-white border border-gray-200/90 p-3.5 shadow-2xs">
-              <div className="text-[11px] font-semibold text-slate-500">Gaji Pokok Slip:</div>
-              <div className="mt-1 text-lg font-black text-slate-900">{money(officialSlip.baseAmount || 0)}</div>
-              <div className="mt-0.5 text-[10.5px] text-slate-500">
-                {officialSlip.type === "BORONGAN"
-                  ? `${officialSlip.totalQtyApproved || 0} pcs disetujui`
-                  : `${(officialSlip.fullDays || 0) + (officialSlip.halfDays || 0) * 0.5} hari kerja`}
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-white border border-gray-200/90 p-3.5 shadow-2xs">
-              <div className="text-[11px] font-semibold text-slate-500">Total Bruto Resmi:</div>
-              <div className="mt-1 text-lg font-black text-slate-900">{money(officialSlip.grossAmount)}</div>
-              <div className="mt-0.5 text-[10.5px] text-slate-500">
-                Lembur: {money((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0))}
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-white border border-gray-200/90 p-3.5 shadow-2xs">
-              <div className="text-[11px] font-semibold text-rose-800">Total Potongan Resmi:</div>
-              <div className="mt-1 text-lg font-black text-rose-600">-{money(officialSlip.deductionAmount)}</div>
-              <div className="mt-0.5 text-[10.5px] text-rose-700">
-                Kasbon: {money(officialSlip.kasbonPerusahaanAmount || 0)} · Warung: {money(officialSlip.kasbonWarungAmount || 0)}
-              </div>
-            </div>
-
-            <div className={`rounded-xl border p-3.5 shadow-2xs text-white ${isSlipPaid ? "bg-emerald-600 border-emerald-700" : "bg-amber-600 border-amber-700"}`}>
-              <div className="text-[11px] font-bold text-white/90 uppercase tracking-wider">
-                {isSlipPaid ? "Gaji Bersih Diterima (THP):" : "Estimasi Bersih Draft:"}
-              </div>
-              <div className="mt-1 text-xl sm:text-2xl font-black text-white">{money(officialSlip.netAmount)}</div>
-              <div className="mt-0.5 text-[10.5px] text-white/90 font-medium">
-                Status: {officialSlip.paymentStatus}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* 2. Seksi Uang Makan Staf Mingguan Terakhir (Khusus Karyawan Bulanan) */}
-      {isBulanan && latestMealSlip && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 shadow-2xs space-y-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-base">🍱</span>
-              <span className="text-xs font-bold text-amber-950">
-                Uang Makan Staf Terakhir: <b className="font-mono text-amber-900">{latestMealSlip.payrollCode}</b>
+                {isSlipPaid ? "LUNAS" : "DRAFT"}
               </span>
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black border ${
-                latestMealSlip.paymentStatus === "SUDAH DIBAYAR"
-                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                  : "bg-amber-100 text-amber-800 border-amber-300"
-              }`}>
-                {latestMealSlip.paymentStatus === "SUDAH DIBAYAR" ? "🟢 SUDAH DIBAYAR (LUNAS)" : "🟡 BELUM DIBAYAR"}
-              </span>
-            </div>
-            <span className="text-xs font-mono font-black text-amber-950">
-              {money(latestMealSlip.mealAmount)}
-            </span>
+            </button>
           </div>
-          <div className="flex flex-wrap items-center justify-between text-[11px] text-amber-900 gap-2">
-            <span>
-              📅 Periode Mingguan: <b>{formatDateId(latestMealSlip.periodStart)}</b> s/d <b>{formatDateId(latestMealSlip.periodEnd)}</b> ({latestMealSlip.fullDays} hari kerja)
-            </span>
-            <span className="text-amber-800 text-[10.5px]">
-              ℹ️ Uang makan staf dibayarkan terpisah per minggu, terpisah dari gaji pokok bulanan & lembur.
-            </span>
-          </div>
+
+          {activeTab === "ESTIMASI" && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("RIWAYAT")}
+              className="text-xs font-bold text-emerald-700 hover:text-emerald-800 underline inline-flex items-center gap-1 cursor-pointer"
+            >
+              <span>Lihat Arsip Slip ({officialSlip.payrollCode}) ➔</span>
+            </button>
+          )}
         </div>
       )}
 
-      {/* 3. SEKSI ESTIMASI GAJI SIKLUS BERJALAN (4 KARTU METRIK UTAMA) */}
+      {/* TAB 2: RIWAYAT SLIP RESMI (HANYA DITAMPILKAN JIKA TAB INI DIKLIK) */}
+      {activeTab === "RIWAYAT" && officialSlip && (
+        <div className="space-y-4">
+          <div
+            className={`rounded-2xl border-2 p-5 sm:p-6 shadow-xs space-y-4 ${
+              isSlipPaid
+                ? "border-emerald-300 bg-gradient-to-br from-emerald-50/70 via-white to-emerald-50/30"
+                : "border-amber-200 bg-gradient-to-br from-amber-50/70 via-white to-amber-50/30"
+            }`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-200/80 pb-4">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs ${
+                      isSlipPaid ? "bg-emerald-700 text-white" : "bg-amber-600 text-white"
+                    }`}
+                  >
+                    📜 {isSlipPaid ? "DOKUMEN SLIP RESMI TERVERIFIKASI" : "DRAFT SLIP PAYROLL RESMI"}
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black shadow-xs border ${
+                      isSlipPaid
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-amber-100 text-amber-800 border-amber-300"
+                    }`}
+                  >
+                    {isSlipPaid ? "🟢 SUDAH DIBAYAR (LUNAS)" : "🟡 BELUM DIBAYAR"}
+                  </span>
+                </div>
+
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
+                  {isSlipPaid ? "Slip Payout Resmi:" : "Draft Slip Payroll:"}{" "}
+                  <span className="font-mono text-emerald-800">{officialSlip.payrollCode}</span>
+                </h2>
+
+                <p className="text-xs text-slate-600 flex flex-wrap items-center gap-2">
+                  <span><b>{worker.name}</b> ({worker.worker_code})</span>
+                  <span>•</span>
+                  <span>Sistem Upah: <b>{officialSlip.type}</b></span>
+                  <span>•</span>
+                  <span>📅 <b>Periode Slip:</b> {formatDateId(officialSlip.periodStart)} s/d {formatDateId(officialSlip.periodEnd)}</span>
+                </p>
+
+                <p className={`text-[11px] font-medium flex items-center gap-1.5 ${isSlipPaid ? "text-emerald-800" : "text-amber-800"}`}>
+                  <span className={`inline-block w-2 h-2 rounded-full ${isSlipPaid ? "bg-emerald-500" : "bg-amber-500"}`}></span>
+                  <span>
+                    {isSlipPaid
+                      ? "Slip resmi periode ini telah dibayar lunas sesuai ketetapan manajemen. Dokumen sah tersimpan di arsip sistem."
+                      : "Draft slip payroll telah diterbitkan oleh manajemen dan sedang menunggu jadwal pencairan."}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalMode("OFFICIAL");
+                    setShowSlipModal(true);
+                  }}
+                  className={`rounded-xl px-3.5 py-2 text-xs font-bold text-white shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer ${
+                    isSlipPaid ? "bg-emerald-600 hover:bg-emerald-700" : "bg-amber-600 hover:bg-amber-700"
+                  }`}
+                >
+                  📄 {isSlipPaid ? "Lihat / Cetak Slip Lunas" : "Lihat Draft Slip"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = getOfficialSlipWhatsAppText(officialSlip);
+                    const phone = normalizePhone(worker.phone);
+                    const appUrl = phone
+                      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+                      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+                    window.open(appUrl, "_blank");
+                  }}
+                  className={`rounded-xl border bg-white px-3.5 py-2 text-xs font-bold shadow-2xs transition inline-flex items-center gap-1.5 cursor-pointer ${
+                    isSlipPaid
+                      ? "border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                      : "border-amber-600 text-amber-700 hover:bg-amber-50"
+                  }`}
+                >
+                  💬 {isSlipPaid ? "Share WA Slip Lunas" : "Share WA Draft"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("ESTIMASI")}
+                  className="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 shadow-2xs transition inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  ← Kembali ke Estimasi
+                </button>
+              </div>
+            </div>
+
+            {/* Rincian Ringkas Dokumen Slip Resmi */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl bg-white border border-gray-200/90 p-3.5 shadow-2xs">
+                <div className="text-[11px] font-semibold text-slate-500">Gaji Pokok Slip:</div>
+                <div className="mt-1 text-lg font-black text-slate-900">{money(officialSlip.baseAmount || 0)}</div>
+                <div className="mt-0.5 text-[10.5px] text-slate-500">
+                  {officialSlip.type === "BORONGAN"
+                    ? `${officialSlip.totalQtyApproved || 0} pcs disetujui`
+                    : `${(officialSlip.fullDays || 0) + (officialSlip.halfDays || 0) * 0.5} hari kerja`}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-white border border-gray-200/90 p-3.5 shadow-2xs">
+                <div className="text-[11px] font-semibold text-slate-500">Total Bruto Resmi:</div>
+                <div className="mt-1 text-lg font-black text-slate-900">{money(officialSlip.grossAmount)}</div>
+                <div className="mt-0.5 text-[10.5px] text-slate-500">
+                  Lembur: {money((officialSlip.overtimeAmount || 0) + (officialSlip.manualOvertimeAmount || 0))}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-white border border-gray-200/90 p-3.5 shadow-2xs">
+                <div className="text-[11px] font-semibold text-rose-800">Total Potongan Resmi:</div>
+                <div className="mt-1 text-lg font-black text-rose-600">-{money(officialSlip.deductionAmount)}</div>
+                <div className="mt-0.5 text-[10.5px] text-rose-700">
+                  Kasbon: {money(officialSlip.kasbonPerusahaanAmount || 0)} · Warung: {money(officialSlip.kasbonWarungAmount || 0)}
+                </div>
+              </div>
+
+              <div className={`rounded-xl border p-3.5 shadow-2xs text-white ${isSlipPaid ? "bg-emerald-600 border-emerald-700" : "bg-amber-600 border-amber-700"}`}>
+                <div className="text-[11px] font-bold text-white/90 uppercase tracking-wider">
+                  {isSlipPaid ? "Gaji Bersih Diterima (THP):" : "Estimasi Bersih Draft:"}
+                </div>
+                <div className="mt-1 text-xl sm:text-2xl font-black text-white">{money(officialSlip.netAmount)}</div>
+                <div className="mt-0.5 text-[10.5px] text-white/90 font-medium">
+                  Status: {officialSlip.paymentStatus}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Seksi Uang Makan Staf Mingguan Terakhir (Khusus Karyawan Bulanan) di tab Riwayat */}
+          {isBulanan && latestMealSlip && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 shadow-2xs space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🍱</span>
+                  <span className="text-xs font-bold text-amber-950">
+                    Uang Makan Staf Terakhir: <b className="font-mono text-amber-900">{latestMealSlip.payrollCode}</b>
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black border ${
+                    latestMealSlip.paymentStatus === "SUDAH DIBAYAR"
+                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                      : "bg-amber-100 text-amber-800 border-amber-300"
+                  }`}>
+                    {latestMealSlip.paymentStatus === "SUDAH DIBAYAR" ? "🟢 SUDAH DIBAYAR (LUNAS)" : "🟡 BELUM DIBAYAR"}
+                  </span>
+                </div>
+                <span className="text-xs font-mono font-black text-amber-950">
+                  {money(latestMealSlip.mealAmount)}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between text-[11px] text-amber-900 gap-2">
+                <span>
+                  📅 Periode Mingguan: <b>{formatDateId(latestMealSlip.periodStart)}</b> s/d <b>{formatDateId(latestMealSlip.periodEnd)}</b> ({latestMealSlip.fullDays} hari kerja)
+                </span>
+                <span className="text-amber-800 text-[10.5px]">
+                  ℹ️ Uang makan staf dibayarkan terpisah per minggu, terpisah dari gaji pokok bulanan & lembur.
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 1: BERANDA ESTIMASI GAJI SIKLUS BERJALAN (REAL-TIME) */}
+      {activeTab === "ESTIMASI" && (
+        <div className="space-y-4">
+          {/* Uang Makan Staf Mingguan Terakhir (Khusus Karyawan Bulanan) */}
+          {isBulanan && latestMealSlip && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 shadow-2xs space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🍱</span>
+                  <span className="text-xs font-bold text-amber-950">
+                    Uang Makan Staf Terakhir: <b className="font-mono text-amber-900">{latestMealSlip.payrollCode}</b>
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black border ${
+                    latestMealSlip.paymentStatus === "SUDAH DIBAYAR"
+                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                      : "bg-amber-100 text-amber-800 border-amber-300"
+                  }`}>
+                    {latestMealSlip.paymentStatus === "SUDAH DIBAYAR" ? "🟢 SUDAH DIBAYAR (LUNAS)" : "🟡 BELUM DIBAYAR"}
+                  </span>
+                </div>
+                <span className="text-xs font-mono font-black text-amber-950">
+                  {money(latestMealSlip.mealAmount)}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between text-[11px] text-amber-900 gap-2">
+                <span>
+                  📅 Periode Mingguan: <b>{formatDateId(latestMealSlip.periodStart)}</b> s/d <b>{formatDateId(latestMealSlip.periodEnd)}</b> ({latestMealSlip.fullDays} hari kerja)
+                </span>
+                <span className="text-amber-800 text-[10.5px]">
+                  ℹ️ Uang makan staf dibayarkan terpisah per minggu, terpisah dari gaji pokok bulanan & lembur.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* SEKSI ESTIMASI GAJI SIKLUS BERJALAN (4 KARTU METRIK UTAMA) */}
       <div className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50/50 via-white to-amber-50/30 p-5 sm:p-6 shadow-xs space-y-5">
         {/* Header Kartu Berjalan */}
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-200/80 pb-4">
@@ -754,6 +849,9 @@ export function WorkerFinancialSummary({
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )}
 
         {/* Modal Cetak Slip Resmi / Estimasi */}
         {showSlipModal && (
@@ -871,7 +969,12 @@ export function WorkerFinancialSummary({
                   <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
                     <span>Potongan Kasbon Kantor</span>
                     <span className="font-bold">
-                      -{money(modalMode === "OFFICIAL" && officialSlip ? (officialSlip.kasbonPerusahaanAmount || 0) : activeLoanDeduction)}
+                      {(() => {
+                        const kp = modalMode === "OFFICIAL" && officialSlip
+                          ? Number(officialSlip.kasbonPerusahaanAmount || 0)
+                          : Number(activeLoanDeduction || 0);
+                        return kp > 0 ? `-${money(kp)}` : "Rp 0";
+                      })()}
                     </span>
                   </div>
 
@@ -879,7 +982,25 @@ export function WorkerFinancialSummary({
                   <div className="flex justify-between py-1 border-b border-dashed text-amber-600">
                     <span>Potongan Kasbon Warung</span>
                     <span className="font-bold">
-                      -{money(modalMode === "OFFICIAL" && officialSlip ? (officialSlip.kasbonWarungAmount || 0) : totalWarung)}
+                      {(() => {
+                        const kw = modalMode === "OFFICIAL" && officialSlip
+                          ? Number(officialSlip.kasbonWarungAmount || 0)
+                          : Number(totalWarung || 0);
+                        return kw > 0 ? `-${money(kw)}` : "Rp 0";
+                      })()}
+                    </span>
+                  </div>
+
+                  {/* Denda */}
+                  <div className="flex justify-between py-1 border-b border-dashed text-rose-600">
+                    <span>Potongan Denda</span>
+                    <span className="font-bold">
+                      {(() => {
+                        const denda = modalMode === "OFFICIAL" && officialSlip
+                          ? Number((officialSlip as any).dendaAmount || (officialSlip as any).lateDeduction || 0)
+                          : 0;
+                        return denda > 0 ? `-${money(denda)}` : "Rp 0";
+                      })()}
                     </span>
                   </div>
 
@@ -925,7 +1046,6 @@ export function WorkerFinancialSummary({
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

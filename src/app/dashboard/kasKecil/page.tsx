@@ -1,26 +1,20 @@
 import {
-  Badge,
   Card,
-  Empty,
   Field,
-  Flow,
   Metric,
   Notice,
   PageShell,
   ReadOnly,
-  TableWrap,
-  Td,
-  Th,
   buttonClass,
   inputClass,
-  secondaryClass,
 } from "@/components/final/final-ui";
 import { requirePermission } from "@/lib/access/current-user";
-import { money, n, param, qty, type SearchParams } from "@/lib/final/final-utils";
+import { money, n, param, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
-import { addPettyCashAction, deletePettyCashAction } from "@/lib/final/actions";
+import { addPettyCashAction } from "@/lib/final/actions";
 import { NotaUploadInput } from "./nota-upload-input";
 import { ExportKasKecilBar, type PettyCashItem } from "./export-kas-kecil";
+import { KasKecilTable } from "./kas-kecil-table";
 
 type Props = { searchParams: Promise<SearchParams> };
 
@@ -33,6 +27,7 @@ export default async function Page({ searchParams }: Props) {
   const r = await s
     .from("petty_cash_transactions")
     .select("*")
+    .eq("status", "AKTIF")
     .order("transaction_date", { ascending: false })
     .limit(500);
 
@@ -110,91 +105,7 @@ export default async function Page({ searchParams }: Props) {
       <ExportKasKecilBar data={transactions} />
 
       <Card title="Riwayat">
-        <TableWrap>
-          <thead>
-            <tr>
-              <Th>Kode</Th>
-              <Th>Tanggal</Th>
-              <Th>Arah</Th>
-              <Th>Kategori</Th>
-              <Th>Nominal</Th>
-              <Th>Bukti Nota</Th>
-              <Th>Status</Th>
-              {can ? <Th className="text-right">Aksi</Th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.length === 0 ? (
-              <tr>
-                <Td colSpan={8}>
-                  <Empty>Belum ada transaksi kas kecil.</Empty>
-                </Td>
-              </tr>
-            ) : (
-              transactions.map((x) => (
-                <tr key={x.id} className={x.status === "DIBATALKAN" ? "opacity-40 bg-slate-50" : ""}>
-                  <Td className="font-mono font-semibold">{x.transaction_code}</Td>
-                  <Td>{x.transaction_date}</Td>
-                  <Td>
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        x.direction === "MASUK"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : "bg-rose-50 text-rose-700 border border-rose-200"
-                      }`}
-                    >
-                      {x.direction}
-                    </span>
-                  </Td>
-                  <Td>{x.category}</Td>
-                  <Td className="font-mono font-semibold">{money(x.amount)}</Td>
-                  <Td>
-                    {x.receipt_url ? (
-                      <a
-                        href={x.receipt_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition"
-                      >
-                        🧾 Lihat
-                      </a>
-                    ) : (
-                      <span className="text-slate-400 text-xs">-</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
-                        x.status === "DIBATALKAN"
-                          ? "bg-slate-100 text-slate-500 line-through"
-                          : "bg-blue-50 text-blue-700"
-                      }`}
-                    >
-                      {x.status}
-                    </span>
-                  </Td>
-                  {can ? (
-                    <Td className="text-right">
-                      {x.status === "AKTIF" ? (
-                        <form action={deletePettyCashAction}>
-                          <input type="hidden" name="id" value={x.id} />
-                          <button
-                            type="submit"
-                            className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-100 transition active:scale-95"
-                          >
-                            Hapus
-                          </button>
-                        </form>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic">Dibatalkan</span>
-                      )}
-                    </Td>
-                  ) : null}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </TableWrap>
+        <KasKecilTable initialTransactions={transactions} can={can} />
       </Card>
     </PageShell>
   );

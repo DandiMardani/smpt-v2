@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "modules": {
+    "kernel": { "path": "ddt/kernel.md", "kind": "boundary" },
+    "scope-control": { "path": "ddt/policies/scope-control.md", "kind": "policy" },
+    "execution-discipline": { "path": "ddt/policies/execution-discipline.md", "kind": "policy" },
+    "ponytail": { "path": "ddt/policies/ponytail.md", "kind": "policy" },
+    "knowledge-grounding": { "path": "ddt/policies/knowledge-grounding.md", "kind": "policy" },
+    "untrusted-content": { "path": "ddt/policies/untrusted-content.md", "kind": "policy" },
+    "investigate": { "path": "skills/investigate/SKILL.md", "kind": "workflow" },
+    "verify-change": { "path": "skills/verify-change/SKILL.md", "kind": "workflow" },
+    "update-repository-context": { "path": "skills/update-repository-context/SKILL.md", "kind": "workflow" }
+  },
+  "roles": {
+    "project-orchestrator": { "required": ["kernel", "scope-control", "untrusted-content"], "default": ["ponytail", "knowledge-grounding"], "conditional": { "routing-ambiguity": ["investigate"] } },
+    "review-panel": { "required": ["kernel", "scope-control", "untrusted-content"], "default": [], "conditional": { "proposal-review": ["ponytail", "knowledge-grounding"] } },
+    "solution-architect": { "required": ["kernel", "scope-control", "untrusted-content"], "default": ["ponytail", "knowledge-grounding"], "conditional": { "uncertain-evidence": ["investigate"], "verification": ["verify-change"] } },
+    "backend-engineer": { "required": ["kernel", "scope-control", "execution-discipline", "untrusted-content"], "default": ["ponytail", "knowledge-grounding"], "conditional": { "diagnosis": ["investigate"], "verification": ["verify-change"] } },
+    "frontend-engineer": { "required": ["kernel", "scope-control", "execution-discipline", "untrusted-content"], "default": ["ponytail", "knowledge-grounding"], "conditional": { "diagnosis": ["investigate"], "verification": ["verify-change"] } },
+    "qa-testing": { "required": ["kernel", "scope-control", "execution-discipline", "untrusted-content"], "default": ["knowledge-grounding", "verify-change"], "conditional": { "diagnosis": ["investigate"] } },
+    "code-reviewer": { "required": ["kernel", "scope-control", "untrusted-content"], "default": ["ponytail", "knowledge-grounding"], "conditional": { "verification-evidence": ["verify-change"] } },
+    "consistency-guardian": { "required": ["kernel", "scope-control", "untrusted-content"], "default": ["knowledge-grounding"], "conditional": { "unresolved-drift": ["investigate"] } },
+    "security-engineer": { "required": ["kernel", "scope-control", "untrusted-content"], "default": ["knowledge-grounding"], "conditional": { "unresolved-threat": ["investigate"], "security-verification": ["verify-change"] } },
+    "devops-engineer": { "required": ["kernel", "scope-control", "execution-discipline", "untrusted-content"], "default": ["ponytail", "knowledge-grounding"], "conditional": { "incident": ["investigate"], "verification": ["verify-change"] } },
+    "product-knowledge": { "required": ["kernel", "scope-control", "untrusted-content"], "default": ["knowledge-grounding"], "conditional": { "durable-update": ["update-repository-context"], "verification": ["verify-change"] } }
+  },
+  "workflows": {
+    "investigate": { "required": ["kernel", "scope-control", "execution-discipline", "knowledge-grounding", "untrusted-content"] },
+    "verify-change": { "required": ["kernel", "scope-control", "execution-discipline", "knowledge-grounding", "untrusted-content"] },
+    "update-repository-context": { "required": ["kernel", "scope-control", "knowledge-grounding", "untrusted-content"] }
+  }
+}

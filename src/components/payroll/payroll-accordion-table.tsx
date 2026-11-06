@@ -65,7 +65,8 @@ export function AdaptivePayrollDetail({
   const manualOtHours = Number(item.manual_overtime_hours || item.overtime_manual_hours || 0);
   const otBonus = Number(item.overtime_bonus || 0);
   const holidayBonus = Number(item.holiday_bonus || 0);
-  const totalOvertime = overtimeBase + manualOt + otBonus;
+  const totalBonus = otBonus + holidayBonus;
+  const totalOvertime = overtimeBase + manualOt;
 
   const otMinutes = Number(item.overtime_minutes || 0);
   const otHours = Math.round((otMinutes / 60) * 10) / 10;
@@ -86,17 +87,21 @@ export function AdaptivePayrollDetail({
       (totalDays > 0 ? Math.round(base / totalDays) : 0)
   );
 
-  const kp = Number(item.kasbon_perusahaan_amount || 0);
-  const kw = Number(item.kasbon_warung_amount || 0);
-  const denda = Number(
-    item.late_deduction_amount ||
-      item.denda_amount ||
-      item.late_deduction ||
-      0
-  );
-  const totalDed = Number(item.deduction_amount ?? (kp + kw + denda));
-  const gross = isUangMakan ? meal + totalOvertime : base + totalOvertime + meal;
-  const net = isUangMakan ? meal + totalOvertime : Math.max(0, gross - totalDed);
+  const kp = Number.isFinite(Number(item.kasbon_perusahaan_amount)) ? Math.max(0, Number(item.kasbon_perusahaan_amount)) : 0;
+  const kw = Number.isFinite(Number(item.kasbon_warung_amount)) ? Math.max(0, Number(item.kasbon_warung_amount)) : 0;
+  const denda = Number.isFinite(
+    Number(item.late_deduction_amount || item.denda_amount || item.late_deduction)
+  )
+    ? Math.max(0, Number(item.late_deduction_amount || item.denda_amount || item.late_deduction))
+    : 0;
+  const rawDed = item.deduction_amount ?? (kp + kw + denda);
+  const totalDed = Number.isFinite(Number(rawDed)) ? Math.max(0, Number(rawDed)) : (kp + kw + denda);
+  const gross = isUangMakan
+    ? meal + totalOvertime + totalBonus
+    : base + totalOvertime + totalBonus + meal;
+  const net = isUangMakan
+    ? meal + totalOvertime + totalBonus
+    : Math.max(0, gross - totalDed);
 
   return (
     <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs space-y-4 text-xs">
@@ -120,10 +125,11 @@ export function AdaptivePayrollDetail({
         </div>
       </div>
 
-      {/* Grid 4 Kolom Perhitungan Lengkap */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Grid 4 Kolom Perhitungan Lengkap (Responsive & Scrollable) */}
+      <div className="w-full overflow-x-auto pb-2 scrollbar-thin">
+        <div className="flex flex-nowrap sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 min-w-[720px] sm:min-w-0">
         {/* 1. Gaji / Upah Pokok */}
-        <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-1.5">
+        <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-blue-700">1. Upah / Gaji Pokok</span>
             <span className="text-[11px] font-black text-blue-900">{money(isUangMakan ? meal : base)}</span>
@@ -153,7 +159,7 @@ export function AdaptivePayrollDetail({
         </div>
 
         {/* 2. Uang Lembur Dasar (Standar) */}
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-1.5">
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-indigo-700">2. Lembur Dasar</span>
             <span className="text-[11px] font-black text-indigo-900">{money(overtimeBase)}</span>
@@ -174,7 +180,7 @@ export function AdaptivePayrollDetail({
         </div>
 
         {/* 3. BONUS LEMBUR (Dinamis dari Konfigurasi Sistem) */}
-        <div className="rounded-xl border border-amber-100 bg-amber-50/40 p-3 space-y-1.5">
+        <div className="rounded-xl border border-amber-100 bg-amber-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-amber-800">3. Bonus & Insentif</span>
             <span className="text-[11px] font-black text-amber-900">
@@ -205,10 +211,12 @@ export function AdaptivePayrollDetail({
         </div>
 
         {/* 4. Rincian Potongan */}
-        <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3 space-y-1.5">
+        <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-rose-700">4. Rincian Potongan</span>
-            <span className="text-[11px] font-black text-rose-800">-{money(totalDed)}</span>
+            <span className="text-[11px] font-black text-rose-800">
+              {totalDed > 0 ? `-${money(totalDed)}` : "Rp 0"}
+            </span>
           </div>
           <div className="text-[11px] text-slate-600 space-y-1">
             <div className="flex justify-between items-center">
@@ -237,6 +245,7 @@ export function AdaptivePayrollDetail({
             )}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Baris Ringkasan Kalkulasi Akhir */}
@@ -379,13 +388,17 @@ export default function PayrollAccordionTable({
               const base = Number(item.base_amount || 0);
               const overtime =
                 Number(item.overtime_amount || 0) +
-                Number(item.manual_overtime_amount || 0) +
-                Number(item.overtime_bonus || 0);
+                Number(item.manual_overtime_amount || 0);
+              const bonuses =
+                Number(item.overtime_bonus || 0) +
+                Number(item.holiday_bonus || 0);
               const kp = Number(item.kasbon_perusahaan_amount || 0);
               const kw = Number(item.kasbon_warung_amount || 0);
               const ded = kp + kw;
-              const gross = base + overtime + Number(item.meal_amount || 0);
-              const net = type === "UANG_MAKAN" ? Number(item.meal_amount || 0) : Math.max(0, gross - ded);
+              const gross = base + overtime + bonuses + Number(item.meal_amount || 0);
+              const net = type === "UANG_MAKAN"
+                ? Number(item.meal_amount || 0) + overtime + bonuses
+                : Math.max(0, gross - ded);
               const isPaid = (item as any).payment_status === "PAID";
 
               const fullDays = Number(item.full_days || 0);
@@ -442,8 +455,8 @@ export default function PayrollAccordionTable({
                     </td>
 
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                      <div className={`font-semibold ${overtime > 0 ? "text-blue-700" : "text-slate-500"}`}>
-                        {money(overtime)}
+                      <div className={`font-semibold ${(overtime + bonuses) > 0 ? "text-blue-700" : "text-slate-500"}`}>
+                        {money(overtime + bonuses)}
                       </div>
                       {otMinutes > 0 ? (
                         <div className="text-[10px] font-bold text-blue-600">
