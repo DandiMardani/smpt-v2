@@ -309,9 +309,15 @@ export function calculateShiftOvertime(
     }
   }
 
+    // 1. Tambahkan manualOvertimeMinutes ke total menit lembur harian untuk evaluasi bonus 4H
+  const totalEffectiveMinutes = calculatedOtMinutes + (manualOvertimeMinutes || 0);
+  
   const otHours = Math.round((calculatedOtMinutes / 60) * 10) / 10;
-  const qualifies4h = calculatedOtMinutes >= 240;
+  
+  // 2. Evaluasi qualifies4h menggunakan totalEffectiveMinutes
+  const qualifies4h = totalEffectiveMinutes >= 240;
   const bonus4h = qualifies4h ? bonus4hDefault : 0;
+
   const sundayBonus = sundayBonusDefault;
   const sundayMeal = sundayMealDefault;
   const fridayOvertimeNextWeek = isFriday && calculatedOtMinutes > 0;
