@@ -423,23 +423,35 @@ export default async function Page() {
         isSunday = new Date(y, m, d).getDay() === 0;
       }
 
-      const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+            // 1. Ambil OT dari absen mesin (hanya menit asli murni tanpa manual)
+      const actualOtMinutes = Number(a.overtime_minutes || 0);
+      
+      // 2. Ambil OT dari input manual Admin (jam diubah ke menit)
+      const manualOtMinutes = Number(a.manual_overtime_hours || 0) * 60;
+      
+      // 3. Total OT yang diakui untuk penjumlahan agregat jam lembur
+      const rawDayOt = actualOtMinutes + manualOtMinutes;
       otMins += rawDayOt;
+
+      // 4. KUNCI NYA DI SINI: Total Evaluasi Shift 4H 
+      // (mesin absen murni + input manual 2 jam dari Admin = total diakui 4H/240 mnt)
+      const effectiveShiftOt = actualOtMinutes + manualOtMinutes;
 
       if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
         sundayCount += 1;
-        // Shift normal Minggu adalah 8 jam (480 menit).
-        // Bonus lembur hanya terhitung jika ada lembur malam di atas jam 17:00 (>= 12 jam total kerja)
+        
         if (isBulananWorker) {
-          if (rawDayOt >= 720) count4h += 1;
+          // Minggu Bulanan: 8 jam normal + 4 jam tambahan malam = 12 jam (720 mnt)
+          if (effectiveShiftOt >= 720) count4h += 1; 
         } else {
-          if (rawDayOt >= 240) count4h += 1;
+          // Minggu Harian: 4 jam lembur (240 mnt)
+          if (effectiveShiftOt >= 240) count4h += 1; 
         }
       } else {
-        // Hari biasa: lembur >= 4 jam (>17:00) mendapat bonus
-        if (rawDayOt >= 240) count4h += 1;
+        // Hari biasa (Senin-Sabtu): lembur >= 4 jam (240 mnt) mendapat bonus
+        if (effectiveShiftOt >= 240) count4h += 1;
       }
-    }
+
 
     workedDays = fullDays + (halfDays * 0.5);
     overtimeHours = Math.round((otMins / 60) * 10) / 10;
