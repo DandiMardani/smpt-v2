@@ -650,7 +650,7 @@ export default async function Page({ searchParams }: Props) {
                         </td>
                         <td className="px-3 py-3 text-center text-xs text-slate-500">-</td>
                         <td className="px-3 py-3 text-right text-amber-800 text-sm">{money(totMealBase)}</td>
-                        <td className="px-3 py-3 text-right text-slate-700">{money(totMealOt)}</td>
+                        <td className="px-3 py-3 text-right text-slate-700">{money(0)}</td>
                         <td className="px-3 py-3 text-right bg-emerald-100 text-emerald-800 text-sm">
                           {money(totMealNet)}
                         </td>
