@@ -81,7 +81,8 @@ export default async function AuditPayrollPage() {
   settingsRows.forEach(r => settingsMap[r.key] = r.value_numeric ?? r.value_text);
   const workerMap = new Map(workers.map(w => [w.id, w]));
 
-  const simulatedItems: any[] = [];
+  const simulatedItemsHarian: any[] = [];
+  const simulatedItemsBulanan: any[] = [];
   const rawAuditLogs: any[] = [];
   const boronganTotals = new Map<number, number>();
 
@@ -126,12 +127,13 @@ export default async function AuditPayrollPage() {
     let fullDays = 0, halfDays = 0, otMins = 0, count4h = 0, sundayCount = 0, manualOtHours = 0;
     const myAtts = allAtts.filter(a => a.worker_id === worker.id);
     
+    // --- LOGIKA SINKRONISASI SAMA PERSIS DENGAN HP USER ---
     for (const a of myAtts) {
-      // 🚨 FIX: Filter ketat dilepas agar Cutoff dari minggu lalu bisa lewat dengan selamat!
+      if (isPaid && paidPeriodEnd && a.attendance_date <= paidPeriodEnd) continue;
+      
       const linkedRuns = Array.isArray((a as any).payroll_run_details) ? (a as any).payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean) : [];
       const hasFinalizedRun = linkedRuns.some((r: any) => r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR");
       
-      // Jika data absen sudah diikat kuat ke dalam Slip yang berstatus Final/Lunas, baru kita lewati
       if (hasFinalizedRun || a.verification_status === "DITOLAK") continue;
 
       const isWithin = a.attendance_date >= currentPeriod.start && a.attendance_date <= currentPeriod.end;
@@ -148,7 +150,7 @@ export default async function AuditPayrollPage() {
         const noteStr = String(a.notes || "").toLowerCase();
         const hasCutoffNote = noteStr.includes("cutoff") || noteStr.includes("slip depan") || noteStr.includes("titipan");
         
-        if (!isFridayCutoff && !hasCutoffNote) continue;
+        if (!isFridayCutoff && !hasCutoffNote) continue; 
         isCutoff = true;
       }
 
@@ -163,6 +165,7 @@ export default async function AuditPayrollPage() {
         manualOt: a.manual_overtime_hours
       });
 
+      // HANYA hitung gaji pokok (hari kerja) jika absen ada di periode aktif minggu ini!
       if (isWithin && a.attendance_status === "HADIR") {
         if (a.day_class === "HALF_DAY") halfDays++;
         else fullDays++;
@@ -174,14 +177,16 @@ export default async function AuditPayrollPage() {
         isSunday = new Date(parseInt(parts[0], 10), (parseInt(parts[1], 10) || 1) - 1, parseInt(parts[2], 10)).getDay() === 0;
       }
 
+      // Lembur tetap diakumulasi semua (baik dari periode ini atau cutoff minggu lalu)
       otMins += rawDayOt;
       manualOtHours += Number(a.manual_overtime_hours || 0);
 
+      const effectiveShiftOt = rawDayOt;
       if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
         sundayCount++;
-        if (paySystem === "BULANAN" && rawDayOt >= 720) count4h++;
-        if (paySystem !== "BULANAN" && rawDayOt >= 240) count4h++;
-      } else if (rawDayOt >= 240) {
+        if (paySystem === "BULANAN" && effectiveShiftOt >= 720) count4h++;
+        if (paySystem !== "BULANAN" && effectiveShiftOt >= 240) count4h++;
+      } else if (effectiveShiftOt >= 240) {
         count4h++;
       }
     }
@@ -195,7 +200,7 @@ export default async function AuditPayrollPage() {
       const moSal = Number(worker.monthly_salary || 0);
       const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
       const otHourly = moSal > 0 ? moSal / Math.max(1, otDiv) : 0;
-      baseAmt = moSal;
+      baseAmt = moSal; 
       otAmt = Math.round((otMins / 60) * otHourly);
       otBonus = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
     } else {
@@ -223,7 +228,7 @@ export default async function AuditPayrollPage() {
     const gross = baseAmt + otAmt + otBonus + holBonus;
     const ded = kasbonP + kasbonW;
 
-    simulatedItems.push({
+    const simItem = {
       id: worker.id, 
       worker_id: worker.id,
       worker_name_snapshot: worker.name,
@@ -243,11 +248,15 @@ export default async function AuditPayrollPage() {
       kasbon_warung_amount: kasbonW,
       deduction_amount: ded,
       net_amount: Math.max(0, gross - ded)
-    });
+    };
+
+    if (paySystem === "BULANAN") {
+      simulatedItemsBulanan.push(simItem);
+    } else {
+      simulatedItemsHarian.push(simItem);
+    }
   }
 
-  // Bikin urutan biar gampang dicari (Harian di atas, Bulanan di bawah)
-  simulatedItems.sort((a, b) => b.pay_system_snapshot.localeCompare(a.pay_system_snapshot));
   rawAuditLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
@@ -270,13 +279,79 @@ export default async function AuditPayrollPage() {
         Seluruh kotak rincian di bawah ini adalah <b>SIMULASI LANGSUNG (LIVE)</b>. Angkanya akan persis sama dengan yang dilihat pekerja di HP mereka. Halaman ini aman dipakai untuk patokan Admin karena tidak mengubah data *Payroll* asli.
       </Flow>
 
-      {/* --- DIPINDAH KE ATAS: SIMULASI BORONGAN OPERATOR --- */}
-      {boronganTotals.size > 0 && (
-        <div className="mt-6 mb-8 border-b-2 border-dashed border-slate-200 pb-8">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <span className="bg-rose-500 w-2 h-2 rounded-full animate-ping"></span>
-            LIVE: Operator Borongan
-          </h2>
+      {/* --- SEKSI 1: KARYAWAN HARIAN --- */}
+      <div className="mt-8 border-t-2 border-slate-200 pt-6">
+        <h2 className="text-sm font-black text-emerald-800 uppercase tracking-wide mb-4 flex items-center gap-2">
+          <span className="bg-emerald-500 w-2 h-2 rounded-full animate-ping"></span>
+          LIVE: Pekerja Harian
+        </h2>
+        <div className="space-y-6">
+          {simulatedItemsHarian.length === 0 ? (
+            <Empty>Belum ada data absensi/lembur pekerja harian di siklus ini.</Empty>
+          ) : (
+            simulatedItemsHarian.map(item => (
+              <div key={item.id} className="relative">
+                <div className="absolute -top-3 left-4 z-10 flex gap-2">
+                  <span className="bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black shadow-sm flex items-center gap-1">
+                    LIVE
+                  </span>
+                  <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-200 shadow-sm">
+                    Estimasi Harian Berjalan
+                  </span>
+                </div>
+                <AdaptivePayrollDetail 
+                  item={item} 
+                  worker={workerMap.get(item.worker_id)} 
+                  settings={settingsMap} 
+                  type="HARIAN" 
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* --- SEKSI 2: STAF BULANAN --- */}
+      <div className="mt-12 border-t-2 border-slate-200 pt-6">
+        <h2 className="text-sm font-black text-blue-800 uppercase tracking-wide mb-4 flex items-center gap-2">
+          <span className="bg-blue-500 w-2 h-2 rounded-full animate-ping"></span>
+          LIVE: Staf Karyawan Bulanan
+        </h2>
+        <div className="space-y-6">
+          {simulatedItemsBulanan.length === 0 ? (
+            <Empty>Belum ada data absensi/lembur staf bulanan di siklus ini.</Empty>
+          ) : (
+            simulatedItemsBulanan.map(item => (
+              <div key={item.id} className="relative">
+                <div className="absolute -top-3 left-4 z-10 flex gap-2">
+                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] font-black shadow-sm flex items-center gap-1">
+                    LIVE
+                  </span>
+                  <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-bold border border-blue-200 shadow-sm">
+                    Estimasi Bulanan Berjalan
+                  </span>
+                </div>
+                <AdaptivePayrollDetail 
+                  item={item} 
+                  worker={workerMap.get(item.worker_id)} 
+                  settings={settingsMap} 
+                  type="BULANAN" 
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* --- SEKSI 3: OPERATOR BORONGAN --- */}
+      <div className="mt-12 border-t-2 border-slate-200 pt-6">
+        <h2 className="text-sm font-black text-violet-800 uppercase tracking-wide mb-4 flex items-center gap-2">
+          <span className="bg-violet-500 w-2 h-2 rounded-full animate-ping"></span>
+          LIVE: Operator Borongan
+        </h2>
+        {boronganTotals.size === 0 ? (
+          <Empty>Belum ada nilai produksi (Qty Sah) operator borongan yang berjalan.</Empty>
+        ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from(boronganTotals.entries()).map(([wId, total]) => {
               const w = workerMap.get(wId);
@@ -291,39 +366,7 @@ export default async function AuditPayrollPage() {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* --- RINCIAN ADAPTIF REAL-TIME PER PEKERJA (HARIAN & BULANAN) --- */}
-      <div>
-        <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide mb-4 flex items-center gap-2">
-          <span className="bg-rose-500 w-2 h-2 rounded-full animate-ping"></span>
-          LIVE: Harian & Bulanan
-        </h2>
-        <div className="space-y-6">
-          {simulatedItems.length === 0 ? (
-            <Empty>Belum ada data absensi/lembur aktif yang masuk di siklus ini.</Empty>
-          ) : (
-            simulatedItems.map(item => (
-              <div key={item.id} className="relative">
-                <div className="absolute -top-3 left-4 z-10 flex gap-2">
-                  <span className="bg-rose-500 text-white px-2 py-0.5 rounded text-[10px] font-black shadow-sm flex items-center gap-1">
-                    LIVE
-                  </span>
-                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-bold shadow-sm">
-                    Estimasi Berjalan
-                  </span>
-                </div>
-                <AdaptivePayrollDetail 
-                  item={item} 
-                  worker={workerMap.get(item.worker_id)} 
-                  settings={settingsMap} 
-                  type={item.pay_system_snapshot as "HARIAN" | "BULANAN"} 
-                />
-              </div>
-            ))
-          )}
-        </div>
+        )}
       </div>
 
       {/* --- TABEL RAW LOGS --- */}
