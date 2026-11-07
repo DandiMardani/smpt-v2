@@ -24,6 +24,7 @@ import { CancelOperatorPayrollRunButton } from "@/components/payroll/cancel-oper
 import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import Link from "next/link"; // <-- PENAMBAHAN 1: Import Link untuk navigasi
 
 // --- IMPORT CONTAINER BARU ---
 import { PayrollBoronganContainer } from "./payroll-borongan-container";
@@ -416,7 +417,15 @@ export default async function Page({ searchParams }: Props) {
           Pencairan Uang Makan Mingguan staf BULANAN dihitung murni dari hari masuk aktif tanpa pemotongan kasbon warung maupun kasbon kantor. Potongan kasbon resmi hanya berlaku pada proses Payroll Bulanan akhir bulan.
         </Flow>
         {canWrite ? (
-          <div className="shrink-0">
+          {/* --- PENAMBAHAN 2: Menambahkan Link Navigasi --- */}
+          <div className="shrink-0 flex flex-wrap items-center gap-2">
+            <Link 
+              href="/dashboard/payroll/audit" 
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-900 shadow-sm hover:bg-indigo-100 transition cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+              Audit Lembur & Cutoff
+            </Link>
             <PayrollSettingsModal initialSettings={settingsMap} canWrite={canWrite} returnPath="/dashboard/payroll" />
           </div>
         ) : null}
