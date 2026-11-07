@@ -417,7 +417,7 @@ export default async function Page({ searchParams }: Props) {
           Pencairan Uang Makan Mingguan staf BULANAN dihitung murni dari hari masuk aktif tanpa pemotongan kasbon warung maupun kasbon kantor. Potongan kasbon resmi hanya berlaku pada proses Payroll Bulanan akhir bulan.
         </Flow>
         {canWrite ? (
-          {/* --- PENAMBAHAN 2: Menambahkan Link Navigasi --- */}
+         
           <div className="shrink-0 flex flex-wrap items-center gap-2">
             <Link 
               href="/dashboard/payroll/audit" 
