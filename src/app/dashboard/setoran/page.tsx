@@ -370,7 +370,8 @@ export default async function Page() {
         }
       }
 
-      if (a.attendance_status === "HADIR") {
+      // PERBAIKAN: Hanya hitung Hari Kerja (Base Salary) jika absen berada dalam periode minggu ini
+      if (isWithinCurrentPeriod && a.attendance_status === "HADIR") {
         if (a.day_class === "HALF_DAY") {
           halfDays += 1;
         } else {
@@ -390,7 +391,10 @@ export default async function Page() {
       const actualOtMinutes = Number(a.overtime_minutes || 0);
       const manualOtMinutes = Number(a.manual_overtime_hours || 0) * 60;
       const rawDayOt = actualOtMinutes + manualOtMinutes;
+      
+      // Lembur selalu diakumulasi (baik dari periode ini, maupun dari cutoff minggu lalu)
       otMins += rawDayOt;
+      
       const effectiveShiftOt = actualOtMinutes + manualOtMinutes;
 
       if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
