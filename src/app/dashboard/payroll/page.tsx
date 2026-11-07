@@ -13,20 +13,17 @@ import {
   buttonClass,
   inputClass,
 } from "@/components/final/final-ui";
-import { PayrollSlipManager, type WorkerInfo, type PayrollRunRow, type PayrollItemRow } from "@/components/payroll/payroll-slip-manager";
+import { type WorkerInfo, type PayrollRunRow, type PayrollItemRow } from "@/components/payroll/payroll-slip-manager";
 import PayrollAccordionTable from "@/components/payroll/payroll-accordion-table";
 import PayrollSettingsModal, { type PayrollSettingsMap } from "@/components/payroll/payroll-settings-modal";
 import PayrollFinalizeForm from "@/components/payroll/payroll-finalize-form";
 import PayrollViewTabs from "@/components/payroll/payroll-view-tabs";
 import { requireAnyPermission } from "@/lib/access/current-user";
 import { finalizeOperatorPayrollAction, deletePayrollRunAction, syncPayrollAdvancesAction } from "@/lib/final/actions";
-import { CancelOperatorPayrollRunButton } from "@/components/payroll/cancel-operator-run-button";
 import { money, param, qty, type SearchParams } from "@/lib/final/final-utils";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import Link from "next/link"; // <-- PENAMBAHAN 1: Import Link untuk navigasi
-
-// --- IMPORT CONTAINER BARU ---
+import Link from "next/link"; 
 import { PayrollBoronganContainer } from "./payroll-borongan-container";
 
 export const dynamic = "force-dynamic";
@@ -69,7 +66,6 @@ export default async function Page({ searchParams }: Props) {
   const q = await searchParams;
   const supabase = await createClient();
 
-  // --- SERVER ACTION: EDIT KOREKSI ITEM ---
   async function editBulananItem(formData: FormData) {
     "use server";
     const itemId = Number(formData.get("item_id"));
@@ -116,7 +112,6 @@ export default async function Page({ searchParams }: Props) {
     revalidatePath("/dashboard/payroll");
   }
 
-  // --- SERVER ACTION: VERIFIKASI PEMBAYARAN LUNAS ---
   async function markBulananPaid(formData: FormData) {
     "use server";
     const itemId = Number(formData.get("item_id"));
@@ -207,7 +202,6 @@ export default async function Page({ searchParams }: Props) {
     revalidatePath("/dashboard/payroll");
   }
 
-  // --- SERVER ACTION: BATAL LUNAS ---
   async function revertBulananPaid(formData: FormData) {
     "use server";
     const itemId = Number(formData.get("item_id"));
@@ -289,10 +283,7 @@ export default async function Page({ searchParams }: Props) {
       order_no: spkCode,
     };
   });
-  const currentWorkerId = (workerIdResult.data as number | null) ?? null;
-  const activeAdvances = (advancesResult.data ?? []) as any[];
   const operatorRunMap = new Map(operatorRuns.map((run) => [run.id, run]));
-  // Sembunyikan item operator dari run yang dibatalkan
   const operatorItems = allOperatorItems.filter((item) => operatorRunMap.has(item.run_id));
   const workerMap = new Map(workers.map((w) => [w.id, w]));
 
@@ -304,7 +295,6 @@ export default async function Page({ searchParams }: Props) {
 
   const latestRunId = payrollRuns[0]?.id ?? "";
 
-  // Ambil state pencarian awal untuk disuapkan ke Container
   const initialFilters = {
     periodStart: String(param(q, "period_start") || ""),
     periodEnd: String(param(q, "period_end") || ""),
@@ -312,7 +302,6 @@ export default async function Page({ searchParams }: Props) {
     search: String(param(q, "q") || ""),
   };
 
-  // Ambil Run Aktif Terbaru
   const activeRun = payrollRuns[0];
   const activeItems = activeRun
     ? payrollItems.filter((it) => it.payroll_run_id === activeRun.id)
@@ -320,7 +309,6 @@ export default async function Page({ searchParams }: Props) {
 
   const isBulanan = activeRun?.payroll_type === "BULANAN";
 
-  // PEMISAHAN KATEGORI DATA: HARIAN VS BULANAN (UANG MAKAN)
   const uangMakanItems = activeItems.filter((item) => {
     const w = workerMap.get(item.worker_id);
     const sys = String(w?.pay_system || item.pay_system_snapshot || "").toUpperCase();
@@ -329,11 +317,9 @@ export default async function Page({ searchParams }: Props) {
 
   const harianItems = activeItems.filter((item) => !uangMakanItems.includes(item));
 
-  // Hitung Total Uang Makan Staf Bulanan (Murni Uang Makan Kehadiran)
   const totMealBase = uangMakanItems.reduce((acc, i) => acc + Number(i.meal_amount || 0), 0);
   const totMealNet = totMealBase;
 
-  // Hitung Total Upah Pekerja Harian
   const totHarianBase = harianItems.reduce((acc, i) => acc + Number(i.base_amount || 0), 0);
   const totHarianOt = harianItems.reduce(
     (acc, i) => acc + Number(i.overtime_amount || 0) + Number(i.manual_overtime_amount || 0),
@@ -349,7 +335,6 @@ export default async function Page({ searchParams }: Props) {
   const totHarianDed = totHarianKp + totHarianKw;
   const totHarianNet = Math.max(0, totHarianGross - totHarianDed);
 
-  // Total Gabungan Keseluruhan
   const totNet = isBulanan
     ? activeItems.reduce((acc, i) => acc + Number(i.net_amount || 0), 0)
     : totHarianNet + totMealNet;
@@ -411,13 +396,11 @@ export default async function Page({ searchParams }: Props) {
         ) : null}
       </div>
 
-      
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Flow>
           Pencairan Uang Makan Mingguan staf BULANAN dihitung murni dari hari masuk aktif tanpa pemotongan kasbon warung maupun kasbon kantor. Potongan kasbon resmi hanya berlaku pada proses Payroll Bulanan akhir bulan.
         </Flow>
         {canWrite ? (
-         
           <div className="shrink-0 flex flex-wrap items-center gap-2">
             <Link 
               href="/dashboard/payroll/audit" 
@@ -437,7 +420,6 @@ export default async function Page({ searchParams }: Props) {
         workerCount={activeItems.length}
         slipsNode={
           <div className="space-y-6 min-w-0 max-w-full">
-            {/* 3 KARTU STATISTIK METRIK */}
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center sm:text-left min-w-0">
               <div className="rounded-2xl border border-slate-200/90 bg-white p-2.5 sm:p-3 shadow-2xs min-w-0">
                 <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Total Run</span>
@@ -453,7 +435,6 @@ export default async function Page({ searchParams }: Props) {
               </div>
             </div>
 
-            {/* HEADER INFORMASI RUN AKTIF */}
             {activeRun && !isBulanan && (
               <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <div>
@@ -488,7 +469,6 @@ export default async function Page({ searchParams }: Props) {
               </div>
             )}
 
-            {/* TABEL 1: REKAPITULASI UPAH PEKERJA HARIAN (ACCORDION INTERAKTIF) */}
             {activeRun && !isBulanan && (
               <PayrollAccordionTable
                 items={harianItems}
@@ -512,7 +492,6 @@ export default async function Page({ searchParams }: Props) {
               />
             )}
 
-            {/* TABEL 2: REKAPITULASI UANG MAKAN STAF BULANAN (TERPISAH & BERSIH) */}
             {activeRun && !isBulanan && (
               <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
@@ -550,7 +529,7 @@ export default async function Page({ searchParams }: Props) {
                       {uangMakanItems.map((item) => {
                         const w = workerMap.get(item.worker_id);
                         const meal = Number(item.meal_amount || 0);
-                        const overtime = 0; // Seluruh lembur staf bulanan dibayarkan bulanan, tidak cair mingguan
+                        const overtime = 0; 
                         const net = meal;
                         const isPaid = (item as any).payment_status === "PAID";
 
@@ -672,7 +651,6 @@ export default async function Page({ searchParams }: Props) {
               </div>
             )}
 
-            {/* TABEL GAJI BULANAN (ACCORDION INTERAKTIF) */}
             {activeRun && isBulanan && (
               <PayrollAccordionTable
                 items={activeItems}
@@ -694,19 +672,6 @@ export default async function Page({ searchParams }: Props) {
                 totNet={totNet}
               />
             )}
-
-            {/* Slip Gaji & WhatsApp Manager */}
-            <PayrollSlipManager
-              settings={settingsMap}
-              runs={payrollRuns}
-              items={payrollItems}
-              operatorRuns={operatorRuns}
-              operatorItems={operatorItems}
-              workers={workers}
-              activeAdvances={activeAdvances}
-              currentWorkerId={currentWorkerId}
-              canWrite={canWrite}
-            />
           </div>
         }
         finalizeNode={
@@ -728,68 +693,67 @@ export default async function Page({ searchParams }: Props) {
         historyNode={
           <div className="space-y-4">
             <Card title="Riwayat Finalisasi Payroll Umum">
-  <TableWrap>
-    <thead>
-      <tr>
-        <Th>Kode</Th>
-        <Th>Jenis</Th>
-        <Th>Periode</Th>
-        <Th>Bruto</Th>
-        <Th>Potongan</Th>
-        <Th>Net</Th>
-        {canWrite && <Th>Aksi</Th>}
-      </tr>
-    </thead>
-    <tbody>
-      {payrollRuns.map((item) => {
-        const runItems = payrollItems.filter((pi) => pi.payroll_run_id === item.id);
-        const hasPaidItems = runItems.some(
-          (pi) =>
-            String(pi.payment_status || "").toUpperCase() === "PAID" ||
-            String(pi.status || "").toUpperCase() === "LUNAS"
-        );
-        const isLunas =
-          String(item.status || "").toUpperCase() === "LUNAS" ||
-          String(item.status || "").toUpperCase() === "PAID" ||
-          String(item.payment_status || "").toUpperCase() === "PAID" ||
-          hasPaidItems;
+              <TableWrap>
+                <thead>
+                  <tr>
+                    <Th>Kode</Th>
+                    <Th>Jenis</Th>
+                    <Th>Periode</Th>
+                    <Th>Bruto</Th>
+                    <Th>Potongan</Th>
+                    <Th>Net</Th>
+                    {canWrite && <Th>Aksi</Th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {payrollRuns.map((item) => {
+                    const runItems = payrollItems.filter((pi) => pi.payroll_run_id === item.id);
+                    const hasPaidItems = runItems.some(
+                      (pi) =>
+                        String(pi.payment_status || "").toUpperCase() === "PAID" ||
+                        String(pi.status || "").toUpperCase() === "LUNAS"
+                    );
+                    const isLunas =
+                      String(item.status || "").toUpperCase() === "LUNAS" ||
+                      String(item.status || "").toUpperCase() === "PAID" ||
+                      String(item.payment_status || "").toUpperCase() === "PAID" ||
+                      hasPaidItems;
 
-        return (
-          <tr key={item.id}>
-            <Td>{item.payroll_code}</Td>
-            <Td>{item.payroll_type}</Td>
-            <Td>{item.period_start}—{item.period_end}</Td>
-            <Td>{money(item.total_gross)}</Td>
-            <Td>{money(item.total_deduction)}</Td>
-            <Td>{money(item.total_net)}</Td>
-            {canWrite && (
-              <Td>
-                {isLunas ? (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 shadow-2xs">
-                    <span>🔒</span>
-                    <span>Terkunci</span>
-                  </span>
-                ) : (
-                  <form action={deletePayrollRunAction}>
-                    <input type="hidden" name="run_id" value={item.id} />
-                    <button
-                      type="submit"
-                      className="rounded-md bg-rose-100 px-3 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-200 transition-colors cursor-pointer"
-                    >
-                      Batalkan
-                    </button>
-                  </form>
-                )}
-              </Td>
-            )}
-          </tr>
-        );
-      })}
-    </tbody>
-  </TableWrap>
-</Card>
+                    return (
+                      <tr key={item.id}>
+                        <Td>{item.payroll_code}</Td>
+                        <Td>{item.payroll_type}</Td>
+                        <Td>{item.period_start}—{item.period_end}</Td>
+                        <Td>{money(item.total_gross)}</Td>
+                        <Td>{money(item.total_deduction)}</Td>
+                        <Td>{money(item.total_net)}</Td>
+                        {canWrite && (
+                          <Td>
+                            {isLunas ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 shadow-2xs">
+                                <span>🔒</span>
+                                <span>Terkunci</span>
+                              </span>
+                            ) : (
+                              <form action={deletePayrollRunAction}>
+                                <input type="hidden" name="run_id" value={item.id} />
+                                <button
+                                  type="submit"
+                                  className="rounded-md bg-rose-100 px-3 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-200 transition-colors cursor-pointer"
+                                >
+                                  Batalkan
+                                </button>
+                              </form>
+                            )}
+                          </Td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </TableWrap>
+            </Card>
 
-            {/* CONTAINER BARU MENGGANTIKAN RIWAYAT LAMA */}
             <PayrollBoronganContainer 
                runs={operatorRuns as any} 
                items={operatorItems as any}
