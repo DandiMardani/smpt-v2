@@ -1,11 +1,20 @@
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { PageShell, Card, Flow, Empty, Badge } from "@/components/final/final-ui";
+import { PageShell, Card, Flow, Empty } from "@/components/final/final-ui";
 import Link from "next/link";
 import { money } from "@/lib/final/final-utils";
 import { AdaptivePayrollDetail } from "@/components/payroll/payroll-accordion-table";
 
-// --- HELPERS TANGGAL PERIODE ---
+// --- HELPERS ---
+function formatMinutes(totalMins: number) {
+  if (totalMins <= 0) return "-";
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (h > 0 && m > 0) return `${h}j ${m}m`;
+  if (h > 0) return `${h} Jam`;
+  return `${m} mnt`;
+}
+
 function formatIsoDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -296,21 +305,23 @@ export default async function AuditPayrollPage() {
 
       {/* --- SIMULASI BORONGAN OPERATOR --- */}
       {boronganTotals.size > 0 && (
-        <Card title="Estimasi Live: Operator Borongan Aktif" className="mt-8">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from(boronganTotals.entries()).map(([wId, total]) => {
-              const w = workerMap.get(wId);
-              return (
-                <div key={wId} className="rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
-                  <div className="font-bold text-slate-800">{w?.name || `Operator #${wId}`}</div>
-                  <div className="text-[10px] text-slate-500">{w?.worker_code || "-"}</div>
-                  <div className="mt-2 text-xl font-black text-violet-800">{money(total)}</div>
-                  <div className="text-[10px] text-violet-600 mt-1">Total Qty Sah × Harga Borongan (Belum Diklaim)</div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
+        <div className="mt-8">
+          <Card title="Estimasi Live: Operator Borongan Aktif">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from(boronganTotals.entries()).map(([wId, total]) => {
+                const w = workerMap.get(wId);
+                return (
+                  <div key={wId} className="rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
+                    <div className="font-bold text-slate-800">{w?.name || `Operator #${wId}`}</div>
+                    <div className="text-[10px] text-slate-500">{w?.worker_code || "-"}</div>
+                    <div className="mt-2 text-xl font-black text-violet-800">{money(total)}</div>
+                    <div className="text-[10px] text-violet-600 mt-1">Total Qty Sah × Harga Borongan (Belum Diklaim)</div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
       )}
 
       {/* --- TABEL RAW LOGS (TETAP ADA BUAT JAGA-JAGA) --- */}
@@ -344,7 +355,11 @@ export default async function AuditPayrollPage() {
                     ) : "-"}
                   </td>
                   <td className="px-4 py-2">
-                    {r.isCutoff && <Badge variant="warning" className="text-[10px]">⚠️ CUTOFF / SLIP DEPAN</Badge>}
+                    {r.isCutoff && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                        ⚠️ CUTOFF / SLIP DEPAN
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
