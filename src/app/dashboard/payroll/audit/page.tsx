@@ -61,7 +61,6 @@ export default async function AuditPayrollPage() {
   const s = await createClient();
   const now = new Date();
 
-  // 1. Tarik Data Utama
   const [workersRes, settingsRes, advRes, attRes, slipsRes, checksRes] = await Promise.all([
     s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department,phone"),
     s.from("payroll_settings").select("key, value_numeric, value_text"),
@@ -82,12 +81,10 @@ export default async function AuditPayrollPage() {
   settingsRows.forEach(r => settingsMap[r.key] = r.value_numeric ?? r.value_text);
   const workerMap = new Map(workers.map(w => [w.id, w]));
 
-  // 2. Olah Simulasi Real-Time Per Pekerja
   const simulatedItems: any[] = [];
   const rawAuditLogs: any[] = [];
   const boronganTotals = new Map<number, number>();
 
-  // Kalkulasi Borongan Live (Yang masih aktif/belum ditarik)
   allChecks.forEach((c: any) => {
     const wId = c.production_order_items?.production_orders?.operator_worker_id;
     const price = Number(c.production_order_items?.operator_price_snapshot || 0);
@@ -100,7 +97,6 @@ export default async function AuditPayrollPage() {
   for (const worker of workers) {
     const paySystem = String(worker.pay_system || "HARIAN").toUpperCase();
     
-    // Cari slip lunas terakhir
     const mySlips = allSlips.filter(it => it.worker_id === worker.id && it.payroll_runs && it.payroll_runs.status !== "DIBATALKAN");
     let officialSlipItem = mySlips.length > 0 ? mySlips[0] : null;
     if (paySystem === "BULANAN") {
@@ -120,7 +116,6 @@ export default async function AuditPayrollPage() {
       }
     }
 
-    // Tentukan Periode Berjalan Live
     let currentPeriod = getDynamicPeriod(paySystem, now);
     if (paySystem === "BULANAN") {
       let start = paidPeriodEnd ? addDays(paidPeriodEnd, 1) : formatIsoDate(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -132,10 +127,11 @@ export default async function AuditPayrollPage() {
     const myAtts = allAtts.filter(a => a.worker_id === worker.id);
     
     for (const a of myAtts) {
-      if (isPaid && paidPeriodEnd && a.attendance_date <= paidPeriodEnd) continue;
-      
+      // 🚨 FIX: Filter ketat dilepas agar Cutoff dari minggu lalu bisa lewat dengan selamat!
       const linkedRuns = Array.isArray((a as any).payroll_run_details) ? (a as any).payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean) : [];
       const hasFinalizedRun = linkedRuns.some((r: any) => r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR");
+      
+      // Jika data absen sudah diikat kuat ke dalam Slip yang berstatus Final/Lunas, baru kita lewati
       if (hasFinalizedRun || a.verification_status === "DITOLAK") continue;
 
       const isWithin = a.attendance_date >= currentPeriod.start && a.attendance_date <= currentPeriod.end;
@@ -156,7 +152,6 @@ export default async function AuditPayrollPage() {
         isCutoff = true;
       }
 
-      // Log Raw Audit
       rawAuditLogs.push({
         id: a.id,
         workerName: worker.name,
@@ -168,7 +163,6 @@ export default async function AuditPayrollPage() {
         manualOt: a.manual_overtime_hours
       });
 
-      // Hitung Absensi
       if (isWithin && a.attendance_status === "HADIR") {
         if (a.day_class === "HALF_DAY") halfDays++;
         else fullDays++;
@@ -193,7 +187,7 @@ export default async function AuditPayrollPage() {
     }
 
     const totalDays = fullDays + (halfDays * 0.5);
-    if (totalDays === 0 && otMins === 0) continue; // Lewati yang nganggur
+    if (totalDays === 0 && otMins === 0) continue; 
 
     let baseAmt = 0, mealAmt = 0, otAmt = 0, otBonus = 0, holBonus = 0;
 
@@ -201,7 +195,7 @@ export default async function AuditPayrollPage() {
       const moSal = Number(worker.monthly_salary || 0);
       const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
       const otHourly = moSal > 0 ? moSal / Math.max(1, otDiv) : 0;
-      baseAmt = moSal; // Simulasi tampilkan utuh bulanan
+      baseAmt = moSal;
       otAmt = Math.round((otMins / 60) * otHourly);
       otBonus = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
     } else {
@@ -229,7 +223,6 @@ export default async function AuditPayrollPage() {
     const gross = baseAmt + otAmt + otBonus + holBonus;
     const ded = kasbonP + kasbonW;
 
-    // Bikin Objek "Fake" buat disuapin ke Komponen Rincian
     simulatedItems.push({
       id: worker.id, 
       worker_id: worker.id,
@@ -253,7 +246,8 @@ export default async function AuditPayrollPage() {
     });
   }
 
-  // Urutkan log mentah
+  // Bikin urutan biar gampang dicari (Harian di atas, Bulanan di bawah)
+  simulatedItems.sort((a, b) => b.pay_system_snapshot.localeCompare(a.pay_system_snapshot));
   rawAuditLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
@@ -276,55 +270,63 @@ export default async function AuditPayrollPage() {
         Seluruh kotak rincian di bawah ini adalah <b>SIMULASI LANGSUNG (LIVE)</b>. Angkanya akan persis sama dengan yang dilihat pekerja di HP mereka. Halaman ini aman dipakai untuk patokan Admin karena tidak mengubah data *Payroll* asli.
       </Flow>
 
-      {/* --- RINCIAN ADAPTIF REAL-TIME PER PEKERJA --- */}
-      <div className="mt-6 space-y-6">
-        {simulatedItems.length === 0 ? (
-          <Empty>Belum ada data absensi aktif yang berjalan di siklus saat ini.</Empty>
-        ) : (
-          simulatedItems.map(item => (
-            <div key={item.id} className="relative">
-              {/* Label Status Live di Atas Rincian */}
-              <div className="absolute -top-3 left-4 z-10 flex gap-2">
-                <span className="bg-rose-500 text-white px-2 py-0.5 rounded text-[10px] font-black shadow-sm animate-pulse flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
-                </span>
-                <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-bold shadow-sm">
-                  Estimasi Berjalan
-                </span>
-              </div>
-              <AdaptivePayrollDetail 
-                item={item} 
-                worker={workerMap.get(item.worker_id)} 
-                settings={settingsMap} 
-                type={item.pay_system_snapshot as "HARIAN" | "BULANAN"} 
-              />
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* --- SIMULASI BORONGAN OPERATOR --- */}
+      {/* --- DIPINDAH KE ATAS: SIMULASI BORONGAN OPERATOR --- */}
       {boronganTotals.size > 0 && (
-        <div className="mt-8">
-          <Card title="Estimasi Live: Operator Borongan Aktif">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from(boronganTotals.entries()).map(([wId, total]) => {
-                const w = workerMap.get(wId);
-                return (
-                  <div key={wId} className="rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
-                    <div className="font-bold text-slate-800">{w?.name || `Operator #${wId}`}</div>
-                    <div className="text-[10px] text-slate-500">{w?.worker_code || "-"}</div>
-                    <div className="mt-2 text-xl font-black text-violet-800">{money(total)}</div>
-                    <div className="text-[10px] text-violet-600 mt-1">Total Qty Sah × Harga Borongan (Belum Diklaim)</div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
+        <div className="mt-6 mb-8 border-b-2 border-dashed border-slate-200 pb-8">
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <span className="bg-rose-500 w-2 h-2 rounded-full animate-ping"></span>
+            LIVE: Operator Borongan
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from(boronganTotals.entries()).map(([wId, total]) => {
+              const w = workerMap.get(wId);
+              return (
+                <div key={wId} className="rounded-xl border-2 border-violet-200 bg-white p-4 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 right-0 bg-violet-100 text-violet-800 text-[9px] font-black px-2 py-1 rounded-bl-lg">BORONGAN</div>
+                  <div className="font-bold text-slate-800 text-sm">{w?.name || `Operator #${wId}`}</div>
+                  <div className="text-[10px] text-slate-500">{w?.worker_code || "-"}</div>
+                  <div className="mt-3 text-2xl font-black text-violet-700">{money(total)}</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Total Qty Sah × Harga (Belum Lunas)</div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* --- TABEL RAW LOGS (TETAP ADA BUAT JAGA-JAGA) --- */}
+      {/* --- RINCIAN ADAPTIF REAL-TIME PER PEKERJA (HARIAN & BULANAN) --- */}
+      <div>
+        <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide mb-4 flex items-center gap-2">
+          <span className="bg-rose-500 w-2 h-2 rounded-full animate-ping"></span>
+          LIVE: Harian & Bulanan
+        </h2>
+        <div className="space-y-6">
+          {simulatedItems.length === 0 ? (
+            <Empty>Belum ada data absensi/lembur aktif yang masuk di siklus ini.</Empty>
+          ) : (
+            simulatedItems.map(item => (
+              <div key={item.id} className="relative">
+                <div className="absolute -top-3 left-4 z-10 flex gap-2">
+                  <span className="bg-rose-500 text-white px-2 py-0.5 rounded text-[10px] font-black shadow-sm flex items-center gap-1">
+                    LIVE
+                  </span>
+                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-bold shadow-sm">
+                    Estimasi Berjalan
+                  </span>
+                </div>
+                <AdaptivePayrollDetail 
+                  item={item} 
+                  worker={workerMap.get(item.worker_id)} 
+                  settings={settingsMap} 
+                  type={item.pay_system_snapshot as "HARIAN" | "BULANAN"} 
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* --- TABEL RAW LOGS --- */}
       <details className="mt-10 rounded-2xl border border-slate-200 bg-white shadow-sm outline-none">
         <summary className="cursor-pointer p-4 font-bold text-slate-800 outline-none hover:bg-slate-50 rounded-2xl">
           🔍 Buka Log Mentah Mesin Absensi & Indikator Cutoff
