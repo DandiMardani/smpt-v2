@@ -1,4 +1,4 @@
-import { requirePermission } from "@/lib/access/current-user";
+mport { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { PageShell, Card, Flow, Empty } from "@/components/final/final-ui";
 import Link from "next/link";
@@ -56,6 +56,10 @@ function getDynamicPeriod(paySystem: string, refDate = new Date()): { start: str
   return { start: formatIsoDate(new Date(y, m, 1)), end: formatIsoDate(new Date(y, m + 1, 0)) };
 }
 
+// Satu definisi status "run sudah final/dibayar" supaya konsisten
+const isFinalRun = (r: any) =>
+  ["FINAL", "PAID", "SUDAH_DIBAYAR"].includes(String(r?.status || "").toUpperCase());
+
 export default async function AuditPayrollPage() {
   await requirePermission("payroll.view");
   const s = await createClient();
@@ -69,6 +73,9 @@ export default async function AuditPayrollPage() {
     s.from("payroll_run_items").select("*, payroll_runs(*)").order("id", { ascending: false }).limit(2000),
     s.from("production_checks").select("good_qty, order_item_id, production_order_items!inner(operator_price_snapshot, production_orders!inner(operator_worker_id))").eq("status", "AKTIF").gte("check_date", addDays(now, -30))
   ]);
+
+  // Jangan diam-diam kosong kalau query absensi gagal (misal relasi embed bermasalah)
+  if (attRes.error) throw new Error(`Gagal memuat absensi: ${attRes.error.message}`);
 
   const workers = workersRes.data || [];
   const settingsRows = settingsRes.data || [];
@@ -97,7 +104,7 @@ export default async function AuditPayrollPage() {
 
   for (const worker of workers) {
     const paySystem = String(worker.pay_system || "HARIAN").toUpperCase();
-    
+
     const mySlips = allSlips.filter(it => it.worker_id === worker.id && it.payroll_runs && it.payroll_runs.status !== "DIBATALKAN");
     let officialSlipItem = mySlips.length > 0 ? mySlips[0] : null;
     if (paySystem === "BULANAN") {
@@ -126,36 +133,49 @@ export default async function AuditPayrollPage() {
 
     let fullDays = 0, halfDays = 0, otMins = 0, count4h = 0, sundayCount = 0, manualOtHours = 0;
     const myAtts = allAtts.filter(a => a.worker_id === worker.id);
-    
-    // --- LOGIKA SUPER BERSIH UNTUK TARIKAN CUTOFF (SAMA PERSIS DENGAN HP USER) ---
+
+    // --- LOGIKA ABSENSI & CUTOFF (mengikuti generator payroll di syncPayrollAdvancesCore) ---
+    // Aturan:
+    // - Absen DI DALAM periode berjalan: hari kerja dihitung. Kalau absen itu cutoff
+    //   (Jumat harian ber-lembur / catatan cutoff), LEMBURNYA ditunda ke slip depan.
+    // - Absen DI LUAR periode: hanya diambil kalau cutoff, dan belum diambil run FINAL
+    //   yang periodenya mulai SETELAH tanggal absen itu (supaya tidak dobel bayar).
+    //   Terikat ke run lama (penanda gaji pokok) BUKAN alasan untuk membuangnya.
     for (const a of myAtts) {
       if (a.verification_status === "DITOLAK") continue;
 
-      // 1. Abaikan kalau absennya benar-benar ada di rentang slip yang udah dibayar
-      if (isPaid && paidPeriodEnd && a.attendance_date <= paidPeriodEnd) continue;
+      const manOtHours = Number(a.manual_overtime_hours || 0);
+      const rawDayOt = Number(a.overtime_minutes || 0) + manOtHours * 60;
 
-      // 2. Abaikan kalau absen udah diikat ke suatu payroll final (lewat tabel relasi)
-      const linkedRuns = Array.isArray((a as any).payroll_run_details) ? (a as any).payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean) : [];
-      const hasFinalizedRun = linkedRuns.some((r: any) => r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR");
-      if (hasFinalizedRun) continue;
+      const dow = new Date(a.attendance_date + "T00:00:00Z").getUTCDay();
+      const noteStr = String(a.notes || "").toLowerCase();
+      const isFridayCutoff = dow === 5 && paySystem !== "BULANAN" && rawDayOt > 0;
+      const hasCutoffNote = noteStr.includes("cutoff") || noteStr.includes("slip depan") || noteStr.includes("titipan");
+      const isCutoffAtt = isFridayCutoff || hasCutoffNote;
+
+      const linkedRuns = Array.isArray((a as any).payroll_run_details)
+        ? (a as any).payroll_run_details.map((x: any) => x.payroll_runs).filter(Boolean)
+        : [];
+      const finalRuns = linkedRuns.filter(isFinalRun);
 
       const isWithin = a.attendance_date >= currentPeriod.start && a.attendance_date <= currentPeriod.end;
-      const actOt = Number(a.overtime_minutes || 0);
-      const manOt = Number(a.manual_overtime_hours || 0) * 60;
-      const rawDayOt = actOt + manOt;
-      
+
+      let countDay = false;
+      let countOt = false;
       let isCutoff = false;
-      if (!isWithin) {
-        // Cek kalau ini adalah absen Cutoff (Slip Depan) dari periode sebelum `currentPeriod.start`
-        const d = new Date(a.attendance_date + "T00:00:00Z");
-        const isJumat = d.getUTCDay() === 5;
-        const isHarian = paySystem !== "BULANAN";
-        const isFridayCutoff = isJumat && isHarian && rawDayOt > 0;
-        const noteStr = String(a.notes || "").toLowerCase();
-        const hasCutoffNote = noteStr.includes("cutoff") || noteStr.includes("slip depan") || noteStr.includes("titipan");
-        
-        // Kalau bukan Cutoff dan ada di luar periode, buang!
-        if (!isFridayCutoff && !hasCutoffNote) continue; 
+
+      if (isWithin) {
+        // Hari fisik periode ini
+        if (isPaid && paidPeriodEnd && a.attendance_date <= paidPeriodEnd) continue;
+        if (finalRuns.length > 0) continue;
+        countDay = a.attendance_status === "HADIR";
+        countOt = !isCutoffAtt; // lembur cutoff ditunda ke slip depan
+        isCutoff = isCutoffAtt && rawDayOt > 0;
+      } else {
+        // Di luar periode: hanya cutoff yang lemburnya belum diambil run final yang lebih baru
+        if (!isCutoffAtt || rawDayOt <= 0) continue;
+        if (finalRuns.some((r: any) => r.period_start > a.attendance_date)) continue;
+        countOt = true;
         isCutoff = true;
       }
 
@@ -170,34 +190,24 @@ export default async function AuditPayrollPage() {
         manualOt: a.manual_overtime_hours
       });
 
-      // HANYA hitung gaji pokok (hari kerja) jika absen ada di periode aktif minggu ini!
-      if (isWithin && a.attendance_status === "HADIR") {
+      if (countDay) {
         if (a.day_class === "HALF_DAY") halfDays++;
         else fullDays++;
       }
 
-      let isSunday = false;
-      if (a.attendance_date) {
-        const parts = String(a.attendance_date).slice(0, 10).split("-");
-        isSunday = new Date(parseInt(parts[0], 10), (parseInt(parts[1], 10) || 1) - 1, parseInt(parts[2], 10)).getDay() === 0;
-      }
+      // Bonus hari Minggu hanya untuk hari fisik di periode ini
+      if (isWithin && dow === 0 && (a.attendance_status === "HADIR" || rawDayOt > 0)) sundayCount++;
 
-      // Lembur selalu diakumulasi secara murni tanpa perulangan status
-      otMins += rawDayOt;
-      manualOtHours += Number(a.manual_overtime_hours || 0);
-
-      const effectiveShiftOt = rawDayOt;
-      if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
-        sundayCount++;
-        if (paySystem === "BULANAN" && effectiveShiftOt >= 720) count4h++;
-        if (paySystem !== "BULANAN" && effectiveShiftOt >= 240) count4h++;
-      } else if (effectiveShiftOt >= 240) {
-        count4h++;
+      if (countOt) {
+        otMins += rawDayOt;
+        manualOtHours += manOtHours;
+        const threshold = dow === 0 && paySystem === "BULANAN" ? 720 : 240;
+        if (rawDayOt >= threshold) count4h++;
       }
     }
 
     const totalDays = fullDays + (halfDays * 0.5);
-    if (totalDays === 0 && otMins === 0) continue; 
+    if (totalDays === 0 && otMins === 0) continue;
 
     let baseAmt = 0, mealAmt = 0, otAmt = 0, otBonus = 0, holBonus = 0;
 
@@ -205,7 +215,7 @@ export default async function AuditPayrollPage() {
       const moSal = Number(worker.monthly_salary || 0);
       const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
       const otHourly = moSal > 0 ? moSal / Math.max(1, otDiv) : 0;
-      baseAmt = moSal; 
+      baseAmt = moSal;
       otAmt = Math.round((otMins / 60) * otHourly);
       otBonus = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
     } else {
@@ -222,7 +232,7 @@ export default async function AuditPayrollPage() {
     if (isPaid && paidPeriodEnd) {
       myAdvs = myAdvs.filter(a => a.advance_date > paidPeriodEnd);
     }
-    
+
     let kasbonP = 0, kasbonW = 0;
     myAdvs.forEach(a => {
       const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
@@ -234,14 +244,14 @@ export default async function AuditPayrollPage() {
     const ded = kasbonP + kasbonW;
 
     const simItem = {
-      id: worker.id, 
+      id: worker.id,
       worker_id: worker.id,
       worker_name_snapshot: worker.name,
       pay_system_snapshot: paySystem,
       daily_wage_snapshot: worker.daily_wage,
       full_days: fullDays,
       half_days: halfDays,
-      overtime_minutes: otMins - (manualOtHours * 60), 
+      overtime_minutes: otMins - (manualOtHours * 60),
       manual_overtime_hours: manualOtHours,
       base_amount: baseAmt,
       meal_amount: mealAmt,
@@ -271,8 +281,8 @@ export default async function AuditPayrollPage() {
       description="Rincian hitungan adaptif ini ditarik 100% langsung dari mesin absensi detik ini juga, khusus untuk panduan Admin."
     >
       <div className="mb-4">
-        <Link 
-          href="/dashboard/payroll" 
+        <Link
+          href="/dashboard/payroll"
           className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
         >
           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"></path></svg>
@@ -304,11 +314,11 @@ export default async function AuditPayrollPage() {
                     Estimasi Harian Berjalan
                   </span>
                 </div>
-                <AdaptivePayrollDetail 
-                  item={item} 
-                  worker={workerMap.get(item.worker_id)} 
-                  settings={settingsMap} 
-                  type="HARIAN" 
+                <AdaptivePayrollDetail
+                  item={item}
+                  worker={workerMap.get(item.worker_id)}
+                  settings={settingsMap}
+                  type="HARIAN"
                 />
               </div>
             ))
@@ -336,11 +346,11 @@ export default async function AuditPayrollPage() {
                     Estimasi Bulanan Berjalan
                   </span>
                 </div>
-                <AdaptivePayrollDetail 
-                  item={item} 
-                  worker={workerMap.get(item.worker_id)} 
-                  settings={settingsMap} 
-                  type="BULANAN" 
+                <AdaptivePayrollDetail
+                  item={item}
+                  worker={workerMap.get(item.worker_id)}
+                  settings={settingsMap}
+                  type="BULANAN"
                 />
               </div>
             ))
@@ -366,7 +376,7 @@ export default async function AuditPayrollPage() {
                   <div className="font-bold text-slate-800 text-sm">{w?.name || `Operator #${wId}`}</div>
                   <div className="text-[10px] text-slate-500">{w?.worker_code || "-"}</div>
                   <div className="mt-3 text-2xl font-black text-violet-700">{money(total)}</div>
-                  <div className="text-[10px] text-slate-500 mt-1">Total Qty Sah × Harga (Belum Lunas)</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Total Qty Sah 脳 Harga (Belum Lunas)</div>
                 </div>
               );
             })}
@@ -377,7 +387,7 @@ export default async function AuditPayrollPage() {
       {/* --- TABEL RAW LOGS --- */}
       <details className="mt-10 rounded-2xl border border-slate-200 bg-white shadow-sm outline-none">
         <summary className="cursor-pointer p-4 font-bold text-slate-800 outline-none hover:bg-slate-50 rounded-2xl">
-          🔍 Buka Log Mentah Mesin Absensi & Indikator Cutoff
+          馃攳 Buka Log Mentah Mesin Absensi & Indikator Cutoff
         </summary>
         <div className="p-4 border-t border-slate-100 overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-600">
@@ -401,13 +411,13 @@ export default async function AuditPayrollPage() {
                   <td className="px-4 py-2">{r.inOut}</td>
                   <td className="px-4 py-2">
                     {r.totalOtMinutes > 0 ? (
-                      <span className="font-bold text-blue-700">⏱️ {formatMinutes(r.totalOtMinutes)}</span>
+                      <span className="font-bold text-blue-700">鈴憋笍 {formatMinutes(r.totalOtMinutes)}</span>
                     ) : "-"}
                   </td>
                   <td className="px-4 py-2">
                     {r.isCutoff && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                        ⚠️ CUTOFF / SLIP DEPAN
+                        鈿狅笍 CUTOFF / SLIP DEPAN
                       </span>
                     )}
                   </td>
