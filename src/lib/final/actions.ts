@@ -1569,431 +1569,6 @@ export async function syncPayrollAdvancesCore(runId: number) {
     .single();
   if (rErr || !run) throw new Error("Data payroll run tidak ditemukan.");
 
-  // Ambil existing items untuk mendeteksi kolom fisik yang valid di database (schema-resilient)
-  const { data: existingItems } = await db
-    .from("payroll_run_items")
-    .select("*")
-    .eq("payroll_run_id", runId);
-
-  const allowedDbCols = existingItems && existingItems.length > 0
-    ? new Set(Object.keys(existingItems[0]))
-    : KNOWN_PAYROLL_RUN_ITEM_COLUMNS;
-
-  // Ambil data master seluruh pekerja untuk mapping dan penambahan otomatis staf bulanan
-  const { data: allWorkers } = await db
-    .from("workers")
-    .select("*");
-
-  const workerMap = new Map<number, any>((allWorkers ?? []).map((w: any) => [w.id, w]));
-
-  // Ambil pengaturan dinamis payroll_settings
-  const { data: settingsRows } = await db
-    .from("payroll_settings")
-    .select("key, value_numeric, value_text");
-
-  const settingsMap = new Map<string, any>();
-  (settingsRows ?? []).forEach((r: any) => {
-    if (r.key) settingsMap.set(String(r.key).toLowerCase().trim(), r.value_numeric ?? r.value_text);
-  });
-
-  const monthlyDivider = Number(
-    settingsMap.get("monthly_overtime_divider") ||
-    settingsMap.get("overtime_divider_monthly") ||
-    settingsMap.get("divider_monthly_hours") ||
-    190
-  );
-  const bulananOt4hBonus = Number(
-    settingsMap.get("monthly_overtime_bonus_rate") ||
-    settingsMap.get("overtime_bonus_daily") ||
-    settingsMap.get("overtime_bonus_bulanan") ||
-    17500
-  );
-  const mealFullDayRate = Number(
-    settingsMap.get("meal_allowance_daily") ||
-    settingsMap.get("meal_daily_rate") ||
-    settingsMap.get("uang_makan_full_day") ||
-    50000
-  );
-  const mealHalfDayRate = Number(
-    settingsMap.get("meal_allowance_half_day") ||
-    settingsMap.get("uang_makan_half_day") ||
-    25000
-  );
-  const mealSundayRate = Number(
-    settingsMap.get("sunday_meal_allowance") ||
-    settingsMap.get("uang_makan_minggu") ||
-    50000
-  );
-
-  const bulananReferenceNames = ["SURATNO", "DANDI MARDANI", "USMAN ALAMSYAH", "JAJANG ROSADI", "SUHERMANTO", "SUHERMAN", "NEDIH"];
-
-  // Identifikasi pekerja bulanan
-  const bulananWorkers = (allWorkers ?? []).filter((w: any) => {
-    const ps = String(w.pay_system || "").toUpperCase().trim();
-    if (ps === "BULANAN") return true;
-    const name = String(w.name || "").toUpperCase().trim();
-    return bulananReferenceNames.some((bn) => name.includes(bn));
-  });
-
-  // Saat finalisasi atau sinkronisasi mingguan/harian, pastikan staf BULANAN yang memiliki kehadiran aktif diikutsertakan
-  if (bulananWorkers.length > 0) {
-    const bulananIds = bulananWorkers.map((w: any) => w.id);
-    const { data: bulananAtts } = await db
-      .from("attendance_records")
-      .select("worker_id")
-      .in("worker_id", bulananIds)
-      .gte("attendance_date", run.period_start)
-      .lte("attendance_date", run.period_end)
-      .eq("attendance_status", "HADIR")
-      .neq("verification_status", "DITOLAK");
-
-    const activeBulananIds = new Set((bulananAtts ?? []).map((a: any) => a.worker_id));
-
-    if (activeBulananIds.size > 0) {
-      const existingWorkerIds = new Set((existingItems ?? []).map((i: any) => i.worker_id));
-
-      const toInsert = bulananWorkers
-        .filter((w: any) => activeBulananIds.has(w.id) && !existingWorkerIds.has(w.id))
-        .map((w: any) => filterValidPayrollItemColumns({
-          payroll_run_id: runId,
-          worker_id: w.id,
-          worker_name_snapshot: String(w.name || "-"),
-          pay_system_snapshot: "BULANAN",
-          daily_wage_snapshot: Number(w.daily_salary || w.daily_rate || 0),
-          monthly_salary_snapshot: Number(w.monthly_salary || w.base_salary || 0),
-          full_days: 0,
-          half_days: 0,
-          overtime_minutes: 0,
-          base_amount: 0,
-          meal_amount: 0,
-          overtime_amount: 0,
-          overtime_bonus: 0,
-          holiday_bonus: 0,
-          kasbon_perusahaan_amount: 0,
-          kasbon_warung_amount: 0,
-          deduction_amount: 0,
-          net_amount: 0,
-        }, allowedDbCols));
-
-      if (toInsert.length > 0) {
-        let { error: insErr } = await db.from("payroll_run_items").insert(toInsert);
-        if (insErr && insErr.message.includes("Could not find the")) {
-          const matchCol = insErr.message.match(/Could not find the '([^']+)' column/i);
-          if (matchCol && matchCol[1]) {
-            const badCol = matchCol[1];
-            const retryItems = toInsert.map((item: any) => {
-              const copy = { ...item };
-              delete copy[badCol];
-              return copy;
-            });
-            const retry = await db.from("payroll_run_items").insert(retryItems);
-            insErr = retry.error;
-          }
-        }
-        if (insErr) throw new Error("Gagal menyisipkan rincian payroll staf bulanan: " + insErr.message);
-      }
-    }
-  }
-
-  const { data: runItems, error: itemsErr } = await db
-    .from("payroll_run_items")
-    .select("*")
-    .eq("payroll_run_id", runId);
-
-  if (itemsErr || !runItems || !runItems.length) {
-    throw new Error(itemsErr?.message || "Rincian payroll tidak ditemukan.");
-  }
-
-  const workerIds = runItems.map((i) => i.worker_id);
-
-  // 1. Ambil ID absensi yang sudah terikat via foreign key payroll_run_details
-  const { data: runDetails } = await db
-    .from("payroll_run_details")
-    .select("attendance_id")
-    .eq("payroll_run_id", runId);
-
-  const linkedAttIds = (runDetails ?? []).map((d: any) => d.attendance_id);
-
-  // 2. Lookback 7 hari sebelum run.period_start untuk menyertakan absensi/lembur dengan status Cutoff (Slip Depan)
-  const runStartDt = new Date(run.period_start + "T00:00:00Z");
-  runStartDt.setUTCDate(runStartDt.getUTCDate() - 7);
-  const searchStart = runStartDt.toISOString().slice(0, 10);
-
-  // 3. Query absensi: perluas rentang tanggal (lookback cutoff) dan gabungkan dengan validasi foreign key ID payroll_run_details
-  const { data: attRecords } = await db
-    .from("attendance_records")
-    .select(
-      "id, worker_id, day_class, overtime_minutes, manual_overtime_hours, attendance_date, attendance_status, late_deduction, notes, verification_status, payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))"
-    )
-    .gte("attendance_date", searchStart)
-    .lte("attendance_date", run.period_end)
-    .neq("verification_status", "DITOLAK");
-
-  let extraLinkedAtts: any[] = [];
-  if (linkedAttIds.length > 0) {
-    const missingIds = linkedAttIds.filter((aid: number) => !(attRecords ?? []).some((a) => a.id === aid));
-    if (missingIds.length > 0) {
-      const { data: extra } = await db
-        .from("attendance_records")
-        .select(
-          "id, worker_id, day_class, overtime_minutes, manual_overtime_hours, attendance_date, attendance_status, late_deduction, notes, verification_status, payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))"
-        )
-        .in("id", missingIds)
-        .neq("verification_status", "DITOLAK");
-      extraLinkedAtts = extra ?? [];
-    }
-  }
-
-  const attList = [...(attRecords ?? []), ...extraLinkedAtts];
-
-  const { data: advances } = await db
-    .from("cash_advances")
-    .select("id, worker_id, amount, paid_amount, category, installment_amount, status")
-    .in("worker_id", workerIds)
-    .eq("status", "AKTIF");
-
-  const advList = advances ?? [];
-  let totalRunGross = 0;
-  let totalRunDeduction = 0;
-  let totalRunNet = 0;
-  const allQualifyingAtts: any[] = [];
-
-  for (const it of runItems) {
-    const w = workerMap.get(it.worker_id);
-    let paySystem = String(it.pay_system_snapshot || w?.pay_system || "").toUpperCase().trim();
-    if (!paySystem && w?.name && bulananReferenceNames.some((bn) => String(w.name).toUpperCase().includes(bn))) {
-      paySystem = "BULANAN";
-    }
-    if (!paySystem) paySystem = "HARIAN";
-
-    const workerAtts = attList.filter((a) => {
-      if (a.worker_id !== it.worker_id || a.attendance_status !== "HADIR") return false;
-      if (a.verification_status === "DITOLAK") return false;
-
-      // Validasi foreign key ID periode penggajian secara eksplisit
-      const linkedRuns = Array.isArray(a.payroll_run_details)
-        ? a.payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean)
-        : [];
-      const isLinkedToThisRun =
-        linkedAttIds.includes(a.id) ||
-        linkedRuns.some((r: any) => r.id === run.id || r.period_start === run.period_start);
-
-      if (isLinkedToThisRun) return true;
-
-      // Data dalam periode berjalan
-      if (a.attendance_date >= run.period_start && a.attendance_date <= run.period_end) return true;
-
-      // Cek status Cutoff (Slip Depan) dari tanggal sebelum run.period_start
-      const d = new Date(a.attendance_date + "T00:00:00Z");
-      const isJumat = d.getUTCDay() === 5;
-      const isHarian = paySystem !== "BULANAN";
-      const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-      const isFridayCutoff = isJumat && isHarian && rawDayOt > 0;
-      const noteStr = String(a.notes || "").toLowerCase();
-      const hasCutoffNote =
-        noteStr.includes("cutoff") ||
-        noteStr.includes("slip depan") ||
-        noteStr.includes("titipan lembur");
-
-      return isFridayCutoff || hasCutoffNote;
-    });
-
-    allQualifyingAtts.push(...workerAtts);
-
-    // Pisahkan absensi periode berjalan untuk hari kerja vs data cutoff untuk lembur
-    const currentPeriodAtts = workerAtts.filter(
-      (a) => a.attendance_date >= run.period_start && a.attendance_date <= run.period_end
-    );
-
-    // Hari kerja hanya dihitung dari kehadiran di periode berjalan (agar upah pokok hari Jumat cutoff tidak dobel)
-    const fullDays = currentPeriodAtts.filter((a) => a.day_class === "FULL_DAY").length;
-    const halfDays = currentPeriodAtts.filter((a) => a.day_class === "HALF_DAY").length;
-
-    // Total menit lembur dihitung dari kehadiran periode berjalan + lembur cutoff (Slip Depan)
-    const totalOtMinutes = workerAtts.reduce(
-      (sum, a) => sum + (Number(a.overtime_minutes) || 0) + (Number(a.manual_overtime_hours || 0) * 60),
-      0
-    );
-
-    const totalLateDeduction = workerAtts.reduce((sum, a) => sum + (Number(a.late_deduction) || 0), 0);
-
-    let baseAmt = 0;
-    let mealAmt = 0;
-    let otAmt = 0;
-    let manualOtAmt = 0;
-    let otBonus = 0;
-    let holidayBonus = 0;
-
-        if (paySystem === "BULANAN") {
-      const count4hBulanan = workerAtts.filter((a) => {
-        const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-        const d = new Date(a.attendance_date + "T00:00:00Z");
-        const isSunday = d.getUTCDay() === 0;
-        // Hari Minggu staf bulanan: 8 jam pertama (480 mnt) adalah shift Minggu normal.
-        // Bonus lembur 4H hanya dihitung jika lanjut lembur malam >= 4 jam (total >= 720 mnt).
-        return isSunday ? rawDayOt >= 720 : rawDayOt >= 240;
-      }).length;
-
-
-      if (run.payroll_type === "BULANAN") {
-        // --- RUN BULANAN (AKHIR BULAN) ---
-        // Gaji Pokok Bulanan + Upah Lembur (Gaji / 190) + Tambahan Lembur (Rp 17.500 per hari >= 4 jam)
-        // meal_amount = 0 (karena uang makan sudah dicairkan mingguan)
-        baseAmt = Number(w?.monthly_salary ?? w?.base_salary ?? it.monthly_salary_snapshot ?? it.base_amount ?? 0);
-        mealAmt = 0;
-
-        const hourlyRate = baseAmt > 0 && monthlyDivider > 0 ? Math.round((baseAmt / monthlyDivider) * 100) / 100 : 0;
-        otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
-        manualOtAmt = Number(it.manual_overtime_amount || 0);
-        otBonus = count4hBulanan * bulananOt4hBonus;
-        holidayBonus = 0;
-      } else {
-        // --- RUN MINGGUAN (UANG MAKAN STAF BULANAN) ---
-        // Staf Bulanan HANYA mencairkan Uang Makan dari kehadiran aktif:
-        // Full Day = Rp 50.000, Half Day = Rp 25.000, Masuk Hari Minggu = Rp 50.000.
-        // Upah Lembur Jam-jaman (Gaji / 190) WAJIB 0 (overtime_amount = 0, manual_overtime_amount = 0).
-        // Lembur jam-jaman staf bulanan TIDAK cair mingguan.
-        baseAmt = 0;
-        otAmt = 0;
-        manualOtAmt = 0;
-
-        const sundayAtts = currentPeriodAtts.filter((a) => {
-          const d = new Date(a.attendance_date + "T00:00:00Z");
-          return d.getUTCDay() === 0;
-        });
-        const nonSundayAtts = currentPeriodAtts.filter((a) => {
-          const d = new Date(a.attendance_date + "T00:00:00Z");
-          return d.getUTCDay() !== 0;
-        });
-
-        const fullDaysNonSun = nonSundayAtts.filter((a) => a.day_class === "FULL_DAY").length;
-        const halfDaysNonSun = nonSundayAtts.filter((a) => a.day_class === "HALF_DAY").length;
-        const sundayDays = sundayAtts.length;
-
-                mealAmt = (fullDaysNonSun * mealFullDayRate) + (halfDaysNonSun * mealHalfDayRate) + (sundayDays * mealSundayRate);
-
-        // TETAP REKAM bonus untuk diproyeksikan di slip Gaji Bulanan
-        otBonus = count4hBulanan * bulananOt4hBonus;
-        holidayBonus = 0;
-      }
-
-    } else {
-      // --- PEKERJA HARIAN ---
-      const dailyRate = Number(w?.daily_salary ?? w?.daily_rate ?? w?.rate_per_day ?? it.daily_wage_snapshot ?? 0);
-      if (fullDays > 0 || halfDays > 0) {
-        baseAmt = Math.round((fullDays + halfDays * 0.5) * dailyRate);
-      } else {
-        baseAmt = 0;
-      }
-      mealAmt = 0;
-
-      const hourlyRate = dailyRate > 0 ? Math.round((dailyRate / 8) * 100) / 100 : 0;
-      otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
-      manualOtAmt = Number(it.manual_overtime_amount || 0);
-
-      const count4hHarian = workerAtts.filter((a) => {
-        const rawDayOt = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-        return rawDayOt >= 240;
-      }).length;
-      otBonus = count4hHarian * 5000;
-
-      const sundayCount = currentPeriodAtts.filter((a) => {
-        const d = new Date(a.attendance_date + "T00:00:00Z");
-        return d.getUTCDay() === 0;
-      }).length;
-      holidayBonus = sundayCount * 20000;
-    }
-
-    let kasbonP = 0;
-    let kasbonW = 0;
-
-    // Sesuai ketentuan: Staf Bulanan pada payroll mingguan menerima Uang Makan TANPA potongan kasbon.
-    // Potongan kasbon staf bulanan tetap utuh dipotong pada akhir bulan (Payroll Bulanan).
-    if (paySystem === "BULANAN" && run.payroll_type !== "BULANAN") {
-      kasbonP = 0;
-      kasbonW = 0;
-    } else {
-      const workerAdvs = advList.filter((a) => a.worker_id === it.worker_id);
-
-      const baseKasbonP = workerAdvs
-        .filter((a) => a.category === "KASBON_PERUSAHAAN")
-        .reduce((sum, a) => {
-          const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
-          const inst = Number(a.installment_amount || 0);
-          return sum + (inst > 0 ? Math.min(inst, rem) : rem);
-        }, 0);
-
-      kasbonP = baseKasbonP + totalLateDeduction;
-
-      kasbonW = workerAdvs
-        .filter((a) => a.category === "KASBON_WARUNG")
-        .reduce((sum, a) => sum + Math.max(0, Number(a.amount) - Number(a.paid_amount)), 0);
-    }
-
-        let gross = baseAmt + mealAmt + otAmt + manualOtAmt + otBonus + holidayBonus;
-    
-    // KUNCI: Cegah angka bonus lembur masuk ke pencairan Uang Makan mingguan
-    if (paySystem === "BULANAN" && run.payroll_type !== "BULANAN") {
-      gross = mealAmt;
-    }
-    
-    const deduction = kasbonP + kasbonW;
-    const net = Math.max(0, Math.round((gross - deduction) * 100) / 100);
-
-    totalRunGross += gross;
-    totalRunDeduction += deduction;
-    totalRunNet += net;
-
-    const updatePayload = filterValidPayrollItemColumns({
-      worker_name_snapshot: it.worker_name_snapshot || w?.name || null,
-      pay_system_snapshot: paySystem,
-      monthly_salary_snapshot: Number(w?.monthly_salary || w?.base_salary || it.monthly_salary_snapshot || 0),
-      daily_wage_snapshot: Number(w?.daily_salary || w?.daily_rate || it.daily_wage_snapshot || 0),
-      full_days: fullDays,
-      half_days: halfDays,
-      overtime_minutes: totalOtMinutes,
-      base_amount: baseAmt,
-      meal_amount: mealAmt,
-      overtime_amount: otAmt,
-      manual_overtime_amount: manualOtAmt,
-      overtime_bonus: otBonus,
-      holiday_bonus: holidayBonus,
-      kasbon_perusahaan_amount: kasbonP,
-      kasbon_warung_amount: kasbonW,
-      deduction_amount: deduction,
-      net_amount: net,
-    }, allowedDbCols);
-
-    let { error: updErr } = await db
-      .from("payroll_run_items")
-      .update(updatePayload)
-      .eq("id", it.id);
-
-    if (updErr && updErr.message.includes("Could not find the")) {
-      const matchCol = updErr.message.match(/Could not find the '([^']+)' column/i);
-      if (matchCol && matchCol[1]) {
-        delete updatePayload[matchCol[1]];
-        const retry = await db.from("payroll_run_items").update(updatePayload).eq("id", it.id);
-        updErr = retry.error;
-      }
-    }
-    if (updErr) throw new Error("Gagal memperbarui item payroll: " + updErr.message);
-  }
-
-  // Rekam relasi foreign key absensi ke payroll_run_details
-export async function syncPayrollAdvancesCore(runId: number) {
-  await requirePermission("payroll.write");
-  const s = await createClient();
-  const admin = getAdminClient();
-  const db = admin || s;
-
-  const { data: run, error: rErr } = await db
-    .from("payroll_runs")
-    .select("*")
-    .eq("id", runId)
-    .single();
-  if (rErr || !run) throw new Error("Data payroll run tidak ditemukan.");
-
   // Ambil existing items untuk mendeteksi kolom fisik yang valid di database
   const { data: existingItems } = await db
     .from("payroll_run_items")
@@ -2098,9 +1673,16 @@ export async function syncPayrollAdvancesCore(runId: number) {
   // 1. Ambil semua Slip Final yang SUDAH DIBAYAR untuk memblokir data cutoff lama
   const { data: paidRuns } = await db
     .from("payroll_runs")
-    .select("id, period_start, period_end")
-    .in("status", ["PAID", "SUDAH_DIBAYAR", "FINAL"])
+    .select("id, period_start, period_end, status, config_snapshot")
+    .neq("id", runId)
     .order("period_end", { ascending: false });
+
+  // Filter mandiri untuk memastikan statusnya lunas
+  const validPaidRuns = (paidRuns || []).filter((r: any) => {
+    if (["PAID", "SUDAH_DIBAYAR", "FINAL"].includes(r.status)) return true;
+    const snap = r.config_snapshot || {};
+    return snap.payment_status === "SUDAH DIBAYAR" || snap.payment_status_code === "SUDAH_DIBAYAR";
+  });
 
   // 2. Ambil ID absensi yang terikat foreign key ke run ini
   const { data: runDetails } = await db
@@ -2163,7 +1745,7 @@ export async function syncPayrollAdvancesCore(runId: number) {
     if (!paySystem) paySystem = "HARIAN";
 
     // Cari batas akhir slip lunas khusus pekerja ini (jika ada)
-    const workerPaidRuns = (paidRuns ?? []).filter(r => r.id !== run.id && r.period_end < run.period_start);
+    const workerPaidRuns = validPaidRuns.filter(r => r.period_end < run.period_start);
     const lastPaidDate = workerPaidRuns.length > 0 ? workerPaidRuns[0].period_end : null;
 
     const workerAtts = attList.filter((a) => {
@@ -2269,7 +1851,7 @@ export async function syncPayrollAdvancesCore(runId: number) {
 
     // Masukkan data update ke dalam penampung batch
     batchItemUpdates.push(filterValidPayrollItemColumns({
-      id: it.id, // Pastikan ID ada untuk upsert
+      id: it.id, 
       payroll_run_id: runId,
       worker_id: it.worker_id,
       worker_name_snapshot: it.worker_name_snapshot || w?.name || null,
@@ -2296,7 +1878,6 @@ export async function syncPayrollAdvancesCore(runId: number) {
   if (batchItemUpdates.length > 0) {
     const { error: batchErr } = await db.from("payroll_run_items").upsert(batchItemUpdates, { onConflict: "id" });
     if (batchErr) {
-       // Fallback mekanik jika upsert terhalang schema constraint mismatch
        for (const updatePayload of batchItemUpdates) {
           const id = updatePayload.id;
           delete updatePayload.id;
@@ -2325,7 +1906,6 @@ export async function syncPayrollAdvancesCore(runId: number) {
     total_net: totalRunNet,
   }).eq("id", runId);
 }
-
 
 export async function syncPayrollAdvancesAction(f: FormData) {
   const path = "/dashboard/payroll";
