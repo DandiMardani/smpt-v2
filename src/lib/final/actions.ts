@@ -30,14 +30,6 @@ function t(f: FormData, k: string) {
   return String(f.get(k) ?? "").trim();
 }
 
-/**
- * Fungsi tunggal otomatis FULL_DAY vs HALF_DAY berdasarkan jam masuk & pulang.
- * Aturan Bisnis Resmi:
- *  1. Shift Pagi: masuk <= 09:30 dan pulang antara 11:30 - 14:00 → HALF_DAY
- *  2. Shift Siang: masuk >= 11:00 s/d 13:30 dan pulang >= 15:30 → HALF_DAY
- *  3. Durasi total < 6 jam (360 mnt) → HALF_DAY
- *  4. Selain itu (masuk pagi, pulang >= 16:00, durasi >= 6 jam) → FULL_DAY
- */
 function computeDayClassification(
   checkIn: string | null | undefined,
   checkOut: string | null | undefined
@@ -63,17 +55,14 @@ function computeDayClassification(
   const duration = outM - inM;
   if (duration <= 0) return "FULL_DAY";
 
-  // 1. Shift Pagi: masuk <= 09:30 dan pulang 11:30 - 14:00
   if (inM <= 9 * 60 + 30 && outM >= 11 * 60 + 30 && outM <= 14 * 60) {
     return "HALF_DAY";
   }
 
-  // 2. Shift Siang: masuk 11:00 - 13:30 dan pulang >= 15:30
   if (inM >= 11 * 60 && inM <= 13 * 60 + 30 && outM >= 15 * 60 + 30) {
     return "HALF_DAY";
   }
 
-  // 3. Durasi total < 6 jam (360 menit)
   if (duration < 360) {
     return "HALF_DAY";
   }
@@ -1859,7 +1848,6 @@ export async function syncPayrollAdvancesCore(runId: number) {
     totalRunDeduction += deduction;
     totalRunNet += net;
 
-    // Masukkan data update ke dalam penampung batch
     batchItemUpdates.push(filterValidPayrollItemColumns({
       id: it.id, 
       payroll_run_id: runId,
