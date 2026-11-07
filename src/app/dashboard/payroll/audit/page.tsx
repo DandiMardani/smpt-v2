@@ -2,7 +2,6 @@ import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { PageShell, Card, Badge, Flow, Empty } from "@/components/final/final-ui";
 import Link from "next/link";
-import { ChevronLeftIcon } from "lucide-react";
 
 // Helper untuk format menit ke Jam & Menit
 function formatMinutes(totalMins: number) {
@@ -117,7 +116,9 @@ export default async function AuditPayrollPage() {
           href="/dashboard/payroll" 
           className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
         >
-          <ChevronLeftIcon className="w-4 h-4 mr-1" />
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"></path>
+          </svg>
           Kembali ke Menu Payroll
         </Link>
       </div>
