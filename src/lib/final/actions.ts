@@ -1684,6 +1684,9 @@ export async function syncPayrollAdvancesCore(runId: number) {
     return snap.payment_status === "SUDAH DIBAYAR" || snap.payment_status_code === "SUDAH_DIBAYAR";
   });
 
+  // Cari global last paid date untuk penguncian maksimal
+  const lastPaidDate = validPaidRuns.length > 0 ? validPaidRuns[0].period_end : null;
+
   // 2. Ambil ID absensi yang terikat foreign key ke run ini
   const { data: runDetails } = await db
     .from("payroll_run_details")
@@ -1695,14 +1698,21 @@ export async function syncPayrollAdvancesCore(runId: number) {
   runStartDt.setUTCDate(runStartDt.getUTCDate() - 7);
   const searchStart = runStartDt.toISOString().slice(0, 10);
 
-  const { data: attRecords } = await db
-    .from("attendance_records")
+  // Hanya query data absensi yang tanggalnya LEBIH BESAR dari lastPaidDate
+  let attQuery = db.from("attendance_records")
     .select(
       "id, worker_id, day_class, overtime_minutes, manual_overtime_hours, attendance_date, attendance_status, late_deduction, notes, verification_status, payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))"
     )
-    .gte("attendance_date", searchStart)
     .lte("attendance_date", run.period_end)
     .neq("verification_status", "DITOLAK");
+
+  if (lastPaidDate && searchStart <= lastPaidDate) {
+    attQuery = attQuery.gt("attendance_date", lastPaidDate);
+  } else {
+    attQuery = attQuery.gte("attendance_date", searchStart);
+  }
+
+  const { data: attRecords } = await attQuery;
 
   let extraLinkedAtts: any[] = [];
   if (linkedAttIds.length > 0) {
@@ -1745,8 +1755,8 @@ export async function syncPayrollAdvancesCore(runId: number) {
     if (!paySystem) paySystem = "HARIAN";
 
     // Cari batas akhir slip lunas khusus pekerja ini (jika ada)
-    const workerPaidRuns = validPaidRuns.filter(r => r.period_end < run.period_start);
-    const lastPaidDate = workerPaidRuns.length > 0 ? workerPaidRuns[0].period_end : null;
+    const workerPaidRuns = validPaidRuns.filter((r: any) => r.period_end < run.period_start);
+    const workerLastPaidDate = workerPaidRuns.length > 0 ? workerPaidRuns[0].period_end : null;
 
     const workerAtts = attList.filter((a) => {
       if (a.worker_id !== it.worker_id || a.attendance_status !== "HADIR" || a.verification_status === "DITOLAK") return false;
@@ -1754,8 +1764,8 @@ export async function syncPayrollAdvancesCore(runId: number) {
       const isLinkedToThisRun = linkedAttIds.includes(a.id);
       if (isLinkedToThisRun) return true;
 
-      // BLOKIR MUTLAK: Jika tanggal absensi sudah masuk periode yang DIBAYAR/LUNAS, abaikan (mencegah lembur nyasar)
-      if (lastPaidDate && a.attendance_date <= lastPaidDate) return false;
+      // BLOKIR MUTLAK: Jika tanggal absensi sudah masuk periode yang DIBAYAR/LUNAS, abaikan
+      if (workerLastPaidDate && a.attendance_date <= workerLastPaidDate) return false;
 
       // Data dalam periode berjalan
       if (a.attendance_date >= run.period_start && a.attendance_date <= run.period_end) return true;
@@ -1874,7 +1884,7 @@ export async function syncPayrollAdvancesCore(runId: number) {
     }, allowedDbCols));
   }
 
-  // EKSEKUSI BATCH UPSERT SEKALIGUS (Loading jadi instan)
+  // JALANKAN BATCH UPSERT UNTUK SPEED INSTAN
   if (batchItemUpdates.length > 0) {
     const { error: batchErr } = await db.from("payroll_run_items").upsert(batchItemUpdates, { onConflict: "id" });
     if (batchErr) {
