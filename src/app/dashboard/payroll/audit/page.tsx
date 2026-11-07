@@ -1,146 +1,257 @@
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { PageShell, Card, Flow, Empty, Metric } from "@/components/final/final-ui";
+import { PageShell, Card, Flow, Empty, Badge } from "@/components/final/final-ui";
 import Link from "next/link";
 import { money } from "@/lib/final/final-utils";
+import { AdaptivePayrollDetail } from "@/components/payroll/payroll-accordion-table";
 
-// Helper format jam
-function formatMinutes(totalMins: number) {
-  if (totalMins <= 0) return "-";
-  const h = Math.floor(totalMins / 60);
-  const m = totalMins % 60;
-  if (h > 0 && m > 0) return `${h}j ${m}m`;
-  if (h > 0) return `${h} Jam`;
-  return `${m} mnt`;
+// --- HELPERS TANGGAL PERIODE ---
+function formatIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-// Helper Status
-function getClaimStatus(att: any) {
-  if (att.verification_status === "DITOLAK") return { label: "DITOLAK", color: "bg-red-100 text-red-800 border-red-200" };
-  const linkedRuns = Array.isArray(att.payroll_run_details)
-    ? att.payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean)
-    : [];
-  if (linkedRuns.length > 0) {
-    const run = linkedRuns[0];
-    const status = String(run.status || "").toUpperCase();
-    const snapStatus = String(run.config_snapshot?.payment_status || "").toUpperCase();
-    if (status === "FINAL" || status === "PAID" || snapStatus === "SUDAH DIBAYAR" || snapStatus === "SUDAH_DIBAYAR") {
-      return { label: "LUNAS", color: "bg-emerald-100 text-emerald-800 border-emerald-200" };
-    }
-    return { label: "DRAFT PAYROLL", color: "bg-amber-100 text-amber-800 border-amber-200" };
+function addDays(d: Date | string, days: number): string {
+  const dt = typeof d === "string" ? new Date(d + "T00:00:00Z") : new Date(d);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+function getDynamicPeriod(paySystem: string, refDate = new Date()): { start: string; end: string } {
+  const y = refDate.getFullYear();
+  const m = refDate.getMonth();
+  const d = refDate.getDay();
+
+  if (paySystem === "BULANAN") {
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0);
+    return { start: formatIsoDate(start), end: formatIsoDate(end) };
   }
-  if (att.verification_status === "DRAFT") return { label: "BELUM VERIFIKASI", color: "bg-slate-100 text-slate-700 border-slate-200" };
-  return { label: "BELUM DIKLAIM", color: "bg-blue-100 text-blue-800 border-blue-200" };
+
+  if (paySystem === "HARIAN") {
+    const diffToSat = (d + 1) % 7;
+    const start = new Date(y, m, refDate.getDate() - diffToSat);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    return { start: formatIsoDate(start), end: formatIsoDate(end) };
+  }
+
+  if (paySystem === "BORONGAN") {
+    const diffToFri = (d + 2) % 7;
+    const start = new Date(y, m, refDate.getDate() - diffToFri);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    return { start: formatIsoDate(start), end: formatIsoDate(end) };
+  }
+
+  return { start: formatIsoDate(new Date(y, m, 1)), end: formatIsoDate(new Date(y, m + 1, 0)) };
 }
 
 export default async function AuditPayrollPage() {
   await requirePermission("payroll.view");
   const s = await createClient();
+  const now = new Date();
 
-  // 1. Tarik Data Pekerja
-  const { data: workers } = await s.from("workers").select("id, name, worker_code, pay_system, daily_wage");
-  const workerMap = new Map((workers || []).map((w: any) => [w.id, w]));
+  // 1. Tarik Data Utama
+  const [workersRes, settingsRes, advRes, attRes, slipsRes, checksRes] = await Promise.all([
+    s.from("workers").select("id,name,worker_code,pay_system,daily_wage,monthly_salary,department,phone"),
+    s.from("payroll_settings").select("key, value_numeric, value_text"),
+    s.from("cash_advances").select("*").eq("status", "AKTIF"),
+    s.from("attendance_records").select("*, payroll_run_details(payroll_run_id, payroll_runs(id, status, period_start, period_end))").gte("attendance_date", addDays(now, -30)),
+    s.from("payroll_run_items").select("*, payroll_runs(*)").order("id", { ascending: false }).limit(2000),
+    s.from("production_checks").select("good_qty, order_item_id, production_order_items!inner(operator_price_snapshot, production_orders!inner(operator_worker_id))").eq("status", "AKTIF").gte("check_date", addDays(now, -30))
+  ]);
 
-  // 2. Tarik Data Presensi Harian (30 Hari Terakhir)
-  const today = new Date();
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(today.getDate() - 30);
-  const searchStart = thirtyDaysAgo.toISOString().slice(0, 10);
-  
-  const { data: atts } = await s
-    .from("attendance_records")
-    .select(`
-      id, worker_id, attendance_date, actual_in, actual_out, day_class,
-      overtime_minutes, manual_overtime_hours, notes, attendance_status, verification_status,
-      payroll_run_details(
-        payroll_run_id, 
-        payroll_runs(id, status, period_start, period_end, config_snapshot)
-      )
-    `)
-    .gte("attendance_date", searchStart)
-    .order("attendance_date", { ascending: false });
+  const workers = workersRes.data || [];
+  const settingsRows = settingsRes.data || [];
+  const allAdvances = advRes.data || [];
+  const allAtts = attRes.data || [];
+  const allSlips = slipsRes.data || [];
+  const allChecks = checksRes.data || [];
 
-  // 3. Tarik Data Borongan (Belum Diklaim)
-  const { data: checks } = await s
-    .from("production_checks")
-    .select(`
-      good_qty, status, check_date,
-      production_order_items!inner(operator_price_snapshot, production_orders!inner(operator_worker_id))
-    `)
-    .eq("status", "AKTIF")
-    .gte("check_date", searchStart);
+  const settingsMap: any = {};
+  settingsRows.forEach(r => settingsMap[r.key] = r.value_numeric ?? r.value_text);
+  const workerMap = new Map(workers.map(w => [w.id, w]));
 
-  let estimasiHarian = 0;
-  let estimasiBorongan = 0;
+  // 2. Olah Simulasi Real-Time Per Pekerja
+  const simulatedItems: any[] = [];
+  const rawAuditLogs: any[] = [];
+  const boronganTotals = new Map<number, number>();
 
-  // --- HITUNG ESTIMASI LIVE (YANG BELUM LUNAS/DRAFT) ---
-  (atts || []).forEach((a: any) => {
-    const status = getClaimStatus(a).label;
-    if (status === "BELUM DIKLAIM" || status === "DRAFT PAYROLL") {
-      const w = workerMap.get(a.worker_id);
-      if (w && String(w.pay_system).toUpperCase() !== "BULANAN") {
-        const dailyRate = Number(w.daily_wage || 0);
-        const otMins = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-        const otRate = dailyRate / 8; // Standar kasar 1/8
-        
-        let base = 0;
-        if (a.attendance_status === "HADIR") {
-          base = a.day_class === "HALF_DAY" ? (dailyRate * 0.5) : dailyRate;
-        }
-        estimasiHarian += base + ((otMins / 60) * otRate);
-      }
+  // Kalkulasi Borongan Live (Yang masih aktif/belum ditarik)
+  allChecks.forEach((c: any) => {
+    const wId = c.production_order_items?.production_orders?.operator_worker_id;
+    const price = Number(c.production_order_items?.operator_price_snapshot || 0);
+    const qty = Number(c.good_qty || 0);
+    if (wId && price > 0) {
+      boronganTotals.set(wId, (boronganTotals.get(wId) || 0) + (price * qty));
     }
   });
 
-  (checks || []).forEach((c: any) => {
-    // Estimasi kasaran borongan yang masih aktif (belum masuk payroll lunas)
-    const price = Number(c.production_order_items?.operator_price_snapshot || 0);
-    const qty = Number(c.good_qty || 0);
-    estimasiBorongan += (price * qty);
-  });
-
-  // --- PERSIAPAN TABEL AUDIT MENTAH ---
-  const auditData = (atts || []).map((a: any) => {
-    const worker = workerMap.get(a.worker_id) || {};
+  for (const worker of workers) {
     const paySystem = String(worker.pay_system || "HARIAN").toUpperCase();
     
-    const totalOtMinutes = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-    const d = new Date(a.attendance_date + "T00:00:00Z");
-    const isJumat = d.getUTCDay() === 5;
-    const isHarian = paySystem !== "BULANAN";
-    const isFridayCutoff = isJumat && isHarian && totalOtMinutes > 0;
-    const noteStr = String(a.notes || "").toLowerCase();
-    const hasCutoffNote = noteStr.includes("cutoff") || noteStr.includes("slip depan") || noteStr.includes("titipan");
-    
-    const isCutoff = isFridayCutoff || hasCutoffNote;
-    const claimStatus = getClaimStatus(a);
-    
-    return {
-      id: a.id,
-      workerName: worker.name || "Unknown",
-      workerCode: worker.worker_code || "-",
-      paySystem,
-      date: a.attendance_date,
-      inOut: `${a.actual_in || "--:--"} - ${a.actual_out || "--:--"}`,
-      totalOtMinutes,
-      isCutoff,
-      notes: a.notes,
-      claimStatus,
-      rawOt: a.overtime_minutes,
-      manualOt: a.manual_overtime_hours,
-    };
-  });
+    // Cari slip lunas terakhir
+    const mySlips = allSlips.filter(it => it.worker_id === worker.id && it.payroll_runs && it.payroll_runs.status !== "DIBATALKAN");
+    let officialSlipItem = mySlips.length > 0 ? mySlips[0] : null;
+    if (paySystem === "BULANAN") {
+      officialSlipItem = mySlips.find(it => it.payroll_runs?.payroll_type === "BULANAN") || null;
+    }
 
-  const filteredData = auditData.filter(d => 
-    (d.totalOtMinutes > 0 || d.isCutoff || d.claimStatus.label === "BELUM DIKLAIM" || d.claimStatus.label === "DRAFT PAYROLL")
-    && d.claimStatus.label !== "DITOLAK"
-  );
+    let isPaid = false;
+    let paidPeriodEnd = null;
+    if (officialSlipItem) {
+      const r = officialSlipItem.payroll_runs;
+      const status = String(r?.status || "").toUpperCase();
+      const snapStatus = String(r?.config_snapshot?.payment_status || "").toUpperCase();
+      const itStatus = String(officialSlipItem.payment_status || "").toUpperCase();
+      if (status === "FINAL" || status === "PAID" || snapStatus === "SUDAH DIBAYAR" || snapStatus === "SUDAH_DIBAYAR" || itStatus === "PAID") {
+        isPaid = true;
+        paidPeriodEnd = r.period_end;
+      }
+    }
+
+    // Tentukan Periode Berjalan Live
+    let currentPeriod = getDynamicPeriod(paySystem, now);
+    if (paySystem === "BULANAN") {
+      let start = paidPeriodEnd ? addDays(paidPeriodEnd, 1) : formatIsoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+      const end = formatIsoDate(now) < start ? start : formatIsoDate(now);
+      currentPeriod = { start, end };
+    }
+
+    let fullDays = 0, halfDays = 0, otMins = 0, count4h = 0, sundayCount = 0, manualOtHours = 0;
+    const myAtts = allAtts.filter(a => a.worker_id === worker.id);
+    
+    for (const a of myAtts) {
+      if (isPaid && paidPeriodEnd && a.attendance_date <= paidPeriodEnd) continue;
+      
+      const linkedRuns = Array.isArray((a as any).payroll_run_details) ? (a as any).payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean) : [];
+      const hasFinalizedRun = linkedRuns.some((r: any) => r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR");
+      if (hasFinalizedRun || a.verification_status === "DITOLAK") continue;
+
+      const isWithin = a.attendance_date >= currentPeriod.start && a.attendance_date <= currentPeriod.end;
+      const actOt = Number(a.overtime_minutes || 0);
+      const manOt = Number(a.manual_overtime_hours || 0) * 60;
+      const rawDayOt = actOt + manOt;
+      
+      let isCutoff = false;
+      if (!isWithin) {
+        const d = new Date(a.attendance_date + "T00:00:00Z");
+        const isJumat = d.getUTCDay() === 5;
+        const isHarian = paySystem !== "BULANAN";
+        const isFridayCutoff = isJumat && isHarian && rawDayOt > 0;
+        const noteStr = String(a.notes || "").toLowerCase();
+        const hasCutoffNote = noteStr.includes("cutoff") || noteStr.includes("slip depan") || noteStr.includes("titipan");
+        
+        if (!isFridayCutoff && !hasCutoffNote) continue;
+        isCutoff = true;
+      }
+
+      // Log Raw Audit
+      rawAuditLogs.push({
+        id: a.id,
+        workerName: worker.name,
+        paySystem,
+        date: a.attendance_date,
+        inOut: `${a.actual_in || "--:--"} - ${a.actual_out || "--:--"}`,
+        totalOtMinutes: rawDayOt,
+        isCutoff,
+        manualOt: a.manual_overtime_hours
+      });
+
+      // Hitung Absensi
+      if (isWithin && a.attendance_status === "HADIR") {
+        if (a.day_class === "HALF_DAY") halfDays++;
+        else fullDays++;
+      }
+
+      let isSunday = false;
+      if (a.attendance_date) {
+        const parts = String(a.attendance_date).slice(0, 10).split("-");
+        isSunday = new Date(parseInt(parts[0], 10), (parseInt(parts[1], 10) || 1) - 1, parseInt(parts[2], 10)).getDay() === 0;
+      }
+
+      otMins += rawDayOt;
+      manualOtHours += Number(a.manual_overtime_hours || 0);
+
+      if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
+        sundayCount++;
+        if (paySystem === "BULANAN" && rawDayOt >= 720) count4h++;
+        if (paySystem !== "BULANAN" && rawDayOt >= 240) count4h++;
+      } else if (rawDayOt >= 240) {
+        count4h++;
+      }
+    }
+
+    const totalDays = fullDays + (halfDays * 0.5);
+    if (totalDays === 0 && otMins === 0) continue; // Lewati yang nganggur
+
+    let baseAmt = 0, mealAmt = 0, otAmt = 0, otBonus = 0, holBonus = 0;
+
+    if (paySystem === "BULANAN") {
+      const moSal = Number(worker.monthly_salary || 0);
+      const otDiv = Number(settingsMap.OT_DIVISOR_BULANAN || 190);
+      const otHourly = moSal > 0 ? moSal / Math.max(1, otDiv) : 0;
+      baseAmt = moSal; // Simulasi tampilkan utuh bulanan
+      otAmt = Math.round((otMins / 60) * otHourly);
+      otBonus = count4h * Number(settingsMap.OT_BONUS_BULANAN_4H || 17500);
+    } else {
+      const dailyWage = Number(worker.daily_wage || 0);
+      baseAmt = Math.round(totalDays * dailyWage);
+      const otDiv = Number(settingsMap.OT_DIVISOR_HARIAN || 8);
+      const otHourly = dailyWage / Math.max(1, otDiv);
+      otAmt = Math.round((otMins / 60) * otHourly);
+      otBonus = count4h * Number(settingsMap.OT_BONUS_HARIAN_4H || 5000);
+      holBonus = sundayCount * Number(settingsMap.HARIAN_HOLIDAY_BONUS_FULL || 20000);
+    }
+
+    let myAdvs = allAdvances.filter(a => a.worker_id === worker.id);
+    if (isPaid && paidPeriodEnd) {
+      myAdvs = myAdvs.filter(a => a.advance_date > paidPeriodEnd);
+    }
+    
+    let kasbonP = 0, kasbonW = 0;
+    myAdvs.forEach(a => {
+      const rem = Math.max(0, Number(a.amount) - Number(a.paid_amount));
+      if (a.category === "KASBON_WARUNG") kasbonW += rem;
+      else kasbonP += (Number(a.installment_amount || 0) > 0 ? Math.min(Number(a.installment_amount), rem) : rem);
+    });
+
+    const gross = baseAmt + otAmt + otBonus + holBonus;
+    const ded = kasbonP + kasbonW;
+
+    // Bikin Objek "Fake" buat disuapin ke Komponen Rincian
+    simulatedItems.push({
+      id: worker.id, 
+      worker_id: worker.id,
+      worker_name_snapshot: worker.name,
+      pay_system_snapshot: paySystem,
+      daily_wage_snapshot: worker.daily_wage,
+      full_days: fullDays,
+      half_days: halfDays,
+      overtime_minutes: otMins - (manualOtHours * 60), 
+      manual_overtime_hours: manualOtHours,
+      base_amount: baseAmt,
+      meal_amount: mealAmt,
+      overtime_amount: otAmt,
+      manual_overtime_amount: 0,
+      overtime_bonus: otBonus,
+      holiday_bonus: holBonus,
+      kasbon_perusahaan_amount: kasbonP,
+      kasbon_warung_amount: kasbonW,
+      deduction_amount: ded,
+      net_amount: Math.max(0, gross - ded)
+    });
+  }
+
+  // Urutkan log mentah
+  rawAuditLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
     <PageShell
-      eyebrow="Payroll Audit"
-      title="Rekonsiliasi & Audit Lembur"
-      description="Pantau arus data jam lembur mentah, status Cutoff, dan estimasi nominal rupiah pekerja secara real-time sebelum finalisasi."
+      eyebrow="Live Simulasi (Tanpa Simpan Database)"
+      title="Estimasi Gaji Real-Time"
+      description="Rincian hitungan adaptif ini ditarik 100% langsung dari mesin absensi detik ini juga, khusus untuk panduan Admin."
     >
       <div className="mb-4">
         <Link 
@@ -153,88 +264,94 @@ export default async function AuditPayrollPage() {
       </div>
 
       <Flow>
-        Halaman ini membaca langsung dari mesin absensi dan database *live*. Data dengan status <b>"BELUM DIKLAIM"</b> atau <b>"DRAFT PAYROLL"</b> adalah data yang belum dibayarkan (belum lunas). <br/>
-        <i>💡 <b>Tips Admin:</b> Untuk melihat rincian gaji Rupiah yang 100% akurat per pekerja, silakan buat <b>"Finalisasi"</b> di menu Payroll. (Draft Finalisasi aman dan bisa "Dibatalkan" kapan saja sebelum klik Set Lunas).</i>
+        Seluruh kotak rincian di bawah ini adalah <b>SIMULASI LANGSUNG (LIVE)</b>. Angkanya akan persis sama dengan yang dilihat pekerja di HP mereka. Halaman ini aman dipakai untuk patokan Admin karena tidak mengubah data *Payroll* asli.
       </Flow>
 
-      {/* --- WIDGET ESTIMASI RUPIAH LIVE --- */}
-      <div className="grid gap-3 sm:grid-cols-2 mb-6 mt-2">
-        <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 shadow-sm">
-          <div className="text-[10px] font-bold uppercase text-blue-600 tracking-wider">Estimasi Live: Upah Harian Aktif</div>
-          <div className="text-2xl font-black text-blue-900 mt-1">{money(estimasiHarian)}</div>
-          <p className="text-[10px] text-blue-700 mt-1">Estimasi kasar Gaji Pokok & Lembur (Harian) yang belum lunas (Draft + Belum Diklaim).</p>
-        </div>
-        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 shadow-sm">
-          <div className="text-[10px] font-bold uppercase text-violet-600 tracking-wider">Estimasi Live: Borongan Aktif</div>
-          <div className="text-2xl font-black text-violet-900 mt-1">{money(estimasiBorongan)}</div>
-          <p className="text-[10px] text-violet-700 mt-1">Estimasi akumulasi Qty Sah x Harga Operator yang belum masuk Payroll.</p>
-        </div>
+      {/* --- RINCIAN ADAPTIF REAL-TIME PER PEKERJA --- */}
+      <div className="mt-6 space-y-6">
+        {simulatedItems.length === 0 ? (
+          <Empty>Belum ada data absensi aktif yang berjalan di siklus saat ini.</Empty>
+        ) : (
+          simulatedItems.map(item => (
+            <div key={item.id} className="relative">
+              {/* Label Status Live di Atas Rincian */}
+              <div className="absolute -top-3 left-4 z-10 flex gap-2">
+                <span className="bg-rose-500 text-white px-2 py-0.5 rounded text-[10px] font-black shadow-sm animate-pulse flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-white rounded-full"></span> LIVE
+                </span>
+                <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-bold shadow-sm">
+                  Estimasi Berjalan
+                </span>
+              </div>
+              <AdaptivePayrollDetail 
+                item={item} 
+                worker={workerMap.get(item.worker_id)} 
+                settings={settingsMap} 
+                type={item.pay_system_snapshot as "HARIAN" | "BULANAN"} 
+              />
+            </div>
+          ))
+        )}
       </div>
 
-      <Card title="Log Mentah Kehadiran & Lembur (30 Hari Terakhir)">
-        {filteredData.length === 0 ? (
-          <Empty>Tidak ada data lembur aktif atau cutoff yang perlu diaudit saat ini.</Empty>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-600">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-3 font-semibold text-slate-800">Tanggal</th>
-                  <th className="px-4 py-3 font-semibold text-slate-800">Nama Pekerja</th>
-                  <th className="px-4 py-3 font-semibold text-slate-800">Jam Kerja</th>
-                  <th className="px-4 py-3 font-semibold text-slate-800">Lembur Diakui</th>
-                  <th className="px-4 py-3 font-semibold text-slate-800">Indikator</th>
-                  <th className="px-4 py-3 font-semibold text-slate-800">Status Klaim</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredData.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-700">
-                      {row.date}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="font-semibold text-slate-900">{row.workerName}</div>
-                      <div className="text-xs text-slate-400">{row.paySystem}</div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {row.inOut}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {row.totalOtMinutes > 0 ? (
-                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${row.totalOtMinutes >= 240 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-700'}`}>
-                          ⏱️ {formatMinutes(row.totalOtMinutes)}
-                        </span>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                      {(Number(row.manualOt) > 0) && (
-                        <div className="text-[10px] text-amber-600 mt-1 font-medium">
-                          (+ Manual {row.manualOt}j)
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {row.isCutoff ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                          ⚠️ CUTOFF / SLIP DEPAN
-                        </span>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${row.claimStatus.color}`}>
-                        {row.claimStatus.label}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* --- SIMULASI BORONGAN OPERATOR --- */}
+      {boronganTotals.size > 0 && (
+        <Card title="Estimasi Live: Operator Borongan Aktif" className="mt-8">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from(boronganTotals.entries()).map(([wId, total]) => {
+              const w = workerMap.get(wId);
+              return (
+                <div key={wId} className="rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
+                  <div className="font-bold text-slate-800">{w?.name || `Operator #${wId}`}</div>
+                  <div className="text-[10px] text-slate-500">{w?.worker_code || "-"}</div>
+                  <div className="mt-2 text-xl font-black text-violet-800">{money(total)}</div>
+                  <div className="text-[10px] text-violet-600 mt-1">Total Qty Sah × Harga Borongan (Belum Diklaim)</div>
+                </div>
+              );
+            })}
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
+
+      {/* --- TABEL RAW LOGS (TETAP ADA BUAT JAGA-JAGA) --- */}
+      <details className="mt-10 rounded-2xl border border-slate-200 bg-white shadow-sm outline-none">
+        <summary className="cursor-pointer p-4 font-bold text-slate-800 outline-none hover:bg-slate-50 rounded-2xl">
+          🔍 Buka Log Mentah Mesin Absensi & Indikator Cutoff
+        </summary>
+        <div className="p-4 border-t border-slate-100 overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-600">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Tanggal</th>
+                <th className="px-4 py-3 font-semibold">Pekerja</th>
+                <th className="px-4 py-3 font-semibold">Jam</th>
+                <th className="px-4 py-3 font-semibold">Lembur</th>
+                <th className="px-4 py-3 font-semibold">Indikator</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rawAuditLogs.map((r, idx) => (
+                <tr key={idx} className="hover:bg-slate-50">
+                  <td className="px-4 py-2 font-medium">{r.date}</td>
+                  <td className="px-4 py-2">
+                    <div className="font-semibold text-slate-800">{r.workerName}</div>
+                    <div className="text-[10px]">{r.paySystem}</div>
+                  </td>
+                  <td className="px-4 py-2">{r.inOut}</td>
+                  <td className="px-4 py-2">
+                    {r.totalOtMinutes > 0 ? (
+                      <span className="font-bold text-blue-700">⏱️ {formatMinutes(r.totalOtMinutes)}</span>
+                    ) : "-"}
+                  </td>
+                  <td className="px-4 py-2">
+                    {r.isCutoff && <Badge variant="warning" className="text-[10px]">⚠️ CUTOFF / SLIP DEPAN</Badge>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </PageShell>
   );
 }
