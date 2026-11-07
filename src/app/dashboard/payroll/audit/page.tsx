@@ -1,6 +1,6 @@
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { PageShell, Card, Badge, Flow, Empty } from "@/components/final/final-ui";
+import { PageShell, Card, Flow, Empty } from "@/components/final/final-ui";
 import Link from "next/link";
 
 // Helper untuk format menit ke Jam & Menit
@@ -172,7 +172,9 @@ export default async function AuditPayrollPage() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {row.isCutoff ? (
-                        <Badge variant="warning" className="text-[10px]">⚠️ CUTOFF / SLIP DEPAN</Badge>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          ⚠️ CUTOFF / SLIP DEPAN
+                        </span>
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
