@@ -1,4 +1,4 @@
-mport { requirePermission } from "@/lib/access/current-user";
+import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { PageShell, Card, Flow, Empty } from "@/components/final/final-ui";
 import Link from "next/link";
