@@ -174,6 +174,9 @@ export default async function AuditPayrollPage() {
       } else {
         // Di luar periode: hanya cutoff yang lemburnya belum diambil run final yang lebih baru
         if (!isCutoffAtt || rawDayOt <= 0) continue;
+        // Generator hanya melihat 7 hari sebelum period_start. Cutoff yang lebih lama
+        // sudah menjadi urusan run sebelumnya, jangan dicampur ke estimasi minggu ini.
+        if (a.attendance_date < addDays(currentPeriod.start, -7)) continue;
         if (finalRuns.some((r: any) => r.period_start > a.attendance_date)) continue;
         countOt = true;
         isCutoff = true;
