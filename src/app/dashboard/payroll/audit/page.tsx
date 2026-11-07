@@ -127,30 +127,51 @@ export default async function AuditPayrollPage() {
     let fullDays = 0, halfDays = 0, otMins = 0, count4h = 0, sundayCount = 0, manualOtHours = 0;
     const myAtts = allAtts.filter(a => a.worker_id === worker.id);
     
-    // --- LOGIKA SINKRONISASI SAMA PERSIS DENGAN HP USER ---
     for (const a of myAtts) {
-      if (isPaid && paidPeriodEnd && a.attendance_date <= paidPeriodEnd) continue;
-      
-      const linkedRuns = Array.isArray((a as any).payroll_run_details) ? (a as any).payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean) : [];
-      const hasFinalizedRun = linkedRuns.some((r: any) => r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR");
-      
-      if (hasFinalizedRun || a.verification_status === "DITOLAK") continue;
+      if (a.verification_status === "DITOLAK") continue;
 
-      const isWithin = a.attendance_date >= currentPeriod.start && a.attendance_date <= currentPeriod.end;
       const actOt = Number(a.overtime_minutes || 0);
       const manOt = Number(a.manual_overtime_hours || 0) * 60;
       const rawDayOt = actOt + manOt;
       
+      const dDate = new Date(a.attendance_date + "T00:00:00Z");
+      const isJumat = dDate.getUTCDay() === 5;
+      const isHarian = paySystem !== "BULANAN";
+      const isFridayCutoff = isJumat && isHarian && rawDayOt > 0;
+      const noteStr = String(a.notes || "").toLowerCase();
+      const hasCutoffNote = noteStr.includes("cutoff") || noteStr.includes("slip depan") || noteStr.includes("titipan");
+      
+      const isCutoffRecord = isFridayCutoff || hasCutoffNote;
+
+      const linkedRuns = Array.isArray((a as any).payroll_run_details) ? (a as any).payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean) : [];
+      
+      // LOGIKA ANTI-BOCOR 2.0
+      // 1. Cek apakah gaji pokoknya udah lunas di periode yang menaungi tanggal tersebut
+      const isBasePaid = linkedRuns.some((r: any) => 
+        (r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR") &&
+        r.period_start <= a.attendance_date && r.period_end >= a.attendance_date
+      ) || (isPaid && paidPeriodEnd && a.attendance_date <= paidPeriodEnd);
+
+      // 2. Cek apakah lembur cutoff-nya udah lunas di periode setelahnya
+      const isOvertimePaid = linkedRuns.some((r: any) => 
+        (r.status === "FINAL" || r.status === "PAID" || r.status === "SUDAH_DIBAYAR") &&
+        r.period_start > a.attendance_date
+      );
+
+      // --- KUNCI PENYELESAIAN ---
+      if (isCutoffRecord) {
+         // Kalau Cutoff, kita baru skip jika overtime-nya udah benar-benar dibayar di slip minggu depannya
+         if (isOvertimePaid) continue;
+      } else {
+         // Kalau bukan Cutoff, kita skip normal jika base salary-nya udah dibayar
+         if (isBasePaid) continue;
+      }
+
+      const isWithin = a.attendance_date >= currentPeriod.start && a.attendance_date <= currentPeriod.end;
+      
       let isCutoff = false;
       if (!isWithin) {
-        const d = new Date(a.attendance_date + "T00:00:00Z");
-        const isJumat = d.getUTCDay() === 5;
-        const isHarian = paySystem !== "BULANAN";
-        const isFridayCutoff = isJumat && isHarian && rawDayOt > 0;
-        const noteStr = String(a.notes || "").toLowerCase();
-        const hasCutoffNote = noteStr.includes("cutoff") || noteStr.includes("slip depan") || noteStr.includes("titipan");
-        
-        if (!isFridayCutoff && !hasCutoffNote) continue; 
+        if (!isCutoffRecord) continue;
         isCutoff = true;
       }
 
@@ -165,7 +186,7 @@ export default async function AuditPayrollPage() {
         manualOt: a.manual_overtime_hours
       });
 
-      // HANYA hitung gaji pokok (hari kerja) jika absen ada di periode aktif minggu ini!
+      // HANYA hitung hari kerja jika absen di periode aktif minggu ini!
       if (isWithin && a.attendance_status === "HADIR") {
         if (a.day_class === "HALF_DAY") halfDays++;
         else fullDays++;
