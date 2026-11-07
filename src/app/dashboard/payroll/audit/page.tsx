@@ -1,9 +1,10 @@
 import { requirePermission } from "@/lib/access/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { PageShell, Card, Flow, Empty } from "@/components/final/final-ui";
+import { PageShell, Card, Flow, Empty, Metric } from "@/components/final/final-ui";
 import Link from "next/link";
+import { money } from "@/lib/final/final-utils";
 
-// Helper untuk format menit ke Jam & Menit
+// Helper format jam
 function formatMinutes(totalMins: number) {
   if (totalMins <= 0) return "-";
   const h = Math.floor(totalMins / 60);
@@ -13,27 +14,22 @@ function formatMinutes(totalMins: number) {
   return `${m} mnt`;
 }
 
-// Helper untuk menentukan Status Klaim Gaji
+// Helper Status
 function getClaimStatus(att: any) {
   if (att.verification_status === "DITOLAK") return { label: "DITOLAK", color: "bg-red-100 text-red-800 border-red-200" };
-
   const linkedRuns = Array.isArray(att.payroll_run_details)
     ? att.payroll_run_details.map((d: any) => d.payroll_runs).filter(Boolean)
     : [];
-
   if (linkedRuns.length > 0) {
-    const run = linkedRuns[0]; // Ambil run pertama yang terikat
+    const run = linkedRuns[0];
     const status = String(run.status || "").toUpperCase();
     const snapStatus = String(run.config_snapshot?.payment_status || "").toUpperCase();
-
     if (status === "FINAL" || status === "PAID" || snapStatus === "SUDAH DIBAYAR" || snapStatus === "SUDAH_DIBAYAR") {
       return { label: "LUNAS", color: "bg-emerald-100 text-emerald-800 border-emerald-200" };
     }
     return { label: "DRAFT PAYROLL", color: "bg-amber-100 text-amber-800 border-amber-200" };
   }
-
   if (att.verification_status === "DRAFT") return { label: "BELUM VERIFIKASI", color: "bg-slate-100 text-slate-700 border-slate-200" };
-
   return { label: "BELUM DIKLAIM", color: "bg-blue-100 text-blue-800 border-blue-200" };
 }
 
@@ -42,36 +38,73 @@ export default async function AuditPayrollPage() {
   const s = await createClient();
 
   // 1. Tarik Data Pekerja
-  const { data: workers } = await s.from("workers").select("id, name, worker_code, pay_system");
+  const { data: workers } = await s.from("workers").select("id, name, worker_code, pay_system, daily_wage");
   const workerMap = new Map((workers || []).map((w: any) => [w.id, w]));
 
-  // 2. Tarik Data Presensi 30 Hari Terakhir (Agar performa tetap kencang)
+  // 2. Tarik Data Presensi Harian (30 Hari Terakhir)
   const today = new Date();
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(today.getDate() - 30);
   const searchStart = thirtyDaysAgo.toISOString().slice(0, 10);
-
+  
   const { data: atts } = await s
     .from("attendance_records")
     .select(`
-      id, worker_id, attendance_date, actual_in, actual_out, 
+      id, worker_id, attendance_date, actual_in, actual_out, day_class,
       overtime_minutes, manual_overtime_hours, notes, attendance_status, verification_status,
       payroll_run_details(
-          payroll_run_id, 
-          payroll_runs(id, status, period_start, period_end, config_snapshot)
+        payroll_run_id, 
+        payroll_runs(id, status, period_start, period_end, config_snapshot)
       )
     `)
     .gte("attendance_date", searchStart)
     .order("attendance_date", { ascending: false });
 
+  // 3. Tarik Data Borongan (Belum Diklaim)
+  const { data: checks } = await s
+    .from("production_checks")
+    .select(`
+      good_qty, status, check_date,
+      production_order_items!inner(operator_price_snapshot, production_orders!inner(operator_worker_id))
+    `)
+    .eq("status", "AKTIF")
+    .gte("check_date", searchStart);
+
+  let estimasiHarian = 0;
+  let estimasiBorongan = 0;
+
+  // --- HITUNG ESTIMASI LIVE (YANG BELUM LUNAS/DRAFT) ---
+  (atts || []).forEach((a: any) => {
+    const status = getClaimStatus(a).label;
+    if (status === "BELUM DIKLAIM" || status === "DRAFT PAYROLL") {
+      const w = workerMap.get(a.worker_id);
+      if (w && String(w.pay_system).toUpperCase() !== "BULANAN") {
+        const dailyRate = Number(w.daily_wage || 0);
+        const otMins = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
+        const otRate = dailyRate / 8; // Standar kasar 1/8
+        
+        let base = 0;
+        if (a.attendance_status === "HADIR") {
+          base = a.day_class === "HALF_DAY" ? (dailyRate * 0.5) : dailyRate;
+        }
+        estimasiHarian += base + ((otMins / 60) * otRate);
+      }
+    }
+  });
+
+  (checks || []).forEach((c: any) => {
+    // Estimasi kasaran borongan yang masih aktif (belum masuk payroll lunas)
+    const price = Number(c.production_order_items?.operator_price_snapshot || 0);
+    const qty = Number(c.good_qty || 0);
+    estimasiBorongan += (price * qty);
+  });
+
+  // --- PERSIAPAN TABEL AUDIT MENTAH ---
   const auditData = (atts || []).map((a: any) => {
     const worker = workerMap.get(a.worker_id) || {};
     const paySystem = String(worker.pay_system || "HARIAN").toUpperCase();
     
-    // Kalkulasi Total Lembur (Mesin + Manual)
     const totalOtMinutes = Number(a.overtime_minutes || 0) + (Number(a.manual_overtime_hours || 0) * 60);
-
-    // Deteksi Otomatis: Apakah ini lembur CUTOFF?
     const d = new Date(a.attendance_date + "T00:00:00Z");
     const isJumat = d.getUTCDay() === 5;
     const isHarian = paySystem !== "BULANAN";
@@ -81,7 +114,7 @@ export default async function AuditPayrollPage() {
     
     const isCutoff = isFridayCutoff || hasCutoffNote;
     const claimStatus = getClaimStatus(a);
-
+    
     return {
       id: a.id,
       workerName: worker.name || "Unknown",
@@ -98,10 +131,8 @@ export default async function AuditPayrollPage() {
     };
   });
 
-  // Filter khusus menampilkan data yang ada lemburnya atau merupakan Cutoff, 
-  // atau masih belum lunas agar Admin fokus ke data yang "Actionable"
   const filteredData = auditData.filter(d => 
-    (d.totalOtMinutes > 0 || d.isCutoff || d.claimStatus.label === "BELUM DIKLAIM" || d.claimStatus.label === "DRAFT PAYROLL") 
+    (d.totalOtMinutes > 0 || d.isCutoff || d.claimStatus.label === "BELUM DIKLAIM" || d.claimStatus.label === "DRAFT PAYROLL")
     && d.claimStatus.label !== "DITOLAK"
   );
 
@@ -109,25 +140,38 @@ export default async function AuditPayrollPage() {
     <PageShell
       eyebrow="Payroll Audit"
       title="Rekonsiliasi & Audit Lembur"
-      description="Pantau arus data jam lembur mentah dan status Cutoff pekerja harian secara real-time sebelum finalisasi slip gaji."
+      description="Pantau arus data jam lembur mentah, status Cutoff, dan estimasi nominal rupiah pekerja secara real-time sebelum finalisasi."
     >
-      <div className="mb-6">
+      <div className="mb-4">
         <Link 
           href="/dashboard/payroll" 
           className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
         >
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"></path>
-          </svg>
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"></path></svg>
           Kembali ke Menu Payroll
         </Link>
       </div>
 
       <Flow>
-        Halaman ini membaca langsung dari mesin absensi dan database *live*. Data dengan status <b>"BELUM DIKLAIM"</b> akan tertarik otomatis saat tombol Sinkronisasi diklik di menu Payroll.
+        Halaman ini membaca langsung dari mesin absensi dan database *live*. Data dengan status <b>"BELUM DIKLAIM"</b> atau <b>"DRAFT PAYROLL"</b> adalah data yang belum dibayarkan (belum lunas). <br/>
+        <i>💡 <b>Tips Admin:</b> Untuk melihat rincian gaji Rupiah yang 100% akurat per pekerja, silakan buat <b>"Finalisasi"</b> di menu Payroll. (Draft Finalisasi aman dan bisa "Dibatalkan" kapan saja sebelum klik Set Lunas).</i>
       </Flow>
 
-      <Card title="Monitoring Real-Time (30 Hari Terakhir)">
+      {/* --- WIDGET ESTIMASI RUPIAH LIVE --- */}
+      <div className="grid gap-3 sm:grid-cols-2 mb-6 mt-2">
+        <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 shadow-sm">
+          <div className="text-[10px] font-bold uppercase text-blue-600 tracking-wider">Estimasi Live: Upah Harian Aktif</div>
+          <div className="text-2xl font-black text-blue-900 mt-1">{money(estimasiHarian)}</div>
+          <p className="text-[10px] text-blue-700 mt-1">Estimasi kasar Gaji Pokok & Lembur (Harian) yang belum lunas (Draft + Belum Diklaim).</p>
+        </div>
+        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 shadow-sm">
+          <div className="text-[10px] font-bold uppercase text-violet-600 tracking-wider">Estimasi Live: Borongan Aktif</div>
+          <div className="text-2xl font-black text-violet-900 mt-1">{money(estimasiBorongan)}</div>
+          <p className="text-[10px] text-violet-700 mt-1">Estimasi akumulasi Qty Sah x Harga Operator yang belum masuk Payroll.</p>
+        </div>
+      </div>
+
+      <Card title="Log Mentah Kehadiran & Lembur (30 Hari Terakhir)">
         {filteredData.length === 0 ? (
           <Empty>Tidak ada data lembur aktif atau cutoff yang perlu diaudit saat ini.</Empty>
         ) : (
@@ -158,7 +202,7 @@ export default async function AuditPayrollPage() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {row.totalOtMinutes > 0 ? (
-                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${row.totalOtMinutes >= 240 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-700'}`}>
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${row.totalOtMinutes >= 240 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-700'}`}>
                           ⏱️ {formatMinutes(row.totalOtMinutes)}
                         </span>
                       ) : (
