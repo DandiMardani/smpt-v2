@@ -31,7 +31,6 @@ interface PayrollAccordionTableProps {
   totNet: number;
 }
 
-// Chevron Icon SVG
 const ChevronRight = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -71,7 +70,6 @@ export function AdaptivePayrollDetail({
   const otMinutes = Number(item.overtime_minutes || 0);
   const otHours = Math.round((otMinutes / 60) * 10) / 10;
 
-  // Konfigurasi sistem dinamis (tanpa hardcode)
   const otDivisor = isBulanan
     ? Number(settings?.OT_DIVISOR_BULANAN ?? 190)
     : Number(settings?.OT_DIVISOR_HARIAN ?? 8);
@@ -105,7 +103,6 @@ export function AdaptivePayrollDetail({
 
   return (
     <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs space-y-4 text-xs">
-      {/* Header Rincian */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
         <div>
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
@@ -125,10 +122,8 @@ export function AdaptivePayrollDetail({
         </div>
       </div>
 
-      {/* Grid 4 Kolom Perhitungan Lengkap (Responsive & Scrollable) */}
       <div className="w-full overflow-x-auto pb-2 scrollbar-thin">
         <div className="flex flex-nowrap sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 min-w-[720px] sm:min-w-0">
-        {/* 1. Gaji / Upah Pokok */}
         <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-blue-700">1. Upah / Gaji Pokok</span>
@@ -158,7 +153,6 @@ export function AdaptivePayrollDetail({
           )}
         </div>
 
-        {/* 2. Uang Lembur Dasar (Standar) */}
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-indigo-700">2. Lembur Dasar</span>
@@ -179,7 +173,6 @@ export function AdaptivePayrollDetail({
           </div>
         </div>
 
-        {/* 3. BONUS LEMBUR (Dinamis dari Konfigurasi Sistem) */}
         <div className="rounded-xl border border-amber-100 bg-amber-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-amber-800">3. Bonus & Insentif</span>
@@ -210,7 +203,6 @@ export function AdaptivePayrollDetail({
           </div>
         </div>
 
-        {/* 4. Rincian Potongan */}
         <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3 space-y-1.5 min-w-[210px] sm:min-w-0 flex-1 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase text-rose-700">4. Rincian Potongan</span>
@@ -248,16 +240,36 @@ export function AdaptivePayrollDetail({
       </div>
       </div>
 
-      {/* Baris Ringkasan Kalkulasi Akhir */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl bg-slate-50 p-3 border border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl bg-slate-50 p-3 border border-slate-200">
         <div className="text-slate-600 text-xs font-medium">
           Formula THP: <b>Total Bruto ({money(gross)})</b> - <b>Total Potongan ({money(totalDed)})</b>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">Gaji Bersih Diterima:</span>
-          <span className="text-sm font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
-            {money(net)}
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Gaji Bersih Diterima:</span>
+            <span className="text-sm font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
+              {money(net)}
+            </span>
+          </div>
+          
+          <div className="h-6 w-px bg-slate-300 hidden sm:block"></div>
+          
+          <div className="flex items-center gap-2">
+            <a
+              href={`/api/export/pdf?report=slip_gaji&item_id=${item.id}`}
+              target="_blank"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition cursor-pointer"
+            >
+              🖨️ Cetak Bukti
+            </a>
+            <a
+              href={`https://wa.me/${worker?.phone?.replace(/^0/, "62") || ""}?text=${encodeURIComponent(`Halo ${worker?.name || ""}, ini rincian gaji Anda untuk periode ini dengan nilai THP sebesar ${money(net)}.`)}`}
+              target="_blank"
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-700 transition cursor-pointer"
+            >
+              💬 Kirim WA
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -307,7 +319,6 @@ export default function PayrollAccordionTable({
 
   return (
     <div className={`rounded-2xl border ${badgeColor === "emerald" ? "border-emerald-200" : badgeColor === "blue" ? "border-blue-200" : "border-amber-200"} bg-white p-4 shadow-sm space-y-3.5`}>
-      {/* Header Tabel & Kontrol */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
         <div className="flex items-center gap-2">
           <span
@@ -363,7 +374,6 @@ export default function PayrollAccordionTable({
         </div>
       </div>
 
-      {/* Tabel dengan Baris Accordion */}
       <div className="overflow-x-auto rounded-xl border border-slate-200">
         <table className="w-full text-left text-xs text-slate-700">
           <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-600 border-b border-slate-200">
@@ -411,7 +421,6 @@ export default function PayrollAccordionTable({
 
               return (
                 <React.Fragment key={item.id}>
-                  {/* Baris Ringkasan Pekerja */}
                   <tr
                     onClick={() => toggleRow(item.id)}
                     className={`cursor-pointer transition ${
@@ -422,7 +431,6 @@ export default function PayrollAccordionTable({
                         : "hover:bg-slate-50/80"
                     }`}
                   >
-                    {/* Tombol Chevron Accordion */}
                     <td className="px-3 py-2.5 text-center" onClick={(e) => { e.stopPropagation(); toggleRow(item.id); }}>
                       <button
                         type="button"
@@ -556,7 +564,6 @@ export default function PayrollAccordionTable({
                     )}
                   </tr>
 
-                  {/* Panel Accordion Rincian Perhitungan Adaptif */}
                   {isExpanded && (
                     <tr className="bg-slate-50/60 border-b border-emerald-100">
                       <td colSpan={canWrite ? 12 : 11} className="p-3 sm:p-4">
