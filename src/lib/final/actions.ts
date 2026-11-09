@@ -371,8 +371,11 @@ export async function syncPayrollAdvancesCore(runId: number) {
       otAmt = Math.round((totalOtMinutes / 60) * hourlyRate * 100) / 100;
       manualOtAmt = Number(it.manual_overtime_amount || 0);
       otBonus = count4hHarian * 5000;
-      const sundayCount = currentPeriodAtts.filter((a) => new Date(a.attendance_date + "T00:00:00Z").getUTCDay() === 0).length;
-      holidayBonus = sundayCount * 20000;
+      const sundayAttsHarian = currentPeriodAtts.filter((a) => new Date(a.attendance_date + "T00:00:00Z").getUTCDay() === 0);
+const sundayHalfCount = sundayAttsHarian.filter((a) => a.day_class === "HALF_DAY").length;
+const sundayFullCount = sundayAttsHarian.length - sundayHalfCount;
+const holidayRate = Number(settingsMap.get("harian_holiday_bonus_full") || 20000);
+holidayBonus = Math.round(sundayFullCount * holidayRate + sundayHalfCount * (holidayRate / 2));
     }
 
     let kasbonP = 0; let kasbonW = 0;
