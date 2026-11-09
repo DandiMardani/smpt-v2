@@ -131,7 +131,7 @@ export default async function AuditPayrollPage() {
       currentPeriod = { start, end };
     }
 
-    let fullDays = 0, halfDays = 0, otMins = 0, count4h = 0, sundayCount = 0, manualOtHours = 0;
+    let fullDays = 0, halfDays = 0, otMins = 0, count4h = 0, sundayCount = 0, sundayHalfCount = 0, manualOtHours = 0;
     const myAtts = allAtts.filter(a => a.worker_id === worker.id);
 
     // --- LOGIKA ABSENSI & CUTOFF (mengikuti generator payroll di syncPayrollAdvancesCore) ---
@@ -199,8 +199,10 @@ export default async function AuditPayrollPage() {
       }
 
       // Bonus hari Minggu hanya untuk hari fisik di periode ini
-      if (isWithin && dow === 0 && (a.attendance_status === "HADIR" || rawDayOt > 0)) sundayCount++;
-
+      if (isWithin && dow === 0 && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
+  sundayCount++;
+  if (a.day_class === "HALF_DAY") sundayHalfCount++;
+}
       if (countOt) {
         otMins += rawDayOt;
         manualOtHours += manOtHours;
@@ -228,7 +230,8 @@ export default async function AuditPayrollPage() {
       const otHourly = dailyWage / Math.max(1, otDiv);
       otAmt = Math.round((otMins / 60) * otHourly);
       otBonus = count4h * Number(settingsMap.OT_BONUS_HARIAN_4H || 5000);
-      holBonus = sundayCount * Number(settingsMap.HARIAN_HOLIDAY_BONUS_FULL || 20000);
+      const holRate = Number(settingsMap.HARIAN_HOLIDAY_BONUS_FULL || 20000);
+      holBonus = Math.round((sundayCount - sundayHalfCount) * holRate + sundayHalfCount * (holRate / 2));
     }
 
     let myAdvs = allAdvances.filter(a => a.worker_id === worker.id);
