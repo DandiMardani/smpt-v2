@@ -197,7 +197,7 @@ export function AdaptivePayrollDetail({
             {holidayBonus > 0 && (
               <div className="rounded-md bg-emerald-100/70 p-1.5 text-emerald-900 font-medium text-[10px]">
                 <span className="font-bold block">🎉 Insentif Hadir Minggu/Libur:</span>
-                <span>+{money(holidayBonus)} (Tarif: {money(holidayBonusRate)}/kehadiran)</span>
+                <span>+{money(holidayBonus)} (Minggu penuh {money(holidayBonusRate)}, half day separuhnya)</span>
               </div>
             )}
           </div>
