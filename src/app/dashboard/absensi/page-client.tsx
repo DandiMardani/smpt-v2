@@ -188,7 +188,7 @@ function QuickManualAttendanceSheet({
       let lateDeduction = 0;
       let lateNotes = "";
 
-      if (normalizedIn && dayInfo.defaultIn) {
+      if (dayClass !== "HALF_DAY" && normalizedIn && dayInfo.defaultIn) {
         const inH = parseInt(normalizedIn.slice(0, 2), 10);
         const inM = parseInt(normalizedIn.slice(3, 5), 10);
         const actualInTotalMins = inH * 60 + inM;
