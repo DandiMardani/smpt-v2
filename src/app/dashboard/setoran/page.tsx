@@ -339,6 +339,7 @@ export default async function Page() {
     let otMins = 0;
     let count4h = 0;
     let sundayCount = 0;
+let sundayHalfCount = 0;
 
     for (const a of attList) {
       const linkedRuns = Array.isArray((a as any).payroll_run_details)
@@ -399,6 +400,7 @@ export default async function Page() {
 
       if (isSunday && (a.attendance_status === "HADIR" || rawDayOt > 0)) {
         sundayCount += 1;
+if (a.day_class === "HALF_DAY") sundayHalfCount += 1;
         if (isBulananWorker) {
           if (effectiveShiftOt >= 720) count4h += 1; 
         } else {
@@ -507,8 +509,8 @@ export default async function Page() {
         const otHourlyRate = dailyWage / Math.max(1, otDiv);
         const overtimeWage = Math.round((otMins / 60) * otHourlyRate);
         const bonus4h = count4h * Number(settingsMap.OT_BONUS_HARIAN_4H || 5000);
-        const sundayMealOrBonus = sundayCount * Number(settingsMap.HARIAN_HOLIDAY_BONUS_FULL || 20000);
-
+        const holidayRate = Number(settingsMap.HARIAN_HOLIDAY_BONUS_FULL || 20000);
+const sundayMealOrBonus = Math.round((sundayCount - sundayHalfCount) * holidayRate + sundayHalfCount * (holidayRate / 2));
         if (isOfficialSlipPaid && workedDays === 0 && otMins === 0) {
           estimatedGross = 0;
           breakdown = {
