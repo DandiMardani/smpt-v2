@@ -314,7 +314,7 @@ export async function syncPayrollAdvancesCore(runId: number) {
       // 1. Gaji Pokok & Telat HANYA dihitung untuk hari fisik yang pas di periode ini
       if (isInsideCurrentPeriod) {
           currentPeriodAtts.push(a);
-          totalLateDeduction += Number(a.late_deduction || 0);
+          if (a.day_class !== "HALF_DAY") totalLateDeduction += Number(a.late_deduction || 0);
       }
 
       // 2. FILTER LEMBUR KETAT:
