@@ -1214,7 +1214,10 @@ export default function AttendanceManager({
             const worker = rec.worker;
             const dayClass = rec.effectiveDayClass;
 
-            const isTelat = rec.notes && rec.notes.toLowerCase().includes("telat");
+            const visibleNotes = dayClass === "HALF_DAY" && rec.notes
+  ? rec.notes.split(" | ").filter((n: string) => !n.trim().toLowerCase().startsWith("telat")).join(" | ")
+  : rec.notes;
+const isTelat = visibleNotes && visibleNotes.toLowerCase().includes("telat");
 
             // LOGIKA PENANDA CUTOFF JUMAT
             const d = new Date(rec.attendance_date + "T00:00:00Z");
@@ -1328,7 +1331,7 @@ export default function AttendanceManager({
                         )}
                       </div>
 
-                      {rec.notes && (
+                      {visibleNotes && (
                         <div
                           className={`mt-1.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold border ${
                             isTelat
@@ -1337,7 +1340,7 @@ export default function AttendanceManager({
                           }`}
                         >
                           <span>{isTelat ? "⚠️" : "📝"}</span>
-                          <span>{rec.notes}</span>
+                          <span>{visibleNotes}</span>
                         </div>
                       )}
                     </div>
