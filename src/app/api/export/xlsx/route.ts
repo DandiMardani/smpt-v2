@@ -976,7 +976,7 @@ async function upahHarianWorkbook(
       } else if (colNumber === 5 || colNumber === 10) {
         cell.alignment = { horizontal: "center", vertical: "middle" };
         cell.numFmt = "0.0";
-      } } else if ([6, 8, 9, 11, 12, 13, 14].includes(colNumber)) { {
+      }  else if ([6, 8, 9, 11, 12, 13, 14].includes(colNumber))  {
         cell.alignment = { horizontal: "right", vertical: "middle" };
         cell.numFmt = currencyFmt;
       } else {
