@@ -895,6 +895,7 @@ async function upahHarianWorkbook(
     { key: "um_lembur", header: "UANG MAKAN LEMBUR", width: 22 },
     { key: "total_jam", header: "TOTAL JAM", width: 14 },
     { key: "total_lembur", header: "TOTAL LEMBUR", width: 18 },
+    { key: "tambahan_minggu", header: "TAMBAHAN MINGGU", width: 20 },
     { key: "denda_kasbon", header: "DENDA / KASBON", width: 20 },
     { key: "total_upah", header: "TOTAL UPAH", width: 22 },
   ];
@@ -937,10 +938,11 @@ async function upahHarianWorkbook(
 
     const totalLembur = Number(it.overtime_amount || 0) + Number(it.manual_overtime_amount || 0);
     const mealLembur = Number(it.overtime_bonus || 0);
+    const holidayBonus = Number(it.holiday_bonus || 0);
 
     // Potongan 
     const dendaKasbon = Number(it.kasbon_perusahaan_amount || 0) + Number(it.kasbon_warung_amount || 0);
-    const baseCalc = (totalHari * dailyRate + totalLembur + mealLembur) - dendaKasbon;
+    const baseCalc = (totalHari * dailyRate + totalLembur + mealLembur + holidayBonus) - dendaKasbon;
     const totalUpah = it.net_amount !== undefined && it.net_amount !== null ? Number(it.net_amount) : baseCalc;
 
     grandTotal += totalUpah;
@@ -958,6 +960,7 @@ async function upahHarianWorkbook(
       um_lembur: mealLembur,
       total_jam: totalOtHours,
       total_lembur: totalLembur,
+      tambahan_minggu: holidayBonus,
       denda_kasbon: dendaKasbon,
       total_upah: totalUpah,
     });
@@ -973,7 +976,7 @@ async function upahHarianWorkbook(
       } else if (colNumber === 5 || colNumber === 10) {
         cell.alignment = { horizontal: "center", vertical: "middle" };
         cell.numFmt = "0.0";
-      } else if ([6, 8, 9, 11, 12, 13].includes(colNumber)) {
+      } } else if ([6, 8, 9, 11, 12, 13, 14].includes(colNumber)) { {
         cell.alignment = { horizontal: "right", vertical: "middle" };
         cell.numFmt = currencyFmt;
       } else {
@@ -985,15 +988,15 @@ async function upahHarianWorkbook(
   const lastDataRow = ws.rowCount;
   const totalRow = ws.addRow({
     denda_kasbon: "TOTAL :",
-    total_upah: dailyItems.length > 0 ? { formula: `SUM(M2:M${lastDataRow})`, result: grandTotal } : grandTotal,
+    total_upah: dailyItems.length > 0 ? { formula: `SUM(N2:N${lastDataRow})`, result: grandTotal } : grandTotal,
   });
   totalRow.height = 22;
-  const totalLabelCell = totalRow.getCell(12);
+  const totalLabelCell = totalRow.getCell(13);
   totalLabelCell.font = { bold: true };
   totalLabelCell.alignment = { horizontal: "right", vertical: "middle" };
   totalLabelCell.border = borderThin;
 
-  const totalValCell = totalRow.getCell(13);
+  const totalValCell = totalRow.getCell(14);
   totalValCell.font = { bold: true };
   totalValCell.alignment = { horizontal: "right", vertical: "middle" };
   totalValCell.numFmt = currencyFmt;
@@ -1003,11 +1006,11 @@ async function upahHarianWorkbook(
   const signDate = formatIndoDate(run.period_end || jakartaToday());
   ws.addRow({});
   const dateRow = ws.addRow({ total_upah: `Tangerang Selatan, ${signDate}` });
-  dateRow.getCell(13).alignment = { horizontal: "center" };
+  dateRow.getCell(14).alignment = { horizontal: "center" };
 
   const signTitleRow = ws.addRow({ um_lembur: "Disetujui,", denda_kasbon: "Yang Mengajukan," });
   signTitleRow.getCell(9).alignment = { horizontal: "center" };
-  signTitleRow.getCell(12).alignment = { horizontal: "center" };
+  signTitleRow.getCell(13).alignment = { horizontal: "center" };
 
   ws.addRow({});
   ws.addRow({});
@@ -1015,8 +1018,8 @@ async function upahHarianWorkbook(
   const signNamesRow = ws.addRow({ um_lembur: "Bony Daty", denda_kasbon: "Dandi Mardani" });
   signNamesRow.getCell(9).font = { bold: true };
   signNamesRow.getCell(9).alignment = { horizontal: "center" };
-  signNamesRow.getCell(12).font = { bold: true };
-  signNamesRow.getCell(12).alignment = { horizontal: "center" };
+  signNamesRow.getCell(13).font = { bold: true };
+  signNamesRow.getCell(13).alignment = { horizontal: "center" };
 
   const rawBuffer = await wb.xlsx.writeBuffer();
   const buffer = Buffer.from(rawBuffer);
